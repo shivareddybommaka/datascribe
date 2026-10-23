@@ -1,3 +1,4 @@
+import type { ObjectStore, PaymentGateway } from '@datascribe/billing';
 import type { PrismaClient } from '@datascribe/db';
 import type { MedicalData } from '@datascribe/medical-data';
 import type { Logger } from 'pino';
@@ -28,4 +29,7 @@ export interface Deps {
   rateLimits: RateLimits;
   /** §8 adapters. Optional so tests default to the deterministic mocks. */
   medical?: MedicalData;
+  /** M8 billing: Stripe (test) / Fake / Razorpay stub, and where invoice PDFs are kept */
+  gateway: PaymentGateway;
+  store: ObjectStore;
 }

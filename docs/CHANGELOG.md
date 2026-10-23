@@ -24,6 +24,46 @@ Adapter layer of M5 (§8). The processing pipeline (M5b) waits for M4 uploads.
 - Tests: medical-data 146 (+5 live, skipped), api +12 (medical routes, 403 for sales/finance/QA/client
   users, PrismaCacheStore on the test DB).
 
+## M8 — Billing + subscriptions (2026-10-24, branch `ledger/m8`)
+
+Built in four commits: M8a `8f461ea` (billing package + migration), M8b `29079a3` (API),
+M8c `d8f36a3` (worker jobs), M8d (finance console, this commit). Design notes: D-040 to D-044.
+
+- **Plans** (§5.6): name, monthly price, currency, included pages, overage price per page, features.
+  Finance / super_admin create and edit them. Plans are deactivated, never deleted.
+- **Usage**: pages are recorded per case on first delivery (idempotent per case). Finance can add
+  manual entries. Usage this period vs the plan limit is shown on every subscription.
+- **Subscriptions**: current plan + usage, change plan (no proration in v1), cancel / resume at
+  period end. client_admin acts on their own firm; finance on any firm.
+- **Invoices**: the monthly run bills plan fee + overage + tax (label and rate from the company
+  setting) on each firm's own anniversary. It catches up missed periods one invoice each and never bills
+  a period twice. One-off invoices by finance. Gap-free sequential numbers (`INV-YYYY-NNNNN`), safe
+  under concurrency. Void with a reason. Invoice PDF with company details and tax line, cached in the
+  object store.
+- **Payments** via the `PaymentGateway` interface: Stripe (test keys only), a Fake gateway with a
+  simulated checkout page for dev / CI (also used when no Stripe key is set), and a Razorpay stub.
+  Checkout → signed, idempotent webhook marks the invoice paid exactly once. Finance refunds part or
+  all of a payment; a fully refunded invoice ends `refunded`.
+- **Dunning**: reminders on the due date, +7 and +14 days to the firm's client admins (Mailpit only).
+  Unpaid invoices are marked overdue.
+- **Worker**: BullMQ repeatable jobs `monthly-invoicing` (02:00 UTC) and `dunning` (09:00 UTC).
+- **Finance console** `/console/finance` (new section next to CRM, switcher in the header):
+  - overview: MRR and outstanding per currency, overdue count, recent invoices, firms near or over
+    their page limit, "Run monthly invoicing" / "Run dunning" (with a dev-only "as of" date);
+  - invoices: filters (number, status, kind), pagination, outstanding totals, new one-off invoice;
+  - invoice detail: lines, tax, totals, payments with receipts, PDF download, void, refund;
+  - subscriptions: plan, status, period, usage meter, change plan, cancel / resume, add usage;
+  - plans: list incl. inactive, create / edit.
+- Access (§4.3): finance full; ops and sales view; client_admin their own firm (view, pay, manage
+  subscription); everyone else refused. Other firms' invoices return 404.
+- Tests: api 130 (incl. `test/billing.test.ts` "M8 DoD: monthly invoice with overage, paid through
+  the gateway" and isolation tests in `rbac.test.ts`), billing 36, shared 83, worker 5, Playwright e2e 6
+  (3 new: one-off invoice → PDF → void; usage over the limit → monthly run → plan fee + overage;
+  new plan). Lint, typecheck, format and build green.
+
+Not yet: portal billing screens for firms (§5.3: invoices, pay by card, subscription). The API is
+ready; checkout returns to `/portal/billing/invoices/:id`. Finance dashboard (revenue by client) is M9.
+
 ## M7b — CRM console UI (2026-10-24) → M7 done
 
 - Staff console sign-in: password → TOTP, or first-time MFA enrolment with a QR code. Session kept in

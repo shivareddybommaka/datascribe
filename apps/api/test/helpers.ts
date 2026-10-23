@@ -1,3 +1,4 @@
+import { FakeGateway, MemoryObjectStore } from '@datascribe/billing';
 import { PrismaClient } from '@datascribe/db';
 import { internalSeedEmail } from '@datascribe/db/seed';
 import type { RoleKey } from '@datascribe/shared';
@@ -6,7 +7,7 @@ import request from 'supertest';
 import { expect } from 'vitest';
 import { createApp } from '../src/app';
 import { loadEnv } from '../src/config/env';
-import type { RateLimits } from '../src/context';
+import type { Deps, RateLimits } from '../src/context';
 import { createLogger } from '../src/lib/logger';
 import { MemoryMailer } from '../src/lib/mailer';
 import { TEST_DATABASE_URL, TEST_PASSWORD, TEST_TOTP_SECRET, testPhiKey } from './constants';
@@ -30,8 +31,13 @@ export function testEnv(overrides: Record<string, string> = {}) {
 
 const GENEROUS: RateLimits = { windowMs: 60_000, authPerWindow: 10_000, publicPerWindow: 10_000 };
 
-export function buildApp(opts: { rateLimits?: RateLimits } = {}) {
+export function buildApp(opts: { rateLimits?: RateLimits; medical?: Deps['medical'] } = {}) {
   const mailer = new MemoryMailer();
+  const gateway = new FakeGateway({
+    secret: 'test-fake-gateway-secret',
+    checkoutBaseUrl: `${APP_URL}/api/v1/payments/fake-checkout`,
+  });
+  const store = new MemoryObjectStore();
   const app = createApp({
     env: testEnv(),
     prisma,
@@ -39,8 +45,11 @@ export function buildApp(opts: { rateLimits?: RateLimits } = {}) {
     logger: createLogger('silent'),
     phiKey: testPhiKey,
     rateLimits: opts.rateLimits ?? GENEROUS,
+    gateway,
+    store,
+    medical: opts.medical,
   });
-  return { app, mailer };
+  return { app, mailer, gateway, store };
 }
 
 export const CSRF = { 'x-datascribe-csrf': '1' };

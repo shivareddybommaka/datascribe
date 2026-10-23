@@ -8,11 +8,7 @@ import {
 } from '@datascribe/medical-data';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createApp } from '../src/app';
-import { createLogger } from '../src/lib/logger';
-import { MemoryMailer } from '../src/lib/mailer';
-import { testPhiKey } from './constants';
-import { SEED, bearer, buildApp, login, prisma, testEnv } from './helpers';
+import { SEED, bearer, buildApp, login, prisma } from './helpers';
 
 const { app } = buildApp(); // default deps → mock medical providers
 const tokens: Record<string, string> = {};
@@ -175,15 +171,7 @@ describe('adapters only ever see de-identified terms', () => {
         { attribution: base.diagnosis.attribution },
       ),
     };
-    const spyApp = createApp({
-      env: testEnv(),
-      prisma,
-      mailer: new MemoryMailer(),
-      logger: createLogger('silent'),
-      phiKey: testPhiKey,
-      rateLimits: { windowMs: 60_000, authPerWindow: 10_000, publicPerWindow: 10_000 },
-      medical: spy,
-    });
+    const { app: spyApp } = buildApp({ medical: spy });
     const { token } = await login(spyApp, SUMM);
     const q = encodeURIComponent('Ramiro608 Jacobs452 (555) 123-4567 neck pain');
     const res = await request(spyApp).get(`/api/v1/medical/icd10?q=${q}`).set(bearer(token));

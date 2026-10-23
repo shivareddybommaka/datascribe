@@ -12,6 +12,7 @@
     "test": "vitest run --coverage"
   },
   "dependencies": {
+    "@datascribe/billing": "workspace:*",
     "@datascribe/shared": "workspace:*",
     "@datascribe/db": "workspace:*",
     "@datascribe/medical-data": "workspace:*",

@@ -111,3 +111,95 @@ export interface Paged<T> {
   items: T[];
   total: number;
 }
+
+// ── Billing (M8) ──
+
+export type InvoiceStatus = 'draft' | 'issued' | 'paid' | 'void' | 'overdue' | 'refunded';
+
+export interface Plan {
+  id: string;
+  name: string;
+  priceMonthly: string;
+  currency: string;
+  includedPages: number;
+  overagePerPage: string;
+  features: string[];
+  active: boolean;
+  sortOrder: number;
+}
+
+export interface Usage {
+  periodStart: string;
+  periodEnd: string;
+  pagesUsed: number;
+  includedPages: number;
+  overagePages: number;
+  percentUsed: number | null;
+}
+
+export interface SubscriptionRow {
+  id: string;
+  organizationId: string;
+  organization?: { id: string; name: string };
+  status: 'trialing' | 'active' | 'past_due' | 'canceled';
+  currentPeriodStart: string;
+  currentPeriodEnd: string;
+  cancelAtPeriodEnd: boolean;
+  plan: Plan;
+  usage?: Usage;
+}
+
+export interface Invoice {
+  id: string;
+  organizationId: string;
+  organization?: { id: string; name: string };
+  number: string;
+  kind: 'subscription' | 'one_off';
+  status: InvoiceStatus;
+  currency: string;
+  subtotal: string;
+  taxLabel: string | null;
+  taxRatePercent: string | null;
+  tax: string;
+  total: string;
+  periodStart: string | null;
+  periodEnd: string | null;
+  issuedAt: string | null;
+  dueAt: string | null;
+  paidAt: string | null;
+  voidedAt: string | null;
+  remindersSent: number;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface InvoiceLine {
+  id: string;
+  description: string;
+  quantity: string;
+  unitPrice: string;
+  amount: string;
+}
+
+export interface PaymentRow {
+  id: string;
+  invoiceId: string;
+  gateway: string;
+  gatewayRef: string;
+  amount: string;
+  currency: string;
+  status: 'pending' | 'succeeded' | 'failed' | 'refunded';
+  refundedAmount: string;
+  refundedAt: string | null;
+  receiptUrl: string | null;
+  createdAt: string;
+}
+
+export interface InvoiceDetail extends Invoice {
+  lines: InvoiceLine[];
+  payments: PaymentRow[];
+}
+
+export interface InvoiceList extends Paged<Invoice> {
+  outstanding: { currency: string; count: number; total: string }[];
+}

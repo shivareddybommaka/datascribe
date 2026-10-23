@@ -1,3 +1,4 @@
+import { LocalObjectStore, createGateway, repoPath } from '@datascribe/billing';
 import { prisma } from '@datascribe/db';
 import { PrismaCacheStore, createMedicalData } from '@datascribe/medical-data';
 import { loadKey } from '@datascribe/shared';
@@ -9,6 +10,13 @@ import { createSmtpMailer } from './lib/mailer';
 
 const env = loadEnv();
 const logger = createLogger(env.LOG_LEVEL);
+const gateway = createGateway({
+  ...env,
+  fakeCheckoutBaseUrl: `${env.APP_URL}/api/v1/payments/fake-checkout`,
+});
+if (gateway.name === 'fake') {
+  logger.warn('payments use the Fake gateway (no STRIPE_SECRET_KEY): checkout is simulated');
+}
 const app = createApp({
   env,
   logger,
@@ -22,8 +30,10 @@ const app = createApp({
     cache: new PrismaCacheStore(prisma.medicalApiCache),
     logger,
   }),
+  gateway,
+  store: new LocalObjectStore(repoPath(env.INVOICE_STORAGE_DIR)),
 });
 
 app.listen(env.API_PORT, () => {
-  logger.info({ port: env.API_PORT }, 'api listening');
+  logger.info({ port: env.API_PORT, gateway: gateway.name }, 'api listening');
 });
