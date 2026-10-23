@@ -1,11 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "lib": [
-      "ES2023",
-      "DOM",
-      "DOM.Iterable"
-    ],
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "jsx": "preserve",
     "allowJs": false,
     "incremental": true,
@@ -15,9 +11,7 @@
       }
     ],
     "paths": {
-      "@/*": [
-        "./*"
-      ]
+      "@/*": ["./*"]
     }
   },
   "include": [
@@ -28,7 +22,5 @@
     "next-env.d.ts",
     ".next-e2e-3100/types/**/*.ts"
   ],
-  "exclude": [
-    "node_modules"
-  ]
+  "exclude": ["node_modules"]
 }
