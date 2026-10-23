@@ -1,12 +1,50 @@
 @import 'tailwindcss';
 
-/* Placeholder brand tokens (§14): neutral palette, replace with Datascribe branding later. */
+/*
+ * Datascribe brand tokens, taken from datascribetech.com (logo + site CSS) on 2026-10-23.
+ * See docs/BRAND.md for sources and contrast notes. Change colours here only.
+ */
 @theme {
-  --color-brand-50: #f5f7fa;
-  --color-brand-100: #e4e9f0;
-  --color-brand-500: #3b5b7d;
-  --color-brand-600: #2f4a66;
-  --color-brand-700: #243a50;
-  --color-brand-900: #121d29;
+  /* Primary: logo azure (#026cb8 = brand-600). Text/buttons use 600+; 500 is the site's link blue. */
+  --color-brand-50: #f1f6fc;
+  --color-brand-100: #dcebf9;
+  --color-brand-200: #b6d5f2;
+  --color-brand-300: #82b7e6;
+  --color-brand-400: #4392d6;
+  --color-brand-500: #106eea;
+  --color-brand-600: #026cb8;
+  --color-brand-700: #045894;
+  --color-brand-800: #0a4777;
+  --color-brand-900: #0d3a61;
+  --color-brand-950: #082440;
+
+  /* Secondary: logo indigo, the dark end of the "S" gradient (#2a3695 = navy-600). */
+  --color-navy-50: #eef0f9;
+  --color-navy-100: #d9ddf1;
+  --color-navy-500: #3d539c;
+  --color-navy-600: #2a3695;
+  --color-navy-700: #233e9b;
+  --color-navy-800: #1c3988;
+  --color-navy-900: #090e40;
+
+  /* Neutrals from the site: headings #1c1b1b, body #363636. */
+  --color-ink: #1c1b1b;
+  --color-body: #363636;
+  --color-muted: #555555;
+  --color-line: #e5e7eb;
+  --color-surface: #f1f6fc;
+
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+@layer base {
+  ::selection {
+    background: var(--color-brand-500);
+    color: #fff;
+  }
+}
+
+/* Logo gradient, for hero bands and accents. */
+@utility bg-brand-gradient {
+  background-image: linear-gradient(135deg, var(--color-brand-600) 0%, var(--color-navy-600) 100%);
 }
