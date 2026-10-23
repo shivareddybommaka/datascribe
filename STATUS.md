@@ -2,7 +2,8 @@
 
 ## Current state (2026-10-23)
 
-- **M0 Foundation: done locally.** Only GitHub CI is outstanding (no remote yet).
+- **M0 Foundation: done locally.** Remote: https://github.com/shivareddybommaka/datascribe (private,
+  push via deploy key, host alias `github-datascribe`). First GitHub CI run needs Shiva to confirm (green/red).
   - lint, typecheck, test (90 passing; coverage shared 90.8%, api 96.8%) and build pass.
   - Infra on Colima: Postgres 16 (:5433, confirmed; :5432 is the existing CRM, never touch), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025).
   - Migration `init` applied (AuditLog append-only trigger verified). Seed is idempotent.
@@ -13,7 +14,7 @@
 ## Waiting on Shiva
 
 - (4) Build order: strict M0→M10, or M0→M1→M7 (CRM) first.
-- (5) Private GitHub remote for CI: create now or later.
+- Confirm the first CI run on GitHub Actions is green (agent can't read the Actions API via the deploy key).
 
 ## Next steps
 
