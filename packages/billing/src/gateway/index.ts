@@ -13,7 +13,7 @@ export interface GatewayConfig {
   STRIPE_SECRET_KEY?: string;
   STRIPE_WEBHOOK_SECRET?: string;
   FAKE_GATEWAY_SECRET: string;
-  /** where the fake checkout page lives, e.g. http://localhost:3000/api/v1/payments/fake-checkout */
+  /** where the fake checkout page lives, e.g. http://localhost:3010/api/v1/payments/fake-checkout */
   fakeCheckoutBaseUrl: string;
 }
 

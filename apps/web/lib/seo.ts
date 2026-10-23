@@ -2,7 +2,7 @@ import type { Seo } from '@datascribe/site-content';
 import type { Metadata } from 'next';
 import { mediaUrl } from './cms';
 
-export const siteUrl = () => (process.env.APP_URL || 'http://localhost:3000').replace(/\/$/, '');
+export const siteUrl = () => (process.env.APP_URL || 'http://localhost:3010').replace(/\/$/, '');
 
 /** Per-page metadata from the CMS SEO group (§5.1), with page-title fallbacks. */
 export function seoMetadata(

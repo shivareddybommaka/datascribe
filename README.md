@@ -56,9 +56,9 @@ pnpm --filter @datascribe/web e2e
 
 ## Where things are
 
-- Staff console: http://localhost:3000/console (CRM at `/console/crm`)
-- Website contact / demo form: http://localhost:3000/contact
-- API: http://localhost:4000/api/v1 (also proxied at http://localhost:3000/api/v1)
+- Staff console: http://localhost:3010/console (CRM at `/console/crm`)
+- Website contact / demo form: http://localhost:3010/contact
+- API: http://localhost:4000/api/v1 (also proxied at http://localhost:3010/api/v1)
 - Mailpit (all dev email): http://localhost:8025
 
 ## Rules that matter

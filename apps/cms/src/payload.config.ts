@@ -14,7 +14,7 @@ import { Site } from './globals/Site';
 loadRootEnv();
 
 const dirname = path.dirname(fileURLToPath(import.meta.url));
-const appUrl = process.env.APP_URL || 'http://localhost:3000';
+const appUrl = process.env.APP_URL || 'http://localhost:3010';
 
 export default buildConfig({
   serverURL: process.env.CMS_URL || `http://localhost:${process.env.CMS_PORT || 3001}`,

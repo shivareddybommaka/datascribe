@@ -46,7 +46,7 @@ describe('dunning schedule (due date, +7, +14)', () => {
       currency: 'USD',
       dueAt: due,
       organizationName: 'Acme',
-      payUrl: 'http://localhost:3000/portal/billing/invoices/x',
+      payUrl: 'http://localhost:3010/portal/billing/invoices/x',
     };
     const first = reminderEmail({ ...base, stage: 0 });
     expect(first.subject).toBe('Invoice INV-2026-00007 is due today');

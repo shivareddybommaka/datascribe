@@ -28,6 +28,8 @@ that area).
 ## Rules that always apply
 
 - Never touch Postgres on **5432** (Shiva's existing CRM). Datascribe uses 5433; tests use `_test` / `_e2e`.
+- Never listen on port **3000**: Shiva's StaySpot CRM is published at crm.stayspot.app through a
+  Cloudflare tunnel to localhost:3000, so anything there goes public. Datascribe web dev is **3010**.
 - Synthetic data only. Never log PHI, request bodies or document text. Mailpit only, no real email.
 - Every route: Zod validation, permission check on the server, org scoping; audit document/deliverable access.
 - Client-org users never get `all` scope; CRM routes are internal-only.

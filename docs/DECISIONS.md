@@ -396,6 +396,13 @@ invoices overdue. Finance can trigger both runs from the console; `asOf` is refu
   esbuild 0.18 in drizzle-kit (dev-server CORS only, a server we never run). Remove the overrides once
   upstream versions include the fixes.
 
+## D-021 — Web dev port 3010, never 3000 (2026-10-24)
+
+`~/.cloudflared/config.yml` (Shiva's StaySpot setup) tunnels crm.stayspot.app to `http://localhost:3000`.
+Datascribe's web dev server also used 3000, which blocked StaySpot's app. If the tunnel had been up, it
+would also have published the Datascribe dev site on that hostname. Web dev now runs on 3010, bound to
+127.0.0.1. Port 3000 is reserved for StaySpot (CLAUDE.md, AUTOPILOT.md).
+
 ## D-013 — Money and encrypted fields
 
 Money is `Decimal(12,2)` (per-page prices `Decimal(12,4)`). Encrypted PHI fields (`Case.patientName`,

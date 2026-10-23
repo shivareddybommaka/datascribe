@@ -17,7 +17,7 @@ export const EnvSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     API_PORT: z.coerce.number().int().positive().default(4000),
-    APP_URL: z.string().url().default('http://localhost:3000'),
+    APP_URL: z.string().url().default('http://localhost:3010'),
     /** Extra browser origins trusted for CORS/CSRF (comma-separated), e.g. a local preview proxy. */
     EXTRA_TRUSTED_ORIGINS: z
       .string()

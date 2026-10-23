@@ -23,7 +23,7 @@ const workers = PIPELINE_QUEUES.map(
 );
 
 // ── M8 billing: monthly invoicing + dunning as repeatable jobs ──
-const appUrl = process.env.APP_URL ?? 'http://localhost:3000';
+const appUrl = process.env.APP_URL ?? 'http://localhost:3010';
 const smtpPort = Number(process.env.SMTP_PORT ?? 1025);
 const transport = nodemailer.createTransport({
   host: process.env.SMTP_HOST ?? 'localhost',

@@ -14,7 +14,7 @@ import { TEST_DATABASE_URL, TEST_PASSWORD, TEST_TOTP_SECRET, testPhiKey } from '
 
 export const prisma = new PrismaClient({ datasourceUrl: TEST_DATABASE_URL });
 
-export const APP_URL = 'http://localhost:3000';
+export const APP_URL = 'http://localhost:3010';
 
 export function testEnv(overrides: Record<string, string> = {}) {
   return loadEnv({

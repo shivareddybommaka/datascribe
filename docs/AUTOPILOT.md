@@ -29,6 +29,7 @@ Finish each milestone's Definition of Done (REQUIREMENTS.md §12) before startin
 
 ## Never, even on autopilot (stop and ask Shiva)
 
+- Listening on port **3000** (tunnelled publicly to crm.stayspot.app; Datascribe web dev uses 3010).
 - Touching the Postgres on port **5432** (Shiva's existing CRM) or anything outside the project
   and the agent workspace.
 - Real email, messages to anyone other than Shiva, deploying or publishing anything public, payments,
