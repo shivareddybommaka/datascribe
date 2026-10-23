@@ -12,16 +12,21 @@ existing CRM, never touch), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025). CMS 
 | M1 Auth + RBAC                | done                               | security fixes from the audit applied                                                            |
 | M2 Admin console              | **in progress (master)**           | done: users API (D-022). Next: roles matrix API, orgs, settings, audit viewer, impersonation, UI |
 | M3 Website + CMS              | done (merged from `storefront/m3`) | Lighthouse ≥ 90 not measured yet (needs Lighthouse install)                                      |
-| M4 Portal cases + uploads     | not started                        |                                                                                                  |
-| M5 Pipeline                   | M5a adapters done (merged)         | M5b pipeline stages need M4 uploads                                                              |
+| M4 Portal cases + uploads     | done on `portal/m4` (to merge)     | DoD test green (300-page PDF, interrupted + resumed); D-070..D-077                               |
+| M5 Pipeline                   | M5a adapters done (merged)         | M5b: take over the scan stage from the API (`verifyDocument`, D-072)                             |
 | M6 Workspace + QA + delivery  | not started                        |                                                                                                  |
 | M7 CRM                        | done                               |                                                                                                  |
-| M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen comes with M4; Stripe test key needed for the manual test-card demo    |
+| M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen built in M4; Stripe test key needed for the manual test-card demo      |
 | M9 Notifications + dashboards | not started                        |                                                                                                  |
 | M10 Hardening                 | not started                        |                                                                                                  |
 
 Tests on `main`: lint, typecheck, unit/API tests and build green (33/33 turbo tasks; API 162 tests
 incl. 13 admin-users); Playwright e2e 12/12 (CRM 3, finance 3, marketing 6) as of the M8 merge.
+On `portal/m4`: 33/33 turbo tasks, API 211 tests, Playwright 16/16 (+ portal 3).
+
+M4 merge notes: main's `.env` needs `S3_SSE=none` (local SeaweedFS has no SSE, D-070) or the API's
+uploads fail; the API creates the buckets at startup and encrypts legacy case notes / messages
+(L5 backfill). Real ClamAV: `docker compose --profile scan up -d` + `CLAMAV_HOST=localhost`.
 
 M2 plan (in order): 1 users API ✅ · 2 roles API (list/create custom/edit matrix, system roles
 undeletable, user role assignment ≤ caller's grants = audit M4) · 3 orgs API (edit plan, custom pricing,
@@ -59,9 +64,9 @@ M8, M9. Open:
 - M2 lockout bypass with concurrent guesses (with M2). M4 invites ≤ inviter's permissions (with M2).
 - M5 absolute session lifetime + re-check MFA policy on refresh. M6 trust-proxy, per-account limits.
 - Low: L1 revoke reason vs reuse alerts, L2 kill other reset tokens, L3 unverified-account squatting,
-  L4 audit case list, L5 encrypt Case.notes / Message.body, L6 PHI notice on lead form, L7 Prisma error
-  logging, L8 single-use MFA token, L9 timing, L10 conversion email domain, L11 non-owner DB role,
-  L12 pin images/actions.
+  L6 PHI notice on lead form, L7 Prisma error logging, L8 single-use MFA token, L9 timing, L10
+  conversion email domain, L11 non-owner DB role, L12 pin images/actions. (L4 audit case list and L5
+  encrypt Case.notes / Message.body: fixed on `portal/m4`.)
 
 ## Known follow-ups
 

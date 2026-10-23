@@ -422,4 +422,122 @@ Money is `Decimal(12,2)` (per-page prices `Decimal(12,4)`). Encrypted PHI fields
 `DocumentPage.text`, `ClinicalEvent.description`, `Deliverable.content`, `User.mfaSecret`) are `String`
 columns holding a versioned AES-256-GCM envelope `v1:iv:tag:ct`. `Deliverable.content` is encrypted JSON,
 so it's stored as text rather than `Json`. `ClinicalEvent.description` is encrypted too; the spec doesn't
-list it, but it is clinical narrative about the patient.
+list it, but it is clinical narrative about the patient. Since M4 `Case.notes` and `Message.body` are
+encrypted as well (audit L5, D-075).
+
+## D-070 — Document storage on S3 / SeaweedFS (M4, 2026-10-24)
+
+- **AWS SDK v3** (`@aws-sdk/client-s3`, `@aws-sdk/s3-request-presigner`) behind `DocumentStorage`
+  (`apps/api/src/lib/storage.ts`). Path-style addressing when `S3_ENDPOINT` is set (SeaweedFS), AWS
+  defaults otherwise; no credentials in env = the AWS default chain (instance role).
+- **Checksums `WHEN_REQUIRED`.** Recent SDKs add CRC32 checksum parameters to presigned part URLs,
+  which a browser PUT can't satisfy (SeaweedFS answers 400). Turned off; S3 still checks each part's
+  MD5/ETag, and we check part sizes and the file's SHA-256 ourselves.
+- **Server-side encryption** is `S3_SSE=AES256 | aws:kms | none`, default AES256, sent on every write
+  and set as the bucket default. Local SeaweedFS has no SSE without a KMS (any SSE request returns
+  InternalError), so local `.env` files and tests use `none`. Production env validation refuses `none`.
+- **Buckets** (documents, deliverables) are created at API startup if missing, with public access
+  blocked (AWS; SeaweedFS buckets are private anyway) and CORS on the documents bucket allowing only
+  `PUT` from `APP_URL` (+ `EXTRA_TRUSTED_ORIGINS`). Startup work never stops the API: bucket setup
+  retries every 30 s and is logged.
+- **Object keys hold ids only** (`org/<org>/cases/<case>/<uuid>`), because file names can contain
+  patient names. File names are never logged or put in audit metadata.
+
+## D-071 — Resumable uploads (M4)
+
+- The `Document` row is the upload: `POST /cases/:id/uploads` creates it with the S3 `uploadId`;
+  `uploadedAt` is set on completion. Part size `UPLOAD_PART_SIZE_MB` (default 8 MiB, S3 minimum 5),
+  doubled when needed to stay within S3's 10,000 parts (a 500 MB file = 63 parts).
+- Part URLs are presigned **just in time, one part per call** (`POST /uploads/:id/parts`, 30 min), so
+  a slow upload never holds an expired URL. `GET /uploads/:id` lists the parts S3 already has
+  (ListParts): that is what resuming uses, after a reload or on another day.
+- `/complete` takes no ETags from the client: the API reads them with ListParts, checks every part
+  is present (409 `upload_incomplete` + `missingParts`) and that the sizes add up to the declared size
+  exactly (422 `size_mismatch`), so the browser never needs to read the ETag header. Completing twice
+  is harmless.
+- **Magic bytes** (§10): after completion the first 16 bytes decide the type (PDF, PNG, JPEG, TIFF).
+  Anything else is deleted with its row (422 `file_type_not_allowed`, audited `document.rejected`). A
+  real allowed type that differs from what the browser declared (e.g. a PDF named `.png`) is accepted
+  under its real type.
+- Browser: one file at a time, 3 parts in parallel, 3 attempts per part with backoff, then the file
+  shows "Interrupted" with **Resume**. The browser remembers only SHA-256(case, name, size, mtime) →
+  upload id in localStorage, so choosing the same file again resumes it. Pause aborts the in-flight
+  requests. An unfinished upload is listed on the case and can be cancelled (`DELETE /uploads/:id`).
+- Records can be added or removed while the case is `draft`, `submitted` or `on_hold` (409
+  `case_locked` once processing starts).
+
+## D-072 — Verification, virus scanning and downloads (M4)
+
+- `VirusScanner` interface: `MockVirusScanner` (only the EICAR test string is "infected") by default,
+  `ClamdScanner` when `CLAMAV_HOST` is set. The clamd client is ~60 lines of the `zINSTREAM` TCP
+  protocol, so no package was added. Production refuses to start without `CLAMAV_HOST`. The compose
+  `scan` profile runs `clamav/clamav` on 127.0.0.1:3310.
+- After `/complete` one pass over the object computes SHA-256, feeds the scanner and (files ≤ 150 MB)
+  counts pages: pdf-lib for PDFs, the IFD chain for TIFF, 1 for PNG/JPEG. Larger files keep
+  `pageCount` null for the pipeline (M5).
+- `scanStatus`: `pending` → `clean`, or `infected` (object moved under `quarantine/`, never
+  downloadable), or `error` when the scanner fails (fails closed: not downloadable, shown as "Scan
+  failed"). Each result is a system `document.scan` audit row with the scanner and signature names.
+- Until the M5b worker takes this over as pipeline stage 1, the API runs it in the background after
+  `/complete` (inline in tests, `Deps.verifyUploads`) and re-runs anything left `pending` at startup.
+- `GET /documents/:id/download-url`: presigned GET, **5 minutes**, `Content-Disposition: attachment`
+  (RFC 6266, non-ASCII safe), `Cache-Control: private, no-store`, clean documents only (409
+  `scan_pending` / `quarantined` / `scan_failed`), audited `document.download`.
+- §4.4 audit rows: `document.create`, `.upload_complete`, `.scan`, `.view`, `.list`, `.download`,
+  `.edit` (rename), `.delete`, `.rejected`. Deleting needs `documents:delete` (client_admin, staff),
+  so client users can't delete records; they can cancel their own unfinished uploads.
+
+## D-073 — Case rules in the portal (M4)
+
+- Numbers `DS-<year>-<000001>` from the `Counter` table per year (D-009), in the creating transaction.
+- Editing is allowed only in `draft` (compare-and-set on status, so a concurrent submit wins).
+  Submitting (`draft → submitted`) needs at least one completed, non-infected record.
+- **Status timeline** = the case's `case.create` / `case.submit` / `case.status` audit rows (their
+  `metadata.to`). M6 status changes must write `case.status` with `{ from, to }` to appear.
+- Staff (internal, `cases:create` at `all`) can create a case on a firm's behalf with
+  `organizationId`; client users always create in their own firm.
+- `GET /cases` filters by status (comma list), open, type, priority and text (matter, reference,
+  number; patient names are encrypted so not searchable) with pagination, and is audited as
+  `case.list` (audit L4).
+
+## D-074 — Sharing and messages (M4)
+
+- Shares are managed by the case's creator or by holders of `cases:edit` at `firm`/`all` (client_admin,
+  staff). Someone the case is only shared with can't re-share. Targets must be active users of the
+  case's firm; other ids, including other firms' users, get the same 400 `unknown_user`.
+- Messages: reading and posting need `cases:view` on the case (so sales/finance are refused).
+  `internalOnly` notes can only be written by staff and are never returned to client users.
+
+## D-075 — Audit L5: encrypted case notes and messages (M4)
+
+`Case.notes` and `Message.body` are now AES-256-GCM envelopes like `patientName`. Migration
+`20261024090000_portal_phi_checks` adds CHECK constraints on all three columns (`^v[0-9]+:`), `NOT
+VALID` so they apply to new writes without failing on old rows. At startup the API encrypts any legacy
+plaintext rows and runs `VALIDATE CONSTRAINT` (idempotent; skipped under `NODE_ENV=test`, whose
+databases are fresh). Until then legacy plaintext is still readable (`decryptOptional`).
+
+## D-076 — Client portal UI (M4)
+
+- `/portal/login` is outside the `(app)` route group; everything else is behind `RequireClient`
+  (restores the session, staff are sent to `/console`). Besides the API's 30-minute idle limit, the
+  portal signs out after 30 minutes without input so PHI isn't left on screen.
+- Pages: dashboard (`GET /portal/dashboard`: open cases by status, recent deliverables, usage vs plan,
+  outstanding invoices; fields the caller may not see are `null`), cases list/new/detail (details,
+  timeline, records + uploader, deliverables, sharing, messages), billing (subscription + usage
+  meter, change plan / cancel at period end, invoices, detail with receipts and pay by card) and firm
+  (profile, MFA policy, users with suspend/reactivate, invites).
+- Firm management reuses the firm-scoped `/admin/users` and `POST /invites`; new client-only
+  `GET/PATCH /firm` (name, `settings.enforceMfa`) and `GET /firm/invites`. Staff organisation admin
+  stays in M2. Same UI approach as the console (D-019, D-044): plain controlled forms, the API
+  validates and enforces everything.
+
+## D-077 — Test infrastructure for uploads (M4)
+
+- API tests use the real local S3 (SeaweedFS) with per-checkout buckets (`ds-<tree>-test-*`) and
+  presigned PUTs over HTTP, so multipart uploads, ListParts and downloads are exercised for real.
+  CI starts a SeaweedFS container for them.
+- The S3 test settings live in `apps/api/test/s3.ts`, apart from `constants.ts`: importing the latter
+  from `playwright.config.ts` would fix `TEST_DATABASE_URL` before the config points it at `*_e2e`.
+- `RATE_LIMIT_AUTH` / `RATE_LIMIT_PUBLIC` (defaults 30 / 10 per 15 min, as before) are now env
+  settings; the E2E API uses 300 because every spec signs in from the same IP. The E2E API's stdout
+  (warn level) is shown in test output.
