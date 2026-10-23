@@ -1,4 +1,10 @@
-import type { ActivityType, LeadStage } from '@datascribe/shared/constants';
+import type {
+  ActivityType,
+  CaseStatus,
+  CaseType,
+  LeadStage,
+  Priority,
+} from '@datascribe/shared/constants';
 
 export interface Me {
   user: {
@@ -202,4 +208,129 @@ export interface InvoiceDetail extends Invoice {
 
 export interface InvoiceList extends Paged<Invoice> {
   outstanding: { currency: string; count: number; total: string }[];
+}
+
+// ── Client portal (M4) ──
+
+export type Requestable = 'index' | 'chronology' | 'summary';
+
+export interface CaseSummary {
+  id: string;
+  number: string;
+  organizationId: string;
+  matterName: string;
+  reference: string | null;
+  patientName: string;
+  caseType: CaseType;
+  priority: Priority;
+  status: CaseStatus;
+  dueAt: string | null;
+  submittedAt: string | null;
+  createdAt: string;
+}
+
+export interface CaseDetail extends CaseSummary {
+  organization: { id: string; name: string };
+  incidentDate: string | null;
+  requested: Requestable[];
+  notes: string | null;
+  createdBy: { id: string; name: string };
+  createdById: string;
+  deliveredAt: string | null;
+  updatedAt: string;
+  shares: UserRef[];
+  timeline: { at: string; status: CaseStatus | null; action: string }[];
+  can: {
+    edit: boolean;
+    submit: boolean;
+    share: boolean;
+    upload: boolean;
+    deleteDocuments: boolean;
+    message: boolean;
+    internalMessages: boolean;
+  };
+}
+
+export type ScanStatus = 'pending' | 'clean' | 'infected' | 'error';
+
+export interface DocumentRow {
+  id: string;
+  caseId: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  pageCount: number | null;
+  sha256: string | null;
+  scanStatus: ScanStatus;
+  state: 'uploading' | ScanStatus;
+  uploadedAt: string | null;
+  createdAt: string;
+  uploadedBy: { id: string; name: string };
+  partSize: number;
+  partCount: number;
+}
+
+export interface UploadState extends DocumentRow {
+  uploadedParts: number[];
+  completed: boolean;
+}
+
+export interface DeliverableRow {
+  id: string;
+  type: 'index' | 'chronology' | 'summary' | 'report';
+  version: number;
+  status: string;
+  createdAt: string;
+}
+
+export interface CaseMessage {
+  id: string;
+  body: string;
+  internalOnly: boolean;
+  createdAt: string;
+  author: { id: string; name: string; staff: boolean };
+}
+
+export interface PortalDashboard {
+  openCases: { status: CaseStatus; count: number }[];
+  recentDeliverables: {
+    id: string;
+    type: DeliverableRow['type'];
+    version: number;
+    deliveredAt: string;
+    case: { id: string; number: string; matterName: string };
+  }[];
+  usage: (Usage & { plan: { id: string; name: string }; cancelAtPeriodEnd: boolean }) | null;
+  invoices: {
+    items: Invoice[];
+    outstanding: { currency: string; count: number; total: string }[];
+  } | null;
+}
+
+export interface Firm {
+  id: string;
+  name: string;
+  status: string;
+  currency: string;
+  plan: { id: string; name: string } | null;
+  userCount: number;
+  enforceMfa: boolean;
+}
+
+export interface FirmUser {
+  id: string;
+  name: string;
+  email: string;
+  status: 'invited' | 'active' | 'suspended';
+  roles: { key: string; name: string }[];
+  mfaEnabled: boolean;
+  lastLoginAt: string | null;
+}
+
+export interface PendingInvite {
+  id: string;
+  email: string;
+  role: { key: string; name: string };
+  expiresAt: string;
+  createdAt: string;
 }

@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import { Button, ErrorText, Field, Input } from '@/components/ui';
 import { api, setAccessToken } from '@/lib/api';
+import type { Me } from '@/lib/types';
 
 type LoginResult =
   | { accessToken: string }
@@ -15,16 +16,33 @@ type Step =
   | { kind: 'mfa'; mfaToken: string }
   | { kind: 'setup'; mfaToken: string; qrDataUrl: string; secret: string };
 
-export function LoginForm() {
+const SURFACES = {
+  console: { home: '/console/crm', prefix: '/console' },
+  portal: { home: '/portal', prefix: '/portal' },
+} as const;
+
+/** Sign-in for the staff console and the client portal (same /auth endpoints). */
+export function LoginForm({ surface = 'console' }: { surface?: keyof typeof SURFACES }) {
   const router = useRouter();
   const params = useSearchParams();
-  const next = params.get('next')?.startsWith('/console') ? params.get('next')! : '/console/crm';
+  const cfg = SURFACES[surface];
+  const requested = params.get('next');
+  const next =
+    requested?.startsWith(cfg.prefix) && !requested.startsWith(`${cfg.prefix}/login`)
+      ? requested
+      : cfg.home;
   const [step, setStep] = useState<Step>({ kind: 'password' });
   const [error, setError] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
 
-  const done = (token: string) => {
+  const done = async (token: string) => {
     setAccessToken(token);
+    // staff who sign in on the portal page go to the console (the console's own guard explains
+    // to client users that it is staff-only)
+    if (surface === 'portal') {
+      const me = await api<Me>('/auth/me');
+      if (me.user.orgType === 'internal') return router.replace('/console');
+    }
     router.replace(next);
   };
 
@@ -67,13 +85,18 @@ export function LoginForm() {
         method: 'POST',
         body: { mfaToken: step.mfaToken, code },
       });
-      done(res.accessToken);
+      await done(res.accessToken);
     });
   }
 
   if (step.kind === 'password') {
     return (
       <form onSubmit={onPassword} className="mt-6 space-y-4">
+        {params.get('reason') === 'idle' && (
+          <p role="status" className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            You were signed out after 30 minutes without activity.
+          </p>
+        )}
         <Field label="Email" htmlFor="email">
           <Input id="email" name="email" type="email" autoComplete="username" required />
         </Field>
@@ -105,8 +128,11 @@ export function LoginForm() {
       {step.kind === 'setup' ? (
         <div className="space-y-3 text-sm">
           <p className="text-body">
-            Two-factor authentication is required for staff. Scan this code with an authenticator
-            app (Google Authenticator, 1Password, Authy), then enter the 6-digit code.
+            {surface === 'console'
+              ? 'Two-factor authentication is required for staff.'
+              : 'Your firm requires two-factor authentication.'}{' '}
+            Scan this code with an authenticator app (Google Authenticator, 1Password, Authy), then
+            enter the 6-digit code.
           </p>
           <img
             src={step.qrDataUrl}
