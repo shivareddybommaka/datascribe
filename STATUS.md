@@ -4,7 +4,7 @@
 
 - **M0 Foundation: done locally.** Only GitHub CI is outstanding (no remote yet).
   - lint, typecheck, test (90 passing; coverage shared 90.8%, api 96.8%) and build pass.
-  - Infra on Colima: Postgres 16 (:5433), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025).
+  - Infra on Colima: Postgres 16 (:5433, confirmed; :5432 is the existing CRM, never touch), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025).
   - Migration `init` applied (AuditLog append-only trigger verified). Seed is idempotent.
   - `pnpm dev`: api :4000, worker, web :3000 all start; health check returns 200.
 - Tooling (account `nova`): pnpm at `~/.local/bin/pnpm`; `colima start` after a reboot.
@@ -12,7 +12,6 @@
 
 ## Waiting on Shiva
 
-- (3) Confirm Docker Postgres on 5433 is fine (in use now; existing 5432 server untouched).
 - (4) Build order: strict M0→M10, or M0→M1→M7 (CRM) first.
 - (5) Private GitHub remote for CI: create now or later.
 

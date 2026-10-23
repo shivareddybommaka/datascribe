@@ -68,7 +68,8 @@ Synthea locally and renders them to PDF for the pipeline tests.
 
 ## D-011 — Local Postgres on host port 5433
 
-The dev machine already runs an unrelated Postgres on 5432. Compose maps its port from `POSTGRES_PORT`
+Confirmed by Shiva 2026-10-23 (option A). The dev machine's Postgres on 5432 serves the existing CRM and
+must never be touched or shared by Datascribe. Compose maps its port from `POSTGRES_PORT`
 (default 5432, as in the spec's `.env.example`); the local `.env` uses 5433.
 
 ## D-012 — pnpm installed per-user
