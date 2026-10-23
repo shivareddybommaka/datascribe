@@ -1,4 +1,5 @@
 import type { Prisma } from '@datascribe/db';
+import { notifyCaseSubmitted } from '@datascribe/db/notifications';
 import {
   CASE_STATUSES,
   CASE_TYPES,
@@ -16,6 +17,7 @@ import { authenticate, requireAuth, requirePermission } from '../auth/middleware
 import { canOnCase, caseScopeWhere } from '../auth/scoping';
 import type { Deps } from '../context';
 import { HttpError, badRequest, conflict, forbidden, notFound } from '../lib/errors';
+import { safeNotify } from '../lib/notify';
 import { decryptOptional, encryptOptional } from '../lib/phi';
 import { parse } from '../lib/validate';
 import {
@@ -343,6 +345,7 @@ export function casesRouter(deps: Deps): Router {
       organizationId: c.organizationId,
       metadata: { from: 'draft', to: 'submitted', documents: ready },
     });
+    await safeNotify(deps.logger, 'case_submitted', () => notifyCaseSubmitted(prisma, c.id));
     const fresh = await prisma.case.findUniqueOrThrow({
       where: { id: c.id },
       include: caseInclude,

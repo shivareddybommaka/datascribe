@@ -1,6 +1,6 @@
 import type { Prisma } from '@datascribe/db';
 import { UPSTREAMS } from '@datascribe/medical-data';
-import { PRIORITIES } from '@datascribe/shared';
+import { PRIORITIES, SETTINGS_EVENTS } from '@datascribe/shared';
 import { Router } from 'express';
 import { z } from 'zod';
 import { authenticate, requirePermission } from '../../auth/middleware';
@@ -26,19 +26,7 @@ import { parse } from '../../lib/validate';
 import { requireInternal } from '../crm/common';
 
 /** §5.8 events; per-event email / in-app switches. Security emails are not listed: never muted. */
-export const NOTIFICATION_EVENTS = [
-  'case_submitted',
-  'processing_complete',
-  'assigned_to_you',
-  'qa_changes_requested',
-  'approved',
-  'delivered',
-  'invoice_issued',
-  'payment_received',
-  'payment_failed',
-  'lead_assigned',
-  'task_due',
-] as const;
+export const NOTIFICATION_EVENTS = SETTINGS_EVENTS;
 
 const Percent = z
   .union([z.number(), z.string().trim()])

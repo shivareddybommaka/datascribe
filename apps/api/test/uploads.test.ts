@@ -237,6 +237,15 @@ describe('virus scanning', () => {
     expect(link.body.error.code).toBe('quarantined');
     const scan = (await audits(res.body.id)).find((r) => r.action === 'document.scan');
     expect(scan?.metadata).toMatchObject({ result: 'infected', signature: 'Eicar-Test-Signature' });
+    // M9: the uploader and the firm admins are told (critical, so email too)
+    const notes = await prisma.notification.findMany({
+      where: { type: 'upload_quarantined', payload: { path: ['documentId'], equals: res.body.id } },
+      include: { user: { select: { email: true } } },
+    });
+    const told = notes.map((n) => n.user.email);
+    expect(told).toEqual(expect.arrayContaining([SEED.acmeAdmin, SEED.acmeUser]));
+    expect(told.every((e) => !e.endsWith('@harbor.example'))).toBe(true);
+    expect(notes.every((n) => n.emailStatus === 'pending')).toBe(true);
   });
 
   it('fails closed when the scanner is unavailable', async () => {

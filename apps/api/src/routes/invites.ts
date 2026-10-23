@@ -1,3 +1,4 @@
+import { notifyInviteAccepted } from '@datascribe/db/notifications';
 import { CLIENT_ROLES, broadestScope } from '@datascribe/shared';
 import { Router, type Request } from 'express';
 import { z } from 'zod';
@@ -6,6 +7,7 @@ import { assertCanGrant, rolePermissions } from '../auth/grants';
 import { authenticate, requireAuth, requirePermission } from '../auth/middleware';
 import type { Deps } from '../context';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors';
+import { safeNotify } from '../lib/notify';
 import { PasswordSchema, hashPassword } from '../lib/password';
 import { renderEmail } from '../lib/templates';
 import { randomToken, sha256 } from '../lib/tokens';
@@ -177,6 +179,9 @@ export function invitesRouter(deps: Deps): Router {
       actorId: user.id,
       organizationId: invite.organizationId,
     });
+    await safeNotify(deps.logger, 'invite_accepted', () =>
+      notifyInviteAccepted(prisma, invite.id, user.id),
+    );
     res.status(201).json({ userId: user.id, email: user.email });
   });
 

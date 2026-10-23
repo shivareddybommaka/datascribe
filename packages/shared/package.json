@@ -8,7 +8,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./permissions": "./src/permissions.ts",
-    "./constants": "./src/constants.ts"
+    "./constants": "./src/constants.ts",
+    "./notifications": "./src/notifications.ts"
   },
   "scripts": {
     "lint": "eslint src",

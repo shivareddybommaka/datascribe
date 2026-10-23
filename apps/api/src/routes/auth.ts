@@ -1,3 +1,4 @@
+import { notifyPasswordChanged } from '@datascribe/db/notifications';
 import { decrypt, encrypt, permissionKey } from '@datascribe/shared';
 import { Router, type Request, type Response } from 'express';
 import { rateLimit } from 'express-rate-limit';
@@ -6,6 +7,7 @@ import { authenticate, requireAuth, requireCsrf, resolveAuth } from '../auth/mid
 import { REFRESH_COOKIE, clearRefreshCookie, isIdle, issueSession } from '../auth/session';
 import type { Deps } from '../context';
 import { HttpError, badRequest, conflict, forbidden, unauthorized } from '../lib/errors';
+import { safeNotify } from '../lib/notify';
 import { PasswordSchema, burnPasswordCheck, hashPassword, verifyPassword } from '../lib/password';
 import { renderEmail } from '../lib/templates';
 import { randomToken, sha256, signMfaToken, verifyToken, type MfaClaims } from '../lib/tokens';
@@ -515,6 +517,7 @@ export function authRouter(deps: Deps): Router {
       subject: 'Your Datascribe password was changed',
       text: `Your password was just changed and all sessions were signed out. If this wasn't you, contact Datascribe support immediately.`,
     });
+    await safeNotify(deps.logger, 'password_changed', () => notifyPasswordChanged(prisma, user.id));
     res.json({ status: 'password_reset' });
   });
 

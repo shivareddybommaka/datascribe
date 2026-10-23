@@ -4,11 +4,13 @@ import {
   applyGatewayEvent,
   refundPayment,
 } from '@datascribe/billing';
+import { notifyPaymentRecorded } from '@datascribe/db/notifications';
 import { Router, type Request } from 'express';
 import { z } from 'zod';
 import { authenticate, requireAuth } from '../../auth/middleware';
 import type { Deps } from '../../context';
 import { badRequest, notFound } from '../../lib/errors';
+import { safeNotify } from '../../lib/notify';
 import { parse } from '../../lib/validate';
 import { Money, billingOrgWhere, requireStaffAll, serializePayment } from './common';
 
@@ -40,6 +42,10 @@ export function paymentsRouter(deps: Deps): Router {
           invoicePaid: result.invoicePaid,
         },
       });
+      const { paymentId, invoicePaid } = result;
+      await safeNotify(deps.logger, event.kind, () =>
+        notifyPaymentRecorded(prisma, paymentId, invoicePaid),
+      );
     }
     req.log.info(
       { gateway: gateway.name, eventId: event.eventId, outcome: result.outcome },

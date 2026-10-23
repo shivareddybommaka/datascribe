@@ -2,9 +2,11 @@ import { createHash, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { PassThrough } from 'node:stream';
 import type { Document, Prisma, PrismaClient } from '@datascribe/db';
+import { notifyUploadScanned } from '@datascribe/db/notifications';
 import { PDFDocument } from 'pdf-lib';
 import type { Logger } from 'pino';
 import { tiffPageCount, type UploadMime } from '../lib/filetype';
+import { safeNotify } from '../lib/notify';
 import type { VirusScanner } from '../lib/scanner';
 import type { DocumentStorage } from '../lib/storage';
 
@@ -118,6 +120,9 @@ export async function verifyDocument(
         data: { scanStatus: 'error' },
       });
       await systemAudit(prisma, doc, 'document.scan', { result: 'error', scanner: scanner.name });
+      await safeNotify(logger, 'upload_scan_failed', () =>
+        notifyUploadScanned(prisma, doc.id, 'error'),
+      );
       return updated;
     }
 
@@ -138,6 +143,8 @@ export async function verifyDocument(
       ...(outcome.signature ? { signature: outcome.signature } : {}),
       pageCount: outcome.pageCount,
     });
+    const result = outcome.clean ? 'clean' : 'infected';
+    await safeNotify(logger, `upload_${result}`, () => notifyUploadScanned(prisma, doc.id, result));
     return updated;
   } finally {
     running.delete(documentId);
