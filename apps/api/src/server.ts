@@ -1,4 +1,4 @@
-import { LocalObjectStore, createGateway } from '@datascribe/billing';
+import { LocalObjectStore, createGateway, repoPath } from '@datascribe/billing';
 import { prisma } from '@datascribe/db';
 import { loadKey } from '@datascribe/shared';
 import { createApp } from './app';
@@ -6,7 +6,6 @@ import { loadEnv } from './config/env';
 import { DEFAULT_RATE_LIMITS } from './context';
 import { createLogger } from './lib/logger';
 import { createSmtpMailer } from './lib/mailer';
-import { repoPath } from './lib/paths';
 
 const env = loadEnv();
 const logger = createLogger(env.LOG_LEVEL);

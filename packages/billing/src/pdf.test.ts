@@ -4,7 +4,14 @@ import path from 'node:path';
 import { PDFDocument } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
 import { groupDigits, pdfSafe, renderInvoicePdf, type InvoicePdfInput } from './pdf';
-import { LocalObjectStore, MemoryObjectStore, assertSafeKey, invoicePdfKey } from './storage';
+import {
+  LocalObjectStore,
+  MemoryObjectStore,
+  assertSafeKey,
+  invoicePdfKey,
+  repoPath,
+  repoRoot,
+} from './storage';
 
 const input = (lines = 2): InvoicePdfInput => ({
   company: { name: 'Datascribe', address: '1 Example St, Sydney NSW', email: 'billing@datascribe.example', taxId: 'ABN 00 000 000 000' },
@@ -69,6 +76,15 @@ describe('object stores', () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+
+  it('resolves relative storage dirs from the repo root', () => {
+    const here = import.meta.dirname;
+    const root = repoRoot(here);
+    expect(root).not.toBe(here);
+    expect(repoPath('.data/invoices', here)).toBe(path.join(root, '.data/invoices'));
+    expect(repoPath('/tmp/x')).toBe('/tmp/x');
+    expect(repoRoot('/')).toBe('/');
   });
 
   it('refuses path traversal', () => {
