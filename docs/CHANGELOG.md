@@ -1,6 +1,6 @@
 # Changelog
 
-## M0 — Foundation (in progress, 2026-10-23)
+## M0 — Foundation (2026-10-23, done locally; CI pending a GitHub remote)
 
 Built:
 
@@ -14,11 +14,13 @@ Built:
   env validation including the production LLM/BAA guard (§8.3).
 - Worker skeleton: BullMQ queues for the 7 pipeline stages (no-op processors until M5).
 - Web skeleton (Next 15 App Router + Tailwind 4, placeholder brand tokens).
-- Docker Compose: Postgres 16, Redis 7, MinIO, Mailpit, ClamAV (opt-in profile).
+- Docker Compose: Postgres 16, Redis 7, SeaweedFS S3 (replaces MinIO, D-014), Mailpit, ClamAV (opt-in profile).
+- First migration `init`, including a DB trigger that makes `AuditLog` append-only and RESTRICT FKs on it.
 - GitHub Actions CI: format, lint, typecheck, test, build.
 
 Tests: 90 passing (83 shared, 6 api, 1 worker). Coverage: shared 90.8% lines, api 96.8% lines.
+Verified locally: migrate, seed (idempotent), `pnpm dev` (api/worker/web up, health 200).
 
-Not done yet (blocked on local infra):
+Open:
 
-- First migration, running the seed, `pnpm dev` with all services, and seed-user login (login itself is M1).
+- CI has not run on GitHub yet (no remote). "Seed users can log in" is satisfied once M1 adds login.

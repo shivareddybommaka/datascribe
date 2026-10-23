@@ -20,14 +20,14 @@ docs/              DECISIONS.md, CHANGELOG.md, demos/
 ## Prerequisites
 
 - Node 22+ and pnpm 9 (`packageManager` is pinned)
-- Docker (for Postgres, Redis, MinIO, Mailpit)
+- Docker for Postgres, Redis, S3 (SeaweedFS) and Mailpit. On the Mac Studio this is Colima: `colima start`
 
 ## Run locally
 
 ```
 pnpm install
 cp .env.example .env
-docker compose up -d
+pnpm infra:up
 pnpm db:generate
 pnpm db:migrate
 pnpm db:seed

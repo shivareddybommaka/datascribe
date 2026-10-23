@@ -16,8 +16,8 @@
     "db:generate": "pnpm --filter @datascribe/db generate",
     "db:migrate": "pnpm --filter @datascribe/db migrate:dev",
     "db:seed": "pnpm --filter @datascribe/db seed",
-    "infra:up": "docker compose up -d",
-    "infra:down": "docker compose down"
+    "infra:up": "docker-compose up -d --wait",
+    "infra:down": "docker-compose down"
   },
   "devDependencies": {
     "@eslint/js": "^9.25.0",

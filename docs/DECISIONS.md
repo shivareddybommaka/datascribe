@@ -76,6 +76,20 @@ The dev machine already runs an unrelated Postgres on 5432. Compose maps its por
 pnpm 9 is installed to `~/.local` for the `nova` account (Homebrew's global prefix belongs to `admin`).
 `packageManager` in `package.json` pins the version for CI.
 
+## D-014 — SeaweedFS replaces MinIO for local S3 (2026-10-23)
+
+`minio/minio` is no longer on Docker Hub ("pull access denied"), and `quay.io/minio/minio` returns 401.
+Following §8.1's rule for discontinued providers, local S3 now uses SeaweedFS's S3 gateway
+(`chrislusf/seaweedfs`, Apache-2.0) on host port 9000, so `S3_ENDPOINT` is unchanged. Production still
+targets AWS S3. Code only talks to the S3 API through the AWS SDK, so the backend is swappable. There's no
+web console. Buckets are created by the API at startup (M4).
+
+## D-015 — Colima as the local Docker runtime
+
+OrbStack and Docker Desktop are tied to a GUI login session, and the agent runs headless as `nova`.
+Colima (`brew install colima docker docker-compose`, run from `admin`) runs per user with no GUI.
+Scripts use the standalone `docker-compose` binary, which avoids editing `~/.docker/config.json`.
+
 ## D-013 — Money and encrypted fields
 
 Money is `Decimal(12,2)` (per-page prices `Decimal(12,4)`). Encrypted PHI fields (`Case.patientName`,

@@ -724,9 +724,10 @@ model AuditLog {
   metadata       Json     @default("{}")
   createdAt      DateTime @default(now())
 
-  actor        User?         @relation("AuditActor", fields: [actorId], references: [id])
-  impersonator User?         @relation("AuditImpersonator", fields: [impersonatorId], references: [id])
-  organization Organization? @relation(fields: [organizationId], references: [id])
+  // Restrict, not SetNull: deleting a user must never rewrite audit history.
+  actor        User?         @relation("AuditActor", fields: [actorId], references: [id], onDelete: Restrict)
+  impersonator User?         @relation("AuditImpersonator", fields: [impersonatorId], references: [id], onDelete: Restrict)
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Restrict)
 
   @@index([actorId, createdAt])
   @@index([entity, entityId])
