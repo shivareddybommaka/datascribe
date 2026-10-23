@@ -16,6 +16,7 @@
     "db:generate": "pnpm --filter @datascribe/db generate",
     "db:migrate": "pnpm --filter @datascribe/db migrate:dev",
     "db:seed": "pnpm --filter @datascribe/db seed",
+    "db:seed:demo": "pnpm --filter @datascribe/db seed:demo",
     "infra:up": "docker-compose up -d --wait",
     "infra:down": "docker-compose down"
   },

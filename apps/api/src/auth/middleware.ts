@@ -61,7 +61,8 @@ export function requirePermission(module: Module, action: Action): RequestHandle
 export function requireCsrf(deps: Deps): RequestHandler {
   return (req, _res, next) => {
     const origin = req.get('origin');
-    if (req.get('x-datascribe-csrf') !== '1' || (origin && origin !== deps.env.APP_URL)) {
+    const trusted = [deps.env.APP_URL, ...deps.env.EXTRA_TRUSTED_ORIGINS];
+    if (req.get('x-datascribe-csrf') !== '1' || (origin && !trusted.includes(origin))) {
       throw forbidden('CSRF check failed');
     }
     next();

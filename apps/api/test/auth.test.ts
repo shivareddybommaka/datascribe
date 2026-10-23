@@ -267,6 +267,19 @@ describe('sessions', () => {
     expect((await agent.post('/api/v1/auth/logout')).status).toBe(403);
   });
 
+  it('trusts EXTRA_TRUSTED_ORIGINS for the CSRF origin check, nothing else', async () => {
+    const extra = 'http://127.0.0.1:55704';
+    const { app: previewApp } = buildApp({ envOverrides: { EXTRA_TRUSTED_ORIGINS: extra } });
+    const agent = (await login(previewApp, SEED.acmeUser)).agent;
+    expect((await agent.post('/api/v1/auth/refresh').set(CSRF).set('origin', extra)).status).toBe(
+      200,
+    );
+    expect(
+      (await agent.post('/api/v1/auth/refresh').set(CSRF).set('origin', 'https://evil.example'))
+        .status,
+    ).toBe(403);
+  });
+
   it('refresh without a cookie, or with an unknown one, is 401', async () => {
     expect((await api().post('/api/v1/auth/refresh').set(CSRF)).status).toBe(401);
     const res = await api()

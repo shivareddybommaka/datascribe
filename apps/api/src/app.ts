@@ -54,7 +54,7 @@ export function createApp(deps: Deps): Express {
     }),
   );
   app.use(helmet());
-  app.use(cors({ origin: [env.APP_URL], credentials: true }));
+  app.use(cors({ origin: [env.APP_URL, ...env.EXTRA_TRUSTED_ORIGINS], credentials: true }));
   // Payment webhooks are verified against the exact bytes received, so they get the raw body
   // (express.json then skips them).
   app.use('/api/v1/payments/webhook', express.raw({ type: () => true, limit: '1mb' }));

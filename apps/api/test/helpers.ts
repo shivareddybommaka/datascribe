@@ -31,7 +31,13 @@ export function testEnv(overrides: Record<string, string> = {}) {
 
 const GENEROUS: RateLimits = { windowMs: 60_000, authPerWindow: 10_000, publicPerWindow: 10_000 };
 
-export function buildApp(opts: { rateLimits?: RateLimits; medical?: Deps['medical'] } = {}) {
+export function buildApp(
+  opts: {
+    rateLimits?: RateLimits;
+    medical?: Deps['medical'];
+    envOverrides?: Record<string, string>;
+  } = {},
+) {
   const mailer = new MemoryMailer();
   const gateway = new FakeGateway({
     secret: 'test-fake-gateway-secret',
@@ -39,7 +45,7 @@ export function buildApp(opts: { rateLimits?: RateLimits; medical?: Deps['medica
   });
   const store = new MemoryObjectStore();
   const app = createApp({
-    env: testEnv(),
+    env: testEnv(opts.envOverrides),
     prisma,
     mailer,
     logger: createLogger('silent'),

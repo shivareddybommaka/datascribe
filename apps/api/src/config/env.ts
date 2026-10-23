@@ -18,6 +18,17 @@ export const EnvSchema = z
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     API_PORT: z.coerce.number().int().positive().default(4000),
     APP_URL: z.string().url().default('http://localhost:3000'),
+    /** Extra browser origins trusted for CORS/CSRF (comma-separated), e.g. a local preview proxy. */
+    EXTRA_TRUSTED_ORIGINS: z
+      .string()
+      .optional()
+      .transform((v) =>
+        (v ?? '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+      )
+      .pipe(z.array(z.string().url())),
     DATABASE_URL: z.string().url(),
     JWT_ACCESS_SECRET: secret,
     JWT_REFRESH_SECRET: secret,
@@ -46,6 +57,13 @@ export const EnvSchema = z
       .default('info'),
   })
   .superRefine((env, ctx) => {
+    if (env.NODE_ENV === 'production' && env.EXTRA_TRUSTED_ORIGINS.length > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['EXTRA_TRUSTED_ORIGINS'],
+        message: 'is for local previews only; not allowed in production',
+      });
+    }
     // §8.3: never run a real LLM over PHI in production without a signed BAA.
     if (
       env.NODE_ENV === 'production' &&
