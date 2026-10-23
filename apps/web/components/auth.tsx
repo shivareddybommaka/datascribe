@@ -3,7 +3,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { usePathname, useRouter } from 'next/navigation';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { api, logout, onAuthChange, refreshSession } from '@/lib/api';
+import { api, hasAccessToken, logout, onAuthChange, refreshSession } from '@/lib/api';
 import type { Me } from '@/lib/types';
 
 const MeContext = createContext<Me | null>(null);
@@ -21,8 +21,10 @@ export function useCan(key: string): boolean {
 }
 
 /**
- * Console guard: restore the session from the refresh cookie, load /auth/me, require an internal
- * (staff) account, otherwise send to /console/login.
+ * Console guard: restore the session from the refresh cookie (unless a token is already in
+ * memory, e.g. right after sign-in or while impersonating), load /auth/me, require an internal
+ * (staff) account, otherwise send to /console/login. A super admin viewing as a client user
+ * (read-only impersonation) is let through; the shell shows the banner.
  */
 export function RequireStaff({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -31,11 +33,15 @@ export function RequireStaff({ children }: { children: ReactNode }) {
   const [restored, setRestored] = useState<boolean | null>(null);
 
   useEffect(() => {
-    refreshSession().then((t) => setRestored(!!t));
+    if (hasAccessToken()) setRestored(true);
+    else refreshSession().then((t) => setRestored(!!t));
     return onAuthChange((signedIn) => {
       if (!signedIn) {
         qc.clear();
         router.replace(`/console/login?next=${encodeURIComponent(pathname)}`);
+      } else {
+        // a different token may mean a different user (impersonation start/stop/expiry)
+        void qc.invalidateQueries({ queryKey: ['me'] });
       }
     });
   }, [qc, router, pathname]);
@@ -53,7 +59,7 @@ export function RequireStaff({ children }: { children: ReactNode }) {
   if (restored === null || (restored && me.isPending)) {
     return <p className="p-10 text-sm text-muted">Loading…</p>;
   }
-  if (me.data && me.data.user.orgType !== 'internal') {
+  if (me.data && me.data.user.orgType !== 'internal' && !me.data.impersonation) {
     return (
       <div className="mx-auto max-w-md p-10 text-sm">
         <p className="text-ink">The staff console is for Datascribe staff only.</p>

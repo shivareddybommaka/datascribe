@@ -4,6 +4,7 @@ import type { MedicalData } from '@datascribe/medical-data';
 import type { Logger } from 'pino';
 import type { Env } from './config/env';
 import type { Mailer } from './lib/mailer';
+import type { MedicalSwitches } from './lib/medical-switches';
 
 export interface RateLimits {
   windowMs: number;
@@ -29,6 +30,8 @@ export interface Deps {
   rateLimits: RateLimits;
   /** §8 adapters. Optional so tests default to the deterministic mocks. */
   medical?: MedicalData;
+  /** admin on/off per medical upstream (M2 settings); the adapters read it on every call */
+  medicalSwitches?: MedicalSwitches;
   /** M8 billing: Stripe (test) / Fake / Razorpay stub, and where invoice PDFs are kept */
   gateway: PaymentGateway;
   store: ObjectStore;

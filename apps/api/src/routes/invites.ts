@@ -2,10 +2,12 @@ import { CLIENT_ROLES, broadestScope } from '@datascribe/shared';
 import { Router, type Request } from 'express';
 import { z } from 'zod';
 import type { AuthContext } from '../auth/context';
+import { assertCanGrant, rolePermissions } from '../auth/grants';
 import { authenticate, requireAuth, requirePermission } from '../auth/middleware';
 import type { Deps } from '../context';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors';
 import { PasswordSchema, hashPassword } from '../lib/password';
+import { renderEmail } from '../lib/templates';
 import { randomToken, sha256 } from '../lib/tokens';
 import { parse } from '../lib/validate';
 import { Email, rateLimiter } from './auth';
@@ -23,7 +25,8 @@ export interface InviteInput {
  * - `users:create` at `all` may invite into any org; at `firm`, only into the inviter's own org.
  * - Client orgs get client roles only; the internal org gets internal roles only.
  * - Only super_admin may grant super_admin (ops_manager "cannot touch super_admin").
- * Reused by CRM lead conversion (M7).
+ * - The role may only carry permissions the inviter holds (audit M4; super_admin exempt).
+ * Used by POST /invites and POST /admin/users.
  */
 export async function createInvite(
   deps: Deps,
@@ -49,6 +52,8 @@ export async function createInvite(
   if (role.key === 'super_admin' && !auth.roles.includes('super_admin')) {
     throw forbidden('Only a super admin can grant super admin');
   }
+  assertCanGrant(auth, await rolePermissions(prisma, role.id, org.type));
+  if (org.status !== 'active') throw badRequest('org_inactive', 'This organisation is suspended');
   return issueInvite(deps, req, {
     org,
     role,
@@ -96,8 +101,11 @@ export async function issueInvite(
   });
   await mailer.send({
     to: args.email,
-    subject: `You're invited to Datascribe (${args.org.name})`,
-    text: `${args.inviter.name} invited you to join ${args.org.name} on Datascribe.\nAccept: ${env.APP_URL}/invite/accept?token=${token}\nThis link expires in 72 hours.`,
+    ...(await renderEmail(prisma, 'invite', {
+      inviterName: args.inviter.name,
+      organizationName: args.org.name,
+      acceptUrl: `${env.APP_URL}/invite/accept?token=${token}`,
+    })),
   });
   return {
     id: invite.id,

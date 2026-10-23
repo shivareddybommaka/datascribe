@@ -7,6 +7,7 @@ import { REFRESH_COOKIE, clearRefreshCookie, isIdle, issueSession } from '../aut
 import type { Deps } from '../context';
 import { HttpError, badRequest, conflict, forbidden, unauthorized } from '../lib/errors';
 import { PasswordSchema, burnPasswordCheck, hashPassword, verifyPassword } from '../lib/password';
+import { renderEmail } from '../lib/templates';
 import { randomToken, sha256, signMfaToken, verifyToken, type MfaClaims } from '../lib/tokens';
 import { newTotpSecret, totpQrDataUrl, totpUri, verifyTotp } from '../lib/totp';
 import { parse } from '../lib/validate';
@@ -81,47 +82,57 @@ export function authRouter(deps: Deps): Router {
     return { accessToken, mustResetPassword: user.mustResetPassword };
   }
 
-  async function recordFailure(
-    req: Request,
-    userId: string,
-    organizationId: string,
-    reason: string,
-  ) {
-    const updated = await prisma.user.update({
-      where: { id: userId },
-      data: { failedLoginCount: { increment: 1 } },
-    });
-    await req.audit({
-      action: 'auth.login.failed',
-      entity: 'User',
-      entityId: userId,
-      actorId: userId,
-      organizationId,
-      metadata: { reason },
-    });
-    if (updated.failedLoginCount >= MAX_FAILED_LOGINS) {
-      await prisma.user.update({
-        where: { id: userId },
-        data: { lockedUntil: new Date(Date.now() + LOCKOUT_MS), failedLoginCount: 0 },
-      });
-      await req.audit({
-        action: 'auth.lockout',
-        entity: 'User',
-        entityId: userId,
-        actorId: userId,
-        organizationId,
-      });
-    }
+  const accountLocked = () =>
+    new HttpError(423, 'account_locked', 'Too many failed attempts. Try again in 15 minutes.');
+
+  /**
+   * Take one of the MAX_FAILED_LOGINS attempts atomically, before the password or code is checked
+   * (audit M2: concurrent guesses could all pass a read-then-check). The attempt that reaches the
+   * limit sets the lock in the same statement, so later guesses get 423 without being verified.
+   * An expired lock starts a fresh count. Returns this attempt's number (1..MAX).
+   */
+  async function reserveAttempt(userId: string): Promise<number> {
+    const lockSeconds = LOCKOUT_MS / 1000;
+    const rows = await prisma.$queryRaw<{ failedLoginCount: number }[]>`
+      UPDATE "User" SET
+        "failedLoginCount" = CASE WHEN "lockedUntil" <= now() THEN 1 ELSE "failedLoginCount" + 1 END,
+        "lockedUntil" = CASE
+          WHEN (CASE WHEN "lockedUntil" <= now() THEN 1 ELSE "failedLoginCount" + 1 END) >= ${MAX_FAILED_LOGINS}
+          THEN now() + make_interval(secs => ${lockSeconds})
+          ELSE NULL END,
+        "updatedAt" = now()
+      WHERE id = ${userId}
+        AND ("lockedUntil" <= now() OR ("lockedUntil" IS NULL AND "failedLoginCount" < ${MAX_FAILED_LOGINS}))
+      RETURNING "failedLoginCount"`;
+    if (!rows[0]) throw accountLocked();
+    return rows[0].failedLoginCount;
   }
 
-  function assertNotLocked(user: { lockedUntil: Date | null }) {
-    if (user.lockedUntil && user.lockedUntil > new Date()) {
-      throw new HttpError(
-        423,
-        'account_locked',
-        'Too many failed attempts. Try again in 15 minutes.',
-      );
-    }
+  /** The secret was right: give the attempt back (and lift the lock this attempt set, if any). */
+  async function releaseAttempt(userId: string, attempt: number) {
+    await prisma.$executeRaw`
+      UPDATE "User" SET
+        "failedLoginCount" = GREATEST("failedLoginCount" - 1, 0),
+        "lockedUntil" = CASE WHEN ${attempt} >= ${MAX_FAILED_LOGINS} THEN NULL ELSE "lockedUntil" END,
+        "updatedAt" = now()
+      WHERE id = ${userId}`;
+  }
+
+  /** The secret was wrong: the reserved attempt stays used; audit, and audit the lockout. */
+  async function recordFailure(
+    req: Request,
+    user: { id: string; organizationId: string },
+    attempt: number,
+    reason: string,
+  ) {
+    const base = {
+      entity: 'User',
+      entityId: user.id,
+      actorId: user.id,
+      organizationId: user.organizationId,
+    };
+    await req.audit({ ...base, action: 'auth.login.failed', metadata: { reason } });
+    if (attempt >= MAX_FAILED_LOGINS) await req.audit({ ...base, action: 'auth.lockout' });
   }
 
   // ── Login ──────────────────────────────────────────────────────────────
@@ -135,11 +146,12 @@ export function authRouter(deps: Deps): Router {
       await burnPasswordCheck(body.password);
       throw invalidCredentials();
     }
-    assertNotLocked(user);
+    const attempt = await reserveAttempt(user.id);
     if (!(await verifyPassword(user.passwordHash, body.password))) {
-      await recordFailure(req, user.id, user.organizationId, 'password');
+      await recordFailure(req, user, attempt, 'password');
       throw invalidCredentials();
     }
+    await releaseAttempt(user.id, attempt);
     if (user.status !== 'active' || user.organization.status !== 'active') {
       throw forbidden('This account is suspended');
     }
@@ -200,12 +212,13 @@ export function authRouter(deps: Deps): Router {
       req.body,
     );
     const user = await prisma.user.findUniqueOrThrow({ where: { id: subject.userId } });
-    assertNotLocked(user);
     if (!user.mfaSecret) throw badRequest('mfa_not_set_up', 'Set up MFA first');
+    const attempt = await reserveAttempt(user.id);
     if (!verifyTotp(code, decrypt(user.mfaSecret, deps.phiKey))) {
-      await recordFailure(req, user.id, user.organizationId, 'mfa_code');
+      await recordFailure(req, user, attempt, 'mfa_code');
       throw unauthorized('invalid_mfa_code', 'That code is not valid');
     }
+    await releaseAttempt(user.id, attempt);
     if (!user.mfaEnabled) {
       await prisma.user.update({ where: { id: user.id }, data: { mfaEnabled: true } });
       await req.audit({
@@ -315,6 +328,21 @@ export function authRouter(deps: Deps): Router {
   r.get('/auth/me', authenticate(deps), async (req, res) => {
     const auth = requireAuth(req);
     const user = await prisma.user.findUniqueOrThrow({ where: { id: auth.user.id } });
+    // banner data (§4.4): who is viewing, as which firm, until when
+    const impersonation = auth.impersonatorId
+      ? {
+          by: await prisma.user.findUniqueOrThrow({
+            where: { id: auth.impersonatorId },
+            select: { id: true, name: true, email: true },
+          }),
+          organization: await prisma.organization.findUniqueOrThrow({
+            where: { id: auth.user.organizationId },
+            select: { id: true, name: true },
+          }),
+          expiresAt: (await prisma.session.findUniqueOrThrow({ where: { id: auth.sessionId } }))
+            .expiresAt,
+        }
+      : null;
     res.json({
       user: {
         ...auth.user,
@@ -324,6 +352,7 @@ export function authRouter(deps: Deps): Router {
       roles: auth.roles,
       permissions: auth.permissions.map(permissionKey).sort(),
       impersonatorId: auth.impersonatorId ?? null,
+      impersonation,
     });
   });
 
@@ -446,8 +475,10 @@ export function authRouter(deps: Deps): Router {
       });
       await mailer.send({
         to: user.email,
-        subject: 'Reset your Datascribe password',
-        text: `Reset your password:\n${env.APP_URL}/reset-password?token=${token}\nThis link expires in 1 hour. If you didn't ask for this, ignore this email.`,
+        ...(await renderEmail(prisma, 'password_reset', {
+          name: user.name,
+          resetUrl: `${env.APP_URL}/reset-password?token=${token}`,
+        })),
       });
     }
     res.status(202).json({ status: 'check_email' });

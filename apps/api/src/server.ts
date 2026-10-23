@@ -7,6 +7,7 @@ import { loadEnv } from './config/env';
 import { DEFAULT_RATE_LIMITS } from './context';
 import { createLogger } from './lib/logger';
 import { createSmtpMailer } from './lib/mailer';
+import { MedicalSwitches } from './lib/medical-switches';
 
 const env = loadEnv();
 const logger = createLogger(env.LOG_LEVEL);
@@ -17,6 +18,12 @@ const gateway = createGateway({
 if (gateway.name === 'fake') {
   logger.warn('payments use the Fake gateway (no STRIPE_SECRET_KEY): checkout is simulated');
 }
+// Not awaited: boot must not depend on the DB being ready; until it loads, every source is on
+// and the first adapter call retries the load.
+const medicalSwitches = new MedicalSwitches(prisma);
+medicalSwitches.load().catch((err: Error) => {
+  logger.warn({ err: { name: err.name } }, 'medical switches not loaded yet');
+});
 const app = createApp({
   env,
   logger,
@@ -29,7 +36,9 @@ const app = createApp({
     openFdaApiKey: env.OPENFDA_API_KEY || undefined,
     cache: new PrismaCacheStore(prisma.medicalApiCache),
     logger,
+    isEnabled: medicalSwitches.isEnabled,
   }),
+  medicalSwitches,
   gateway,
   store: new LocalObjectStore(repoPath(env.INVOICE_STORAGE_DIR)),
 });

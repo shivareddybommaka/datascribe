@@ -416,6 +416,107 @@ would also have published the Datascribe dev site on that hostname. Web dev now 
   links and emails a new one; `/auth/login` refuses sign-in with `password_reset_required` until it
   is used (or "Forgot password"). Each action writes an `admin.user.*` audit row.
 
+## D-060 — M2 roles, role assignment and audit finding M4 (2026-10-24)
+
+- **Routes.** `GET/POST /roles`, `GET/PATCH/DELETE /roles/:id` (§9), `GET /permissions`,
+  `POST /admin/users` (create = invite, D-022) and `PUT /admin/users/:id/roles` (replace roles).
+- **Who.** Reading roles needs `users:view`; client admins only see client roles. Changing roles needs
+  the internal org and `users:create|edit|delete` at `all` (super_admin, ops_manager; delete is
+  super_admin only by the seed matrix). Roles are global rows shared by every firm, so client admins
+  never edit them.
+- **Built-in roles.** Never deleted. `super_admin` is locked (always every permission, so nobody can
+  lock the platform out). Other built-in roles are editable by super_admin only.
+- **Custom roles.** `group` internal or client, fixed at creation. Key is `custom_<slug>` unless given;
+  built-in keys are refused. A role in use (users or unexpired invites) can't be deleted; deleting
+  removes its accepted/expired invite rows (the audit log keeps their history).
+- **Client roles** never hold `all` scope and only use client modules (`CLIENT_MODULES`: cases,
+  documents, deliverables, invoices, payments, subscriptions, users, dashboard_client). The request is
+  rejected (400) rather than silently narrowed. Load-time narrowing (D-017) still applies as a backstop.
+- **`system_settings`** is reserved for the built-in super_admin role (`RESERVED_MODULES`): custom roles
+  can't hold it, so "settings are super-admin only" needs no special case in the routes.
+- **Audit M4: grant only what you hold.** A role create/edit, invite or role assignment may only hand
+  out permissions the actor holds: same module and action at the same or a broader scope
+  (`holdsPermission`). super_admin is exempt. A non-super admin can only edit roles that sit entirely
+  within their own grants. Consequence: ops_manager can no longer invite or assign roles with
+  permissions it lacks (e.g. client_admin, case_manager: `documents:edit`); super_admin does those. CRM
+  lead conversion still invites a firm's first client_admin through `issueInvite()` (D-018).
+- **Assignment rules.** Roles must match the org type; client admins assign client roles in their own
+  firm; only super_admin grants super_admin; at least one active super_admin must remain. Audit row
+  `admin.user.roles_changed` with before/after keys.
+- **Takes effect without restart (M2 DoD).** Permissions are read from the DB on every request (D-017),
+  so a matrix edit or role change applies on the holder's next request. Sessions are not revoked.
+
+## D-061 — Read-only impersonation (§4.4, 2026-10-24)
+
+- `POST /admin/impersonate/:userId`: super_admin (internal org) only, target must be an active user in
+  an active **client** org. It creates a `Session` with `impersonatorId` (new column, migration
+  `20261024120000_admin_impersonation`) and returns an access token with `imp`. No refresh cookie is
+  set, so the super admin's own refresh cookie is untouched and the impersonation ends when the
+  15-minute access token expires (or on stop, or reload: the web client keeps it in memory only).
+- **Binding.** The token's `imp` must equal the session's `impersonatorId` (both ways), so `imp` can't
+  be forged onto a normal session or dropped from an impersonation one. Each request also re-checks that
+  the impersonator is still an active super_admin.
+- **Read-only.** While impersonating, every method other than GET/HEAD/OPTIONS gets 403
+  `impersonation_read_only` in `resolveAuth`, except `POST /admin/impersonate/stop`. This covers every
+  authenticated route, including ones added later.
+- **Audit.** Start and stop are rows with `actorId` = the client user and `impersonatorId` = the super
+  admin (`admin.impersonation.started|stopped`); every other audit row written during the session
+  carries `impersonatorId` automatically.
+- **UI.** The console accepts a client user only while impersonating, and shows an amber banner on every
+  screen (who, which firm, read-only, end time) with a Stop button. The client portal (M4) will reuse
+  the same banner.
+
+## D-062 — Organizations admin (2026-10-24)
+
+- `GET /admin/organizations`, `GET/PATCH /admin/organizations/:id`, `POST …/suspend|reactivate`.
+  Internal staff with `users:<action>` at `all` (super_admin, ops_manager): organisations are part of
+  "users and clients" (§4.1). There's no separate module in the fixed list.
+- PATCH: name, status, plan, currency, `enforceMfa`, `retentionDays` (30–3650, default 180, §10) and
+  `customPricing { priceMonthly, includedPages, overagePerPage }` (or null), the last three in
+  `Organization.settings`.
+- **Custom pricing** replaces the plan's fee, included pages and overage price in the monthly invoicing
+  run (`effectivePlanPricing` in `packages/billing`); the invoice line reads "<plan> (custom pricing)".
+- **Suspend** revokes every session in the firm at once; logins were already refused for suspended
+  orgs (D-017). The Datascribe org can't be suspended. Rows: `admin.org.updated|suspended|reactivated`.
+- Creating organisations stays with self-registration and CRM conversion (§9 lists `POST
+/organizations`; not needed for the M2 AC).
+
+## D-063 — Settings and email templates (2026-10-24)
+
+- `GET /admin/settings`, `PUT /admin/settings/company|sla|notifications|medical`, all needing
+  `system_settings` (super_admin only, D-060) and the internal org. Each section is a `Setting` row;
+  reads merge over defaults and fall back to them if a stored row no longer validates.
+  - `company`: company details plus invoice settings (tax label/rate, per-currency tax, invoice
+    prefix, payment terms); billing reads it (`getBillingSettings`).
+  - `sla`: due-in days per priority and the amber "due soon" window, for the M6 case queue.
+  - `notifications`: email / in-app switch per §5.8 event, for M9. Security emails are not listed.
+  - `medical`: on/off per upstream (§8.4) plus the provider mode, whether an openFDA key is set, and
+    last-24h usage from `deps.medical.usageStats()`. The API reads the switches through
+    `MedicalSwitches`, updated at once on save and reloaded every 30 s, so other processes follow
+    without a restart. The worker doesn't use medical adapters yet (M5b); it should use the same class.
+- **Email templates** (`/admin/email-templates`, list / PUT / DELETE = restore default / POST preview):
+  `invite`, `password_reset`, `mfa_reset`, now used by those emails. Plain text only (mail is sent as
+  `text`), so no HTML injection is possible. Each template declares its variables; saving fails on
+  unknown `{{names}}`, stray braces, or a missing required variable (e.g. the accept link). Rendering is
+  one pass: values are inserted literally (a value containing `{{x}}` isn't expanded) and line breaks
+  are removed from subjects (no header injection). Stored as one `email_templates` setting.
+
+## D-064 — Audit log viewer and lockout race (audit M2) (2026-10-24)
+
+- `GET /admin/audit-logs`: internal staff with `audit_log:view` (super_admin, ops_manager). Filters:
+  `user` (actor or impersonator name/email), `actorId`, `action` (prefix, e.g. `admin.role`), `entity`,
+  `entityId`, `organizationId`, `impersonatedOnly`, `from`/`to` (a plain date `to` is inclusive).
+  Newest first, `limit`/`offset`. No write routes exist (D-008).
+- `GET /admin/audit-logs/export`: CSV via `lib/csv.ts` (formula-injection safe), needs
+  `audit_log:export` (super_admin), max 10,000 rows per export (narrow the filters), and is itself
+  audited (`admin.audit.export`).
+- **Lockout race (audit M2).** Before a password or TOTP code is checked, the login reserves one of the
+  5 attempts with a single conditional `UPDATE … RETURNING`: it only succeeds while the account isn't
+  locked and fewer than 5 attempts are used, and the attempt that reaches 5 sets `lockedUntil` in the
+  same statement. A correct secret gives its attempt back; an expired lock starts a fresh count. Tested
+  with 20 parallel wrong passwords (at most 5 are checked, the rest get 423) and 12 parallel wrong MFA
+  codes.
+
 ## D-013 — Money and encrypted fields
 
 Money is `Decimal(12,2)` (per-page prices `Decimal(12,4)`). Encrypted PHI fields (`Case.patientName`,

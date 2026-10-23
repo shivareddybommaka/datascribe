@@ -290,6 +290,9 @@ model Session {
   surface          String    @default("portal")
   /// bumped on every refresh; refresh is refused once idle longer than the surface's timeout
   lastUsedAt       DateTime  @default(now())
+  /// set for read-only impersonation sessions (§4.4): the super admin acting as this user.
+  /// Such sessions have no refresh token in a cookie and end with the access token (D-061).
+  impersonatorId   String?
   expiresAt        DateTime
   revokedAt        DateTime?
   ip               String?

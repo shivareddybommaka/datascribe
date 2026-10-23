@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { logout } from '@/lib/api';
+import type { Me } from '@/lib/types';
+import { ImpersonationBanner } from './admin/impersonation';
 import { useMe } from './auth';
 import { Logo } from './logo';
 import { cn } from './ui';
@@ -12,14 +14,16 @@ interface NavItem {
   href: string;
   label: string;
   exact?: boolean;
+  /** permission-key prefix needed to see the item (UI hint only) */
+  perm?: string;
 }
 
-/** Console sections; `module` is a UI hint for who sees the tab (the API enforces access). */
-const SECTIONS: { label: string; href: string; module: string; items: NavItem[] }[] = [
+/** Console sections; `modules` is a UI hint for who sees the tab (the API enforces access). */
+const SECTIONS: { label: string; href: string; modules: string[]; items: NavItem[] }[] = [
   {
     label: 'CRM',
     href: '/console/crm',
-    module: 'crm',
+    modules: ['crm'],
     items: [
       { href: '/console/crm', label: 'Overview', exact: true },
       { href: '/console/crm/leads', label: 'Leads' },
@@ -30,7 +34,7 @@ const SECTIONS: { label: string; href: string; module: string; items: NavItem[] 
   {
     label: 'Finance',
     href: '/console/finance',
-    module: 'invoices',
+    modules: ['invoices'],
     items: [
       { href: '/console/finance', label: 'Overview', exact: true },
       { href: '/console/finance/invoices', label: 'Invoices' },
@@ -38,20 +42,34 @@ const SECTIONS: { label: string; href: string; module: string; items: NavItem[] 
       { href: '/console/finance/plans', label: 'Plans' },
     ],
   },
+  {
+    label: 'Admin',
+    href: '/console/admin',
+    modules: ['users', 'system_settings', 'audit_log'],
+    items: [
+      { href: '/console/admin/users', label: 'Users', perm: 'users:view:' },
+      { href: '/console/admin/roles', label: 'Roles', perm: 'users:view:' },
+      { href: '/console/admin/organizations', label: 'Organizations', perm: 'users:view:all' },
+      { href: '/console/admin/settings', label: 'Settings', perm: 'system_settings:view:' },
+      { href: '/console/admin/audit', label: 'Audit log', perm: 'audit_log:view:' },
+    ],
+  },
 ];
+
+const holds = (me: Me, prefix: string) => me.permissions.some((p) => p.startsWith(prefix));
 
 export function ConsoleShell({ children }: { children: ReactNode }) {
   const me = useMe();
   const pathname = usePathname();
-  const visible = SECTIONS.filter((s) =>
-    me.permissions.some((p) => p.startsWith(`${s.module}:view:`)),
-  );
-  const section = SECTIONS.find((s) => pathname.startsWith(s.href)) ?? SECTIONS[0]!;
+  const visible = SECTIONS.filter((s) => s.modules.some((m) => holds(me, `${m}:view:`)));
+  const section = SECTIONS.find((s) => pathname.startsWith(s.href)) ?? visible[0] ?? SECTIONS[0]!;
+  const items = section.items.filter((i) => !i.perm || holds(me, i.perm));
   const isActive = (item: NavItem) =>
     item.exact ? pathname === item.href : pathname.startsWith(item.href);
 
   return (
     <div className="min-h-screen bg-surface">
+      <ImpersonationBanner />
       <header className="border-b border-line bg-white">
         <div className="mx-auto flex max-w-7xl items-center gap-8 px-6 py-3">
           <Logo height={32} href={visible[0]?.href ?? '/console/crm'} />
@@ -73,7 +91,7 @@ export function ConsoleShell({ children }: { children: ReactNode }) {
             </nav>
           )}
           <nav aria-label={section.label} className="flex gap-1">
-            {section.items.map((item) => {
+            {items.map((item) => {
               const active = isActive(item);
               return (
                 <Link
@@ -94,9 +112,11 @@ export function ConsoleShell({ children }: { children: ReactNode }) {
             <span className="text-muted" title={me.roles.join(', ')}>
               {me.user.name}
             </span>
-            <button onClick={() => logout()} className="text-brand-700 hover:underline">
-              Sign out
-            </button>
+            {!me.impersonation && (
+              <button onClick={() => logout()} className="text-brand-700 hover:underline">
+                Sign out
+              </button>
+            )}
           </div>
         </div>
       </header>
