@@ -1,5 +1,29 @@
 # Changelog
 
+## M5a medical data adapters (2026-10-24, branch `pipeline/m5-adapters`)
+
+Adapter layer of M5 (§8). The processing pipeline (M5b) waits for M4 uploads.
+
+- `packages/medical-data`: real adapters for NLM Clinical Tables ICD-10-CM (`DiagnosisCoder`) and HCPCS
+  (`ProcedureCoder`), RxNav approximate match (`MedicationNormalizer`), openFDA drug labels
+  (`DrugInfoProvider`) and MedlinePlus Connect (`ConsumerHealthInfo`); deterministic mocks for every
+  interface including `OcrProvider` and `SummaryProvider`. `createMedicalData()` picks providers from
+  `MEDICAL_DATA_PROVIDER=nlm|mock` (default mock). Each provider was checked against its official docs
+  (D-050..D-053); openFDA now says a key is required (D-052).
+- `deidentifyTerm()`: strips names, dates/DOB, MRNs and case/claim/account numbers, SSNs, phones,
+  emails, URLs, addresses and ages, and refuses free text (D-054). Applied in routes and adapters.
+- `ProviderClient` resilience wrapper: cache (Prisma `MedicalApiCache` or in-memory, hashed keys, 30-day
+  TTL), per-provider token bucket, 10 s timeout, 3 retries with backoff, circuit breaker falling back to
+  "uncoded", provider-enable switch, logs with provider/latency/status only (D-055).
+- Usage stats: `usageStats()` gives last-24h calls, errors, error rate, cache hits per upstream for the M2
+  admin settings page.
+- API: `GET /api/v1/medical/icd10 | rxnorm | drug-label | define`, staff only (internal + `cases:edit`),
+  Zod validation, de-identification, attribution in every response (D-056).
+- Recorded fixtures for every real provider (synthetic terms, replayed by exact URL), optional live smoke
+  tests behind `RUN_LIVE_API_TESTS=true`.
+- Tests: medical-data 146 (+5 live, skipped), api +12 (medical routes, 403 for sales/finance/QA/client
+  users, PrismaCacheStore on the test DB).
+
 ## M7b — CRM console UI (2026-10-24) → M7 done
 
 - Staff console sign-in: password → TOTP, or first-time MFA enrolment with a QR code. Session kept in

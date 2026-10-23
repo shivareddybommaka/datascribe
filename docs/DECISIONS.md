@@ -187,6 +187,123 @@ Shiva's decision on 2026-10-23, departing from §0 rule 2. M7 runs before M2–M
   using the installed Google Chrome (`channel: 'chrome'`) so no browser download is needed. It runs locally
   against `datascribe_e2e` (5433) + Mailpit. CI e2e (browser + Mailpit services) is planned for M10.
 
+## D-050 — NLM Clinical Table Search Service: ICD-10-CM and HCPCS (checked 2026-10-24)
+
+Docs: https://clinicaltables.nlm.nih.gov/apidoc/icd10cm/v3/doc.html,
+https://clinicaltables.nlm.nih.gov/apidoc/hcpcs/v3/doc.html, terms/FAQ https://clinicaltables.nlm.nih.gov/faq.html.
+
+- Endpoints unchanged from §8.2: `/api/icd10cm/v3/search` and `/api/hcpcs/v3/search` (`terms`, `sf`, `df`,
+  `maxList` ≤ 500). Output `[total, codes, extra, display[][]]`. No key, no registration.
+- Limits: advised max 25 req/s (soft), may answer 503 under load; tell NLM above 50,000 calls/day.
+- Terms: free, "as is", no SLA. NLM/LHNCBC/NIH names may not be used to endorse the product. The FAQ says
+  request URLs are logged and asks that no PHI/PII be sent, which `deidentifyTerm()` (D-054) enforces.
+- `ProcedureCoder` uses the HCPCS Level II table. CTSS has no CPT (AMA-licensed) or ICD-10-PCS table, so
+  HCPCS is the free procedure set available. HCPCS `display` is the 28-character short description, as
+  recorded; switching to `long_desc` changes the request URL and needs one fixture re-record (open item).
+- Default bucket 10 req/s, burst 10, shared by both tables (same host).
+
+## D-051 — NLM RxNav / RxNorm API (checked 2026-10-24)
+
+Docs: https://lhncbc.nlm.nih.gov/RxNav/APIs/api-RxNorm.getApproximateMatch.html, terms
+https://lhncbc.nlm.nih.gov/RxNav/TermsofService.html.
+
+- `MedicationNormalizer` uses `GET /REST/approximateTerm.json?term=&maxEntries=20&option=1` (active
+  concepts; tolerates misspellings, strengths and extra words). Candidates are collapsed to one match per
+  RxCUI, preferring the `RXNORM`-source name; candidates without a releasable name are dropped.
+- Limit: 20 req/s per IP (100 with a UMLS UTS key in `Authorization: Bearer`); over-limit requests are not
+  served. NLM recommends caching 12–24 h to cut load; we keep §8.4's 30 days, which cuts load further.
+  RxNorm is released monthly, so a cached answer is at most about one release behind.
+- Attribution required: the NLM statement ("This product uses publicly available data from the U.S.
+  National Library of Medicine…") is in `ATTRIBUTION.rxnorm.statement`. The NLM name/logo may not be used
+  with the app. Default bucket 8 req/s, burst 10.
+
+## D-052 — openFDA Drug Label API (checked 2026-10-24) — changed
+
+Docs: https://open.fda.gov/apis/drug/label/how-to-use-the-endpoint/, https://open.fda.gov/apis/authentication/,
+terms https://open.fda.gov/terms/.
+
+- Endpoint unchanged: `https://api.fda.gov/drug/label.json?search=…&limit=1`; 404 means no match.
+- **Change:** the authentication page now opens with "An API key is required", while the endpoint page
+  still says a key isn't needed, and both list no-key limits (240/min and 1,000/day per IP; with a key
+  240/min and 120,000/day). The fixture was recorded without a key (HTTP 200). Decision: keep
+  `OPENFDA_API_KEY` optional as §11 says, send it as `api_key` when set, and **register a free key before
+  production** (1,000/day is too low for real volume). Listed under "Waiting on Shiva".
+- Data is CC0; attribution is requested, not required: "Data provided by the U.S. Food and Drug
+  Administration (https://open.fda.gov)". Default bucket 2 req/s, burst 10.
+- Search: `openfda.rxcui:"<rxcui>"`, or `openfda.generic_name:"<name>" openfda.brand_name:"<name>"`
+  (OR) after stripping strengths and dose forms. Sections are truncated to 1,500 characters; boxed
+  warning > warnings and cautions > warnings.
+
+## D-053 — MedlinePlus Connect (checked 2026-10-24)
+
+Docs and acceptable use: https://medlineplus.gov/medlineplus-connect/web-service/.
+
+- Endpoint unchanged: `https://connect.medlineplus.gov/service` (HTTPS only), JSON via
+  `knowledgeResponseType=application/json`. Code systems: ICD-10-CM `2.16.840.1.113883.6.90`, SNOMED CT
+  `…6.96`, RxCUI `…6.88`. HCPCS isn't accepted (procedures take CPT or SNOMED), so HCPCS definitions
+  return null.
+- Limit: 100 requests/min per IP; over-limit callers are blocked for 300 s. NLM recommends caching 12–24 h.
+  Default bucket 1.2 req/s (72/min), burst 10.
+- Terms: data may be displayed and linked but MedlinePlus pages may not be copied; show that the
+  information is from MedlinePlus.gov; no logo or implied endorsement. Summaries are converted to plain
+  text and capped at 1,200 characters, always with the topic URL.
+- `ConsumerHealthInfo` sends codes only, never text, and codes are shape-checked first.
+
+## D-054 — `deidentifyTerm()` design
+
+- Rules strip, in order: emails, URLs, SSNs, labelled and unlabelled dates (numeric, month-name, month/year,
+  bare years except before dose units), labelled record/case/claim/account numbers and court dockets,
+  street addresses / PO boxes / units / state + ZIP, phone numbers (7+ digits, not when followed by a dose
+  unit), ages, names (Synthea style `Ramiro608`, honorific + capitalised words, labelled names, possessive
+  full names), then any run of 5+ digits. Callers can pass `knownIdentifiers` (patient name, case number),
+  which the pipeline will do.
+- **All ages are removed**, not only > 89 (HIPAA Safe Harbor's threshold): no age helps coding.
+- Refusals: raw input over 200 characters, or a cleaned term over 100 characters or 10 words
+  (`too_long`), or nothing with a letter left (`empty`). Adapters return "uncoded" for refused terms
+  without calling; the API answers 422 `term_refused` with the reason and removed kinds, never the input.
+- It errs towards removing too much (e.g. "Lou Gehrig's disease" loses "Lou Gehrig's"). Free-text names
+  without a label or honorific can't be detected reliably by rules, so the pipeline must pass the case's
+  known identifiers, and only extracted short terms ever reach it.
+- Numeric RxCUIs bypass it in `getLabel()`/`/drug-label?rxcui=`: they're codes that came back from RxNorm.
+
+## D-055 — Resilience wrapper (`ProviderClient`)
+
+- Order per request: provider enabled? → cache → circuit breaker → token bucket → 10 s timeout per
+  attempt → 3 retries (exponential backoff with jitter, 250 ms base, 4 s cap; only network errors,
+  timeouts, 408, 429, 5xx) → on final failure the caller's "uncoded" fallback (`[]` or `null`), never a throw.
+- Cache keys are SHA-256 of provider + normalised request (lower-case, trimmed, collapsed spaces), so the
+  `MedicalApiCache` table never stores the term. Values are the mapped results, TTL 30 days.
+  `PrismaCacheStore` takes `prisma.medicalApiCache` structurally, so `medical-data` has no DB dependency.
+  A failing cache is ignored, not fatal. `purgeExpired()` is ready for a worker cron (M5b).
+- Breaker: opens after 5 consecutive failed requests, half-opens after 60 s with one trial call.
+- Buckets and breakers are per process. Several API/worker processes share one IP, so defaults sit at
+  roughly half of each published limit. A Redis-backed bucket is a later option (M10, with the auth limits).
+- Logs carry `provider`, `latencyMs`, `status` (plus error name / HTTP status on failure) only. URLs carry
+  the term and openFDA key, so they're never logged.
+- Usage stats (`MedicalData.usageStats()`): in-memory, per process, last 24 h calls / errors / error rate /
+  cache hits / skipped per upstream. Good enough for the M2 admin page on one API instance; persisting
+  counters (Redis or a table) is a follow-up if the page needs totals across processes.
+- The admin enable/disable switch is the factory's `isEnabled(upstream)` callback, read per call, so M2 can
+  back it with a `Setting` row and changes apply without restart.
+- No new dependencies: Node 22 `fetch`, `node:crypto`. `tsx` and `@vitest/coverage-v8` were already in the
+  lockfile and are now dev dependencies of `medical-data` too.
+
+## D-056 — Medical API routes (§9)
+
+- `GET /medical/icd10?q=&limit=`, `/medical/rxnorm?q=`, `/medical/drug-label?q=` or `?rxcui=`,
+  `/medical/define?code=&system=ICD10CM|RXNORM|SNOMED`.
+- Access: internal org **and** `cases:edit`. That admits super_admin, ops_manager, case_manager and
+  summarizer; sales, finance, all client users and also **qa_reviewer** (cases view-only) get 403. If QA
+  should look codes up while reviewing, grant it here (open question).
+- Every term goes through `deidentifyTerm()` in the route and again in the adapter. Responses return the
+  cleaned `query`, the removed identifier kinds, results and the provider's `attribution`
+  (source, statement, URL). Query strings are already excluded from request logs (app.ts serializer).
+- `Deps.medical` is optional and defaults to the mock providers, so tests and existing callers need no
+  change. `server.ts` builds the real one from `MEDICAL_DATA_PROVIDER` with the Prisma cache.
+- Recorded fixtures (`packages/medical-data/test/fixtures`, recorded 2026-10-23 UTC with "lumbar
+  radiculopathy", "cervical collar", "gabapentin", code M54.16) are replayed by exact URL; any other URL
+  throws, so tests can't reach a live API. Live smoke tests run only with `RUN_LIVE_API_TESTS=true`.
+
 ## D-013 — Money and encrypted fields
 
 Money is `Decimal(12,2)` (per-page prices `Decimal(12,4)`). Encrypted PHI fields (`Case.patientName`,

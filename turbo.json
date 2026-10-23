@@ -15,7 +15,7 @@
     "lint": {},
     "test": {
       "dependsOn": ["^generate"],
-      "env": ["TEST_DATABASE_URL"]
+      "env": ["TEST_DATABASE_URL", "RUN_LIVE_API_TESTS"]
     },
     "dev": {
       "cache": false,

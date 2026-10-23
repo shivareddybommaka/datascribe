@@ -15,6 +15,7 @@ import { contactsRouter } from './routes/crm/contacts';
 import { leadsRouter } from './routes/crm/leads';
 import { healthRouter } from './routes/health';
 import { invitesRouter } from './routes/invites';
+import { medicalRouter } from './routes/medical';
 import { permissionsRouter } from './routes/permissions';
 import { publicRouter } from './routes/public';
 
@@ -68,6 +69,7 @@ export function createApp(deps: Deps): Express {
   v1.use(contactsRouter(deps));
   v1.use(activitiesRouter(deps));
   v1.use(accountsRouter(deps));
+  v1.use(medicalRouter(deps));
   v1.use(publicRouter(deps));
   app.use('/api/v1', v1);
 

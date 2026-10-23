@@ -1,0 +1,124 @@
+{
+  "recordedAt": "2026-10-23T14:27:33.516Z",
+  "request": {
+    "url": "https://connect.medlineplus.gov/service?mainSearchCriteria.v.cs=2.16.840.1.113883.6.90&mainSearchCriteria.v.c=M54.16&knowledgeResponseType=application%2Fjson&informationRecipient.languageCode.c=en"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "feed": {
+        "base": "https://medlineplus.gov/",
+        "lang": "en",
+        "xsi": "http://www.w3.org/2001/XMLSchema-instance",
+        "title": {
+          "type": "text",
+          "_value": "MedlinePlus Connect"
+        },
+        "updated": {
+          "_value": "2026-10-23T14:27:33Z"
+        },
+        "id": {
+          "_value": ""
+        },
+        "author": {
+          "name": {
+            "_value": "U.S. National Library of Medicine"
+          },
+          "uri": {
+            "_value": "https://www.nlm.nih.gov"
+          }
+        },
+        "subtitle": {
+          "type": "text",
+          "_value": "MedlinePlus Connect results for ICD-10-CM M54.16"
+        },
+        "category": [
+          {
+            "scheme": "mainSearchCriteria.v.c",
+            "term": "M54.16"
+          },
+          {
+            "scheme": "mainSearchCriteria.v.cs",
+            "term": "ICD10CM"
+          },
+          {
+            "scheme": "mainSearchCriteria.v.dn",
+            "term": ""
+          },
+          {
+            "scheme": "informationRecipient",
+            "term": "PAT"
+          }
+        ],
+        "entry": [
+          {
+            "title": {
+              "_value": "Back Pain",
+              "type": "text"
+            },
+            "link": [
+              {
+                "href": "https://medlineplus.gov/backpain.html?utm_source=mplusconnect&utm_medium=service",
+                "rel": "alternate"
+              }
+            ],
+            "id": {
+              "_value": "tag: medlineplus.gov, 2026-23-10:/backpain.html?utm_source=mplusconnect&utm_medium=application"
+            },
+            "summary": {
+              "type": "html",
+              "_value": "<p>If you've ever groaned, \"Oh, my aching back!\", you are not alone. Back pain is one of the most common medical problems, affecting 8 out of 10 people at some point during their lives. Back pain can range from a dull, constant ache to a sudden, sharp pain. \nAcute back pain comes on suddenly and usually lasts from a few days to a few weeks. Back pain is called chronic if it lasts for more than three months.</p>\n\n<p>Most back pain goes away on its own, though it may take awhile. Taking over-the-counter pain relievers and resting can help. However, staying in bed for more than 1 or 2 days can make it worse. </p>\n\n<p>If your back pain is severe or doesn't improve after three days, you should call your health care provider.  You should also get medical attention if you have back pain following an <a href=\"https://medlineplus.gov/backinjuries.html?utm_source=mplusconnect\">injury</a>.</p>\n\n<p>Treatment for back pain depends on what kind of pain you have, and what is causing it. It may include hot or cold packs, exercise, medicines, injections, complementary treatments, and sometimes surgery.</p>\n\n<p class=\"NLMattribution\">  NIH: National Institute of Arthritis and Musculoskeletal and Skin Diseases</p>"
+            },
+            "updated": {
+              "_value": "2026-10-23T14:27:33Z"
+            }
+          },
+          {
+            "title": {
+              "_value": "Peripheral Nerve Disorders",
+              "type": "text"
+            },
+            "link": [
+              {
+                "href": "https://medlineplus.gov/peripheralnervedisorders.html?utm_source=mplusconnect&utm_medium=service",
+                "rel": "alternate"
+              }
+            ],
+            "id": {
+              "_value": "tag: medlineplus.gov, 2026-23-10:/peripheralnervedisorders.html?utm_source=mplusconnect&utm_medium=application"
+            },
+            "summary": {
+              "type": "html",
+              "_value": "<h3>What are peripheral nerves?</h3>\n<p>Nerves are like wires that carry messages back and forth between your brain and your body. Your peripheral nerves branch off from your brain and spinal cord and connect to all parts of your body, including your muscles and organs. Peripheral nerves carry messages from your brain that control your movement, breathing, heartbeat, digestion, and more. They also carry messages from your body to your brain, so you can feel things, such as pain, heat, and cold.</p>\n\n<h3>What are peripheral nerve disorders?</h3>\n<p>Peripheral nerve disorders happen when one or more peripheral nerves are damaged. Damaged nerves may not carry messages correctly, or they may not work at all. As a result, you may have <a href=\"https://medlineplus.gov/pain.html?utm_source=mplusconnect\">pain</a>, <a href=\"https://medlineplus.gov/walkingproblems.html?utm_source=mplusconnect\">trouble walking</a>, or a variety of other problems, depending on which nerves are involved.</p>  \n<p>Peripheral nerve disorders are very common. There are more than 100 different types.</p> \n\n<h3>What causes peripheral nerve disorders?</h3>\n<p>Many things can damage nerves and lead to peripheral nerve disorders:</p>\n<ul>\n<li><strong><a href=\"https://medlineplus.gov/diabetes.html?utm_source=mplusconnect\">Diabetes</a></strong> is the most common cause of peripheral nerve disorders. Most people with diabetes will develop <a href=\"https://medlineplus.gov/diabeticnerveproblems.html?utm_source=mplusconnect\">diabetic nerve problems</a>.</li> \n<li><strong>Physical injury</strong> (<a href=\"https://medlineplus.gov/woundsandinjuries.html?utm_source=mplusconnect\">trauma</a>) that stretches, crushes, squeezes, cuts, or puts pressure on one or more nerves. Some examples of peripheral nerve disorders from physical injury include  <a href=\"https://medlineplus.gov/complexregionalpainsyndrome.html?utm_source=mplusconnect\">complex regional pain syndrome</a> and <a href=\"https://medlineplus.gov/brachialplexusinjuries.html?utm_source=mplusconnect\">brachial plexus injuries</a>.</li> \n<li><strong>Health conditions</strong>, including:\n\t<ul>\n\t\t<li><strong>Certain <a href=\"https://medlineplus.gov/cancer.html?utm_source=mplusconnect\">cancers</a> and their treatment</strong> (<a href=\"https://medlineplus.gov/cancerchemotherapy.html?utm_source=mplusconnect\">chemotherapy</a> and <a href=\"https://medlineplus.gov/radiationtherapy.html?utm_source=mplusconnect\">radiation therapy</a>).</li>\n\t\t<li><strong>Infections</strong>, such as <a href=\"https://medlineplus.gov/hiv.html?utm_source=mplusconnect\">HIV</a> and <a href=\"https://medlineplus.gov/lymedisease.html?utm_source=mplusconnect\">Lyme disease</a>.</li>\n\t\t<li><strong>Problems with <a href=\"https://medlineplus.gov/blooddisorders.html?utm_source=mplusconnect\">blood</a> or <a href=\"https://medlineplus.gov/vasculardiseases.html?utm_source=mplusconnect\">blood vessels</a>.</strong></li>\n\t\t<li><strong><a href=\"https://medlineplus.gov/autoimmunediseases.html?utm_source=mplusconnect\">Autoimmune diseases</a></strong>, such as <a href=\"https://medlineplus.gov/rheumatoidarthritis.html?utm_source=mplusconnect\">rheumatoid arthritis</a> and <a href=\"https://medlineplus.gov/lupus.html?utm_source=mplusconnect\">lupus</a>.</li>\n\t\t<li><strong><a href=\"https://medlineplus.gov/kidneydiseases.html?utm_source=mplusconnect\">Kidney</a></strong> or <strong><a href=\"https://medlineplus.gov/liverdiseases.html?utm_source=mplusconnect\">liver disease</a></strong>.</li> \n\t</ul>\n</li>\n<li><strong>Certain medicines.</strong></li>\n<li><strong>Contact with certain toxic substances</strong>, such as <a href=\"https://medlineplus.gov/leadpoisoning.html?utm_source=mplusconnect\">lead</a> or <a href=\"https://medlineplus.gov/mercury.html?utm_source=mplusconnect\">mercury</a>.</li>\n<li><strong><a href=\"https://medlineplus.gov/alcoholusedisorderaud.html?utm_source=mplusconnect\" tid=\"120\">Alcohol use disorder (AUD)</a> and <a href=\"https://medlineplus.gov/smoking.html?utm_source=mplusconnect\">smoking</a>.</strong></li>\n<li><strong><a href=\"https://medlineplus.gov/vitamins.html?utm_source=mplusconnect\">Vitamin imbalances</a></strong>, especially a lack of <a href=\"https://medlineplus.gov/lab-tests/vitamin-b-test/?utm_source=mplusconnect\">vitamin B12</a>.</li>\n<li><strong>Your <a href=\"https://medlineplus.gov/genetics/understanding/basics/gene/?utm_source=mplusconnect\">genes</a></strong>, including changes in your genes or conditions that you inherit from your parents, such as <a href=\"https://medlineplus.gov/charcotmarietoothdisease.html?utm_source=mplusconnect\">Charcot-Marie-Tooth disease</a>.</li>\n</ul>\n<p>In certain cases, the cause of peripheral nerve disorder is not known.</p>\n\n\n<h3>What are the symptoms of peripheral nerve disorders?</h3>\n<p>The symptoms of peripheral nerve disorders depend on which nerves are affected, what is causing the damage, and how serious it is:</p> \n\n\n\n<!-- TABLE BEGINS HERE -->\n\n<table border=\"0\" class=\"info-table-1\" width=\"100%\">\n\t<thead>\n\t\t<tr>\n\t\t\t<th>Types of nerves</th>\n\t\t\t<th>Possible symptoms of nerve damage</th>\n\t\t</tr>\n\t</thead>\n\t<tbody>\n\t\t<tr class=\"r1\">\n\t\t\t<td><strong>Motor nerves</strong> control your muscles and all your movement, such as walking, talking, and using your hands.</td>\n\t\t\t<td>\n<ul>\n<li>Weak or aching muscles</li>\n<li>Problems with balance, walking, or using your arms and hands</li>\n<li><a href=\"https://medlineplus.gov/musclecramps.html?utm_source=mplusconnect\">Cramps</a> or twitching muscles</li>\n<li>Muscle shrinking</li>\t\n</ul></td>\n\t\t</tr>\n\t\t<tr class=\"r2\">\n\t\t\t<td><strong>Sensory nerves</strong> carry messages to your brain from your senses, including touch, hot and cold, and pain.</td>\n\t\t\t<td>\n<ul>\n<li>Tingling, numbness, or pain often in the hands and feet</li>\n<li>Not being able to feel heat, cold, or pain, such as a cut on your foot</li>\n<li>Pain from even light touch</li>\t\n</ul></td>\n\t\t</tr>\n\t\t<tr class=\"r1\">\n\t\t\t<td><strong><a href=\"https://medlineplus.gov/autonomicnervoussystemdisorders.html?utm_source=mplusconnect\">Autonomic nerves</a></strong> send messages to your organs to control breathing, digestion, and other body functions that happen without thinking about them.</td>\n\t\t\t<td>\n<ul>\n<li><a href=\"https://medlineplus.gov/arrhythmia.html?utm_source=mplusconnect\">A heartbeat that's too fast or too slow</a></li>\n<li><a href=\"https://medlineplus.gov/swallowingdisorders.html?utm_source=mplusconnect\">Trouble swallowing</a></li>\n<li><a href=\"https://medlineplus.gov/sweat.html?utm_source=mplusconnect\">Sweating</a> too much or too little</li>\n<li><a href=\"https://medlineplus.gov/nauseaandvomiting.html?utm_source=mplusconnect\">Vomiting</a>, <a href=\"https://medlineplus.gov/diarrhea.html?utm_source=mplusconnect\">diarrhea</a>, or <a href=\"https://medlineplus.gov/constipation.html?utm_source=mplusconnect\">constipation</a></li>\n<li>Problems with <a href=\"https://medlineplus.gov/urineandurination.html?utm_source=mplusconnect\">urination</a> or sexual function</li>\t\n</ul></td>\n\t\t</tr>\n\t</tbody>\n</table>\n<br/>\n<br/>\n\n<!-- TABLE ENDS HERE -->\n\n\n\n<p>Symptoms may range from mild to very strong. They may develop quickly over days or slowly over months and years. But they are rarely life-threatening.</p>\n\n\n<h3>How are peripheral nerve disorders diagnosed?</h3>\n<p>To find out if you have a peripheral nerve disorder, your provider will:</p>\n<ul>\n<li>Ask about your medical history</li>\n<li>Ask about your <a href=\"https://medlineplus.gov/familyhistory.html?utm_source=mplusconnect\">family health history</a></li>\n<li>Do a physical exam</li>\n<li>Order tests, which may include:\n\t<ul>\n\t\t<li>Blood tests</li>\n\t\t<li><a href=\"https://medlineplus.gov/genetictesting.html?utm_source=mplusconnect\">Genetic tests</a></li>\n\t\t<li>Nerve tests that measure:\n\t\t\t<ul>\n\t\t\t\t<li><a href=\"https://medlineplus.gov/lab-tests/electromyography-emg-and-nerve-conduction-studies/?utm_source=mplusconnect\">Electrical activity in your nerves and muscles</a></li>\n\t\t\t\t<li><a href=\"https://medlineplus.gov/lab-tests/autonomic-testing/?utm_source=mplusconnect\">How well your autonomic nerves are working</a></li>\n\t\t\t</ul>\n\t\t</li>\n\t\t<li>A <a href=\"https://medlineplus.gov/biopsy.html?utm_source=mplusconnect\">biopsy</a> of nerve or skin tissue</li>\n\t\t<li><a href=\"https://medlineplus.gov/ctscans.html?utm_source=mplusconnect\">CT</a> or <a href=\"https://medlineplus.gov/mriscans.html?utm_source=mplusconnect\">MRI</a> scan to see what may be pressing on your nerves</li>\n\t</ul>\n</li>\n</ul>\n\n<h3>What are the treatments for peripheral nerve disorders?</h3>\n<p>It's important to treat any conditions that are causing nerve damage. In certain cases, that will allow your nerves to heal over time.</p> \n\n<p>Treatment for symptoms depends on the type of peripheral nerve disorder you have, where it is, and how severe. Treatment options include:</p> \n<ul>\n<li><strong>Braces or splints</strong></li>\n<li>Over-the-counter <strong>patches and skin creams</strong></li>\n<li><strong>Prescription medicines</strong></li>\n<li><strong><a href=\"https://medlineplus.gov/nondrugpainmanagement.html?utm_source=mplusconnect\">Non-drug pain management</a></strong>, such as electrical stimulation or relaxation therapy</li>\n<li><strong>Surgery</strong> to relieve pressure on a nerve</li>\n</ul>\n\n<h3>Can peripheral nerve disorders be prevented?</h3>\n<p>You can help prevent peripheral nerve disorders by:</p>\n<ul>\n<li>Managing health conditions that may cause nerve damage, especially diabetes</li>\n<li>Preventing <a href=\"https://medlineplus.gov/falls.html?utm_source=mplusconnect\">falls</a> and accidents</li>\n<li>Avoiding toxic substances</li>\n<li><a href=\"https://medlineplus.gov/ergonomics.html?utm_source=mplusconnect\">Being careful to avoid repeated motions and body positions</a> that press on your nerves</li>\n<li>Eating a <a href=\"https://medlineplus.gov/nutrition.html?utm_source=mplusconnect\">balanced diet</a>, <a href=\"https://medlineplus.gov/howmuchexercisedoineed.html?utm_source=mplusconnect\">exercising</a>, limiting <a href=\"https://medlineplus.gov/alcohol.html?utm_source=mplusconnect\">alcohol</a>, and <a href=\"https://medlineplus.gov/quittingsmoking.html?utm_source=mplusconnect\">not smoking</a></li>\n</ul>\n\n<p class=\"NLMattribution\">  NIH: National Institute of Neurological Disorders and Stroke</p>"
+            },
+            "updated": {
+              "_value": "2026-10-23T14:27:33Z"
+            }
+          },
+          {
+            "title": {
+              "_value": "Back Pain",
+              "type": "text"
+            },
+            "link": [
+              {
+                "href": "https://www.niams.nih.gov/health-topics/back-pain?utm_source=mlplusconnet&utm_medium=referral",
+                "rel": "alternate"
+              }
+            ],
+            "id": {
+              "_value": "tag: www.niams.nih.gov, 2026-23-10:/health-topics/back-pain?utm_source=mlplusconnet&utm_medium=referral"
+            },
+            "summary": {
+              "type": "html",
+              "_value": "Back pain is one of the most common medical problems in the United States. It might feel like a dull, constant ache or a sudden, sharp pain."
+            },
+            "updated": {
+              "_value": "2026-10-23T14:27:33Z"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

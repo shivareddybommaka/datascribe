@@ -38,6 +38,9 @@ importers:
       '@datascribe/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@datascribe/medical-data':
+        specifier: workspace:*
+        version: link:../../packages/medical-data
       '@datascribe/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -220,7 +223,14 @@ importers:
         specifier: ^4.19.4
         version: 4.23.15
 
-  packages/medical-data: {}
+  packages/medical-data:
+    devDependencies:
+      '@vitest/coverage-v8':
+        specifier: ^3.1.2
+        version: 3.2.7(vitest@3.2.7(@types/node@22.20.5)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.15))
+      tsx:
+        specifier: ^4.19.4
+        version: 4.23.15
 
   packages/shared:
     dependencies:
