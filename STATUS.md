@@ -12,12 +12,17 @@
   - Demo: `docs/demos/M7.md`.
 - Agent exec works again (pnpm runs); earlier `operator.approvals` block cleared on 2026-10-24.
 
+## Autopilot (from 2026-10-24)
+
+- Shiva authorised self-managed building. Rules: `docs/AUTOPILOT.md`. OpenClaw automation
+  "Datascribe autopilot" (id `a0d9299e-b264-4e09-8e61-60682d25c151`) resumes work on a paced loop
+  (1–6 h). Stop it by telling Datascribe Dev "stop autopilot".
+- **Current milestone: M2 Admin console** (spec order: M2 → M3 → M4 → M5 → M6 → M8 → M9 → M10).
+
 ## Waiting on Shiva
 
-- CI result on GitHub Actions for the latest push. CI runs lint/typecheck/unit+API tests/build;
-  e2e is local only until M10.
-- Next milestone choice: M2 admin console (next in spec order) or M3 website + CMS (the contact form
-  already feeds the CRM).
+- CI result on GitHub Actions for the latest push (agent can't read Actions with the deploy key).
+  CI runs lint/typecheck/unit+API tests/build; e2e is local only until M10.
 
 ## Known follow-ups
 
