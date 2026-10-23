@@ -7,3 +7,5 @@ pnpm-lock.yaml
 packages/db/generated
 packages/db/prisma/migrations
 REQUIREMENTS.md
+.worktrees
+test-results
