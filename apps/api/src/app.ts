@@ -9,9 +9,14 @@ import { writeAudit } from './lib/audit';
 import { HttpError } from './lib/errors';
 import { authRouter } from './routes/auth';
 import { casesRouter } from './routes/cases';
+import { accountsRouter } from './routes/crm/accounts';
+import { activitiesRouter } from './routes/crm/activities';
+import { contactsRouter } from './routes/crm/contacts';
+import { leadsRouter } from './routes/crm/leads';
 import { healthRouter } from './routes/health';
 import { invitesRouter } from './routes/invites';
 import { permissionsRouter } from './routes/permissions';
+import { publicRouter } from './routes/public';
 
 export function createApp(deps: Deps): Express {
   const { env, logger } = deps;
@@ -55,6 +60,11 @@ export function createApp(deps: Deps): Express {
   v1.use(invitesRouter(deps));
   v1.use(permissionsRouter(deps));
   v1.use(casesRouter(deps));
+  v1.use(leadsRouter(deps));
+  v1.use(contactsRouter(deps));
+  v1.use(activitiesRouter(deps));
+  v1.use(accountsRouter(deps));
+  v1.use(publicRouter(deps));
   app.use('/api/v1', v1);
 
   app.use((_req, res) => {
@@ -64,13 +74,19 @@ export function createApp(deps: Deps): Express {
   const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     if (err instanceof HttpError) {
       res.status(err.status).json({
-        error: { code: err.code, message: err.message, ...(err.details ? { details: err.details } : {}) },
+        error: {
+          code: err.code,
+          message: err.message,
+          ...(err.details ? { details: err.details } : {}),
+        },
       });
       return;
     }
     const e = err as { type?: string; status?: number; name?: string; message?: string };
     if (e.type === 'entity.parse.failed' || e.type === 'entity.too.large') {
-      res.status(e.status ?? 400).json({ error: { code: 'bad_body', message: 'Invalid request body' } });
+      res
+        .status(e.status ?? 400)
+        .json({ error: { code: 'bad_body', message: 'Invalid request body' } });
       return;
     }
     // name + message only: never the request body or stack with data

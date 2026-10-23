@@ -60,7 +60,12 @@ export function casesRouter(deps: Deps): Router {
 
   r.get('/cases/:id', requirePermission('cases', 'view'), async (req, res) => {
     const c = await loadVisibleCase(req, 'cases');
-    await req.audit({ action: 'case.view', entity: 'Case', entityId: c.id, organizationId: c.organizationId });
+    await req.audit({
+      action: 'case.view',
+      entity: 'Case',
+      entityId: c.id,
+      organizationId: c.organizationId,
+    });
     res.json({
       id: c.id,
       number: c.number,

@@ -48,7 +48,9 @@ describe('api skeleton', () => {
 describe('env validation', () => {
   it('refuses a real LLM provider in production without a BAA (§8.3)', () => {
     const prod = { ...baseEnv, NODE_ENV: 'production' };
-    expect(() => loadEnv({ ...prod, SUMMARY_PROVIDER: 'anthropic' })).toThrow(/PHI_LLM_BAA_CONFIRMED/);
+    expect(() => loadEnv({ ...prod, SUMMARY_PROVIDER: 'anthropic' })).toThrow(
+      /PHI_LLM_BAA_CONFIRMED/,
+    );
     expect(() =>
       loadEnv({ ...prod, SUMMARY_PROVIDER: 'anthropic', PHI_LLM_BAA_CONFIRMED: 'true' }),
     ).not.toThrow();

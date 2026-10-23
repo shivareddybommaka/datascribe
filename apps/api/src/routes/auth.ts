@@ -81,7 +81,12 @@ export function authRouter(deps: Deps): Router {
     return { accessToken, mustResetPassword: user.mustResetPassword };
   }
 
-  async function recordFailure(req: Request, userId: string, organizationId: string, reason: string) {
+  async function recordFailure(
+    req: Request,
+    userId: string,
+    organizationId: string,
+    reason: string,
+  ) {
     const updated = await prisma.user.update({
       where: { id: userId },
       data: { failedLoginCount: { increment: 1 } },
@@ -111,7 +116,11 @@ export function authRouter(deps: Deps): Router {
 
   function assertNotLocked(user: { lockedUntil: Date | null }) {
     if (user.lockedUntil && user.lockedUntil > new Date()) {
-      throw new HttpError(423, 'account_locked', 'Too many failed attempts. Try again in 15 minutes.');
+      throw new HttpError(
+        423,
+        'account_locked',
+        'Too many failed attempts. Try again in 15 minutes.',
+      );
     }
   }
 
@@ -292,7 +301,11 @@ export function authRouter(deps: Deps): Router {
     const auth = requireAuth(req);
     const user = await prisma.user.findUniqueOrThrow({ where: { id: auth.user.id } });
     res.json({
-      user: { ...auth.user, mfaEnabled: user.mfaEnabled, mustResetPassword: user.mustResetPassword },
+      user: {
+        ...auth.user,
+        mfaEnabled: user.mfaEnabled,
+        mustResetPassword: user.mustResetPassword,
+      },
       roles: auth.roles,
       permissions: auth.permissions.map(permissionKey).sort(),
       impersonatorId: auth.impersonatorId ?? null,
@@ -373,7 +386,8 @@ export function authRouter(deps: Deps): Router {
       where: { id: row.id, usedAt: null },
       data: { usedAt: new Date() },
     });
-    if (claimed.count !== 1) throw badRequest('token_invalid', 'This link is invalid or has expired');
+    if (claimed.count !== 1)
+      throw badRequest('token_invalid', 'This link is invalid or has expired');
     return row;
   }
 

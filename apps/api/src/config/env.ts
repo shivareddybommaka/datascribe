@@ -19,6 +19,8 @@ export const EnvSchema = z
     SMTP_HOST: z.string().default('localhost'),
     SMTP_PORT: z.coerce.number().int().positive().default(1025),
     MAIL_FROM: z.string().default('no-reply@datascribe.example'),
+    /** website contact / demo forms notify this inbox (§5.1) */
+    SALES_INBOX: z.string().email().default('sales@datascribe.example'),
     SUMMARY_PROVIDER: z.enum(['mock', 'anthropic', 'openai']).default('mock'),
     PHI_LLM_BAA_CONFIRMED: bool,
     LOG_LEVEL: z

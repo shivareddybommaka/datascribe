@@ -94,6 +94,7 @@ Scripts use the standalone `docker-compose` binary, which avoids editing `~/.doc
 ## D-016 — Build order M0 → M1 → M7 (CRM first)
 
 Shiva's decision on 2026-10-23, departing from §0 rule 2. M7 runs before M2–M6, so:
+
 - "Lead from website form" (M7 DoD) uses a public `POST /api/v1/public/leads` endpoint (honeypot + rate limit)
   built in M7. The CMS-driven contact page in M3 will post to that same endpoint.
 - "Convert lead → invite client_admin" sends the invite email directly via Nodemailer → Mailpit.
@@ -137,6 +138,32 @@ Shiva's decision on 2026-10-23, departing from §0 rule 2. M7 runs before M2–M
 - **Test DB.** API integration tests use `datascribe_test` on the Docker Postgres (5433), created/reset by
   `apps/api/test/global-setup.ts`. That script refuses any DB whose name doesn't end in `_test`. CI runs a
   Postgres service container.
+
+## D-018 — M7 CRM design choices (2026-10-24)
+
+- **Internal-only.** CRM records (leads, contacts, activities, account views) belong to Datascribe and have
+  no firm scope. Every CRM route needs `crm:<action>` and a user in the internal org. A client-org custom role
+  with crm grants still gets 403 (tested).
+- **Won = converted.** A lead reaches `won` only through `POST /leads/:id/convert`, since every win becomes
+  a client account here. After conversion the stage is final, and the lead can't be deleted (it's the
+  account's history). `lost` needs a `lostReason` (§5.5), which is cleared when the lead is reopened.
+- **History.** Stage changes and conversion are written as `note` activities by the acting user. At
+  conversion, the lead's contacts and activities are also linked to the new account (`organizationId`), so
+  history shows up on both. Without a contact, one is created from the lead plus the admin email.
+- **Conversion permission.** Conversion needs `crm:edit`, not `users:create`: sales can't manage users, but
+  inviting the new firm's first client_admin is part of conversion. `issueInvite()` holds the shared invite
+  logic. `createInvite()` adds the admin-side permission rules. If the invite fails after the org is
+  created, the response is still 201 with `inviteError`, and the admin can be invited again later (M2).
+- **CSV.** A hand-written RFC 4180 parser and writer in `apps/api/src/lib/csv.ts` (no dependency). Imports are
+  all-or-nothing: any invalid row gives 422 with row numbers and nothing is written, because a partial
+  import is harder to fix. Max 5,000 rows and 5 MB. Export neutralises formula injection by prefixing `'`
+  to cells starting with `= + - @ tab CR` (OWASP), so a phone like `+61…` exports as `'+61…`. No
+  de-duplication on import yet.
+- **Public lead form.** `POST /public/leads` (the M3 website forms will post here): per-IP rate limit,
+  hidden `website` honeypot (silently accepted, nothing stored), emails `SALES_INBOX` (Mailpit locally).
+- **My tasks today.** The client sends `dueBefore` = the end of the user's local day, which avoids
+  server-side timezone guessing. Overdue tasks are included and flagged.
+- **Notifications** for "lead assigned" / "task due" arrive with M9.
 
 ## D-013 — Money and encrypted fields
 

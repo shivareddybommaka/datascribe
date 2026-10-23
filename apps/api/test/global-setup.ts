@@ -39,7 +39,13 @@ export default async function setup() {
 
     execFileSync(
       process.execPath,
-      [path.join(dbDir, 'node_modules/prisma/build/index.js'), 'migrate', 'deploy', '--schema', path.join(dbDir, 'prisma/schema.prisma')],
+      [
+        path.join(dbDir, 'node_modules/prisma/build/index.js'),
+        'migrate',
+        'deploy',
+        '--schema',
+        path.join(dbDir, 'prisma/schema.prisma'),
+      ],
       { env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL }, stdio: 'pipe' },
     );
 

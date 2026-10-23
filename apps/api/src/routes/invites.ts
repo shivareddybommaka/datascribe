@@ -25,8 +25,13 @@ export interface InviteInput {
  * - Only super_admin may grant super_admin (ops_manager "cannot touch super_admin").
  * Reused by CRM lead conversion (M7).
  */
-export async function createInvite(deps: Deps, req: Request, auth: AuthContext, input: InviteInput) {
-  const { prisma, mailer, env } = deps;
+export async function createInvite(
+  deps: Deps,
+  req: Request,
+  auth: AuthContext,
+  input: InviteInput,
+) {
+  const { prisma } = deps;
   const scope = broadestScope(auth.permissions, 'users', 'create');
   if (!scope) throw forbidden();
   if (scope !== 'all' && input.organizationId !== auth.user.organizationId) throw notFound();
@@ -44,18 +49,41 @@ export async function createInvite(deps: Deps, req: Request, auth: AuthContext, 
   if (role.key === 'super_admin' && !auth.roles.includes('super_admin')) {
     throw forbidden('Only a super admin can grant super admin');
   }
-  if (await prisma.user.findUnique({ where: { email: input.email } })) {
+  return issueInvite(deps, req, {
+    org,
+    role,
+    email: input.email,
+    inviter: { id: auth.user.id, name: auth.user.name },
+  });
+}
+
+/**
+ * Create the invite row, audit it and send the email. No permission checks: callers must have
+ * authorised the action (createInvite above, or CRM lead conversion, which invites the first
+ * client_admin of a firm it has just created).
+ */
+export async function issueInvite(
+  deps: Deps,
+  req: Request,
+  args: {
+    org: { id: string; name: string };
+    role: { id: string; key: string };
+    email: string;
+    inviter: { id: string; name: string };
+  },
+) {
+  const { prisma, mailer, env } = deps;
+  if (await prisma.user.findUnique({ where: { email: args.email } })) {
     throw conflict('user_exists', 'A user with this email already exists');
   }
-
   const token = randomToken();
   const invite = await prisma.invite.create({
     data: {
-      organizationId: org.id,
-      email: input.email,
-      roleId: role.id,
+      organizationId: args.org.id,
+      email: args.email,
+      roleId: args.role.id,
       tokenHash: sha256(token),
-      invitedById: auth.user.id,
+      invitedById: args.inviter.id,
       expiresAt: new Date(Date.now() + INVITE_TTL_MS),
     },
   });
@@ -63,15 +91,21 @@ export async function createInvite(deps: Deps, req: Request, auth: AuthContext, 
     action: 'invite.create',
     entity: 'Invite',
     entityId: invite.id,
-    organizationId: org.id,
-    metadata: { roleKey: role.key },
+    organizationId: args.org.id,
+    metadata: { roleKey: args.role.key },
   });
   await mailer.send({
-    to: input.email,
-    subject: `You're invited to Datascribe (${org.name})`,
-    text: `${auth.user.name} invited you to join ${org.name} on Datascribe.\nAccept: ${env.APP_URL}/invite/accept?token=${token}\nThis link expires in 72 hours.`,
+    to: args.email,
+    subject: `You're invited to Datascribe (${args.org.name})`,
+    text: `${args.inviter.name} invited you to join ${args.org.name} on Datascribe.\nAccept: ${env.APP_URL}/invite/accept?token=${token}\nThis link expires in 72 hours.`,
   });
-  return { id: invite.id, email: invite.email, organizationId: org.id, roleKey: role.key, expiresAt: invite.expiresAt };
+  return {
+    id: invite.id,
+    email: invite.email,
+    organizationId: args.org.id,
+    roleKey: args.role.key,
+    expiresAt: invite.expiresAt,
+  };
 }
 
 export function invitesRouter(deps: Deps): Router {
@@ -113,7 +147,8 @@ export function invitesRouter(deps: Deps): Router {
         where: { id: invite.id, acceptedAt: null },
         data: { acceptedAt: new Date() },
       });
-      if (claimed.count !== 1) throw badRequest('invite_invalid', 'This invite is invalid or has expired');
+      if (claimed.count !== 1)
+        throw badRequest('invite_invalid', 'This invite is invalid or has expired');
       return tx.user.create({
         data: {
           organizationId: invite.organizationId,

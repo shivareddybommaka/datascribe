@@ -1,5 +1,39 @@
 # Changelog
 
+## M7a — CRM API (2026-10-24, written; checks pending)
+
+Built (build order M0 → M1 → M7, D-016; design notes D-018):
+
+- Leads: list with filters (stage, owner incl. `me`, source, text, follow-up date) and pagination;
+  create / view / edit / delete; stage rules (lost needs a reason, won only via conversion); stage
+  history as note activities.
+- `POST /leads/:id/convert`: creates the client Organization (optional plan), marks the lead won, links
+  contacts and activities to the new account, invites the first client_admin (72 h link).
+- `GET /pipeline/summary`: count and value per stage, open totals, win rate.
+- Contacts CRUD (linked to client accounts and/or leads). Activities (call / email / meeting / note / task)
+  with `GET /activities/my-tasks` for the "My tasks today" widget.
+- Accounts (client orgs) list and detail: contacts, activities, users, originating lead.
+- CSV import (all-or-nothing, row-numbered errors) and export (formula-injection safe) for leads and contacts.
+- `POST /public/leads` for the website contact / demo forms: rate limit, honeypot, email to `SALES_INBOX`.
+- Tests: `apps/api/test/crm.test.ts` (access control incl. client-org custom roles, the M7 DoD journey
+  website form → lead → convert → invited admin signs in, stage rules, activities, contacts, CSV,
+  accounts) and `src/lib/csv.test.ts`.
+
+Next (M7b): CRM screens in the staff console (login + MFA, pipeline board/table, lead detail, accounts,
+contacts, My tasks today, import/export).
+
+## M1 — Auth + RBAC (2026-10-23, committed `cafeed9`)
+
+- Register (firm + client_admin) with email verification; login with argon2, 5-strike / 15-min lockout,
+  per-IP rate limits; TOTP MFA (mandatory for internal, optional / org-enforced for clients).
+- Access JWT 15 min + rotating refresh cookie with family reuse detection; logout, revoke-all,
+  forgot / reset; idle timeouts (console 15 min, portal 30 min) checked server-side.
+- Invites (72 h). Permissions loaded from the DB per request (custom roles live without restart); client
+  users can never hold `all` scope; org-scoped case queries; audit middleware.
+- Read-only case / document / deliverable routes so isolation and PHI rules are tested from day one.
+- Tests: 59 passing on `datascribe_test`, including cross-org isolation across the route list and
+  sales/finance PHI refusal (§4.4). Gates run by Nova (agent shell blocked: `operator.approvals`).
+
 ## M0 — Foundation (2026-10-23, done locally; CI pending a GitHub remote)
 
 Built:

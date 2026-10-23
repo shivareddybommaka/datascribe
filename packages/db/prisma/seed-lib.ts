@@ -14,12 +14,7 @@ import {
   permissionKey,
   type RoleKey,
 } from '@datascribe/shared';
-import type {
-  CaseStatus,
-  CaseType,
-  Priority,
-  PrismaClient,
-} from '../generated/client/index.js';
+import type { CaseStatus, CaseType, Priority, PrismaClient } from '../generated/client/index.js';
 import { SYNTHETIC_CASES } from './fixtures/synthetic-cases';
 
 export const SEED_PLANS = [
@@ -37,7 +32,12 @@ export const SEED_PLANS = [
     includedPages: 2000,
     overagePerPage: '0.7500',
     sortOrder: 2,
-    features: ['Everything in Starter', 'Narrative summary', '3-day turnaround', 'Priority support'],
+    features: [
+      'Everything in Starter',
+      'Narrative summary',
+      '3-day turnaround',
+      'Priority support',
+    ],
   },
   {
     name: 'Enterprise',
@@ -72,7 +72,12 @@ export const SEED_USERS: { email: string; name: string; org: SeedOrgKey; role: R
     org: 'internal' as const,
     role,
   })),
-  { email: 'client.admin@acme.example', name: 'Acme Client Admin', org: 'acme', role: 'client_admin' },
+  {
+    email: 'client.admin@acme.example',
+    name: 'Acme Client Admin',
+    org: 'acme',
+    role: 'client_admin',
+  },
   { email: 'client.user@acme.example', name: 'Acme Client User', org: 'acme', role: 'client_user' },
   {
     email: 'client.admin@harbor.example',
@@ -154,7 +159,12 @@ export async function seedDatabase(
       const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
       const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1));
       await prisma.subscription.create({
-        data: { organizationId: row.id, planId: planId!, currentPeriodStart: start, currentPeriodEnd: end },
+        data: {
+          organizationId: row.id,
+          planId: planId!,
+          currentPeriodStart: start,
+          currentPeriodEnd: end,
+        },
       });
     }
   }
@@ -188,7 +198,9 @@ export async function seedDatabase(
     n += 1;
     const number = `DS-SEED-${String(n).padStart(4, '0')}`;
     const createdById =
-      c.org === 'acme' ? userIds['client.user@acme.example']! : userIds['client.admin@harbor.example']!;
+      c.org === 'acme'
+        ? userIds['client.user@acme.example']!
+        : userIds['client.admin@harbor.example']!;
     const assigned = c.status === 'submitted';
     const data = {
       organizationId: orgIds[c.org],

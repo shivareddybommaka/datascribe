@@ -73,7 +73,8 @@ describe('login', () => {
 
   it('locks the account for 15 minutes after 5 failed attempts (§5.2)', async () => {
     const email = await makeClientUser();
-    for (let i = 0; i < 5; i++) expect((await loginReq(email, 'wrong-password-x')).status).toBe(401);
+    for (let i = 0; i < 5; i++)
+      expect((await loginReq(email, 'wrong-password-x')).status).toBe(401);
     const locked = await loginReq(email);
     expect(locked.status).toBe(423);
     expect(locked.body.error.code).toBe('account_locked');
@@ -81,7 +82,9 @@ describe('login', () => {
     const minutes = (user.lockedUntil!.getTime() - Date.now()) / 60000;
     expect(minutes).toBeGreaterThan(14);
     expect(minutes).toBeLessThanOrEqual(15);
-    expect(await prisma.auditLog.count({ where: { entityId: user.id, action: 'auth.lockout' } })).toBe(1);
+    expect(
+      await prisma.auditLog.count({ where: { entityId: user.id, action: 'auth.lockout' } }),
+    ).toBe(1);
   });
 
   it('refuses suspended users', async () => {
@@ -91,7 +94,9 @@ describe('login', () => {
   });
 
   it('rate-limits login per IP', async () => {
-    const limited = buildApp({ rateLimits: { windowMs: 60_000, authPerWindow: 2, publicPerWindow: 2 } });
+    const limited = buildApp({
+      rateLimits: { windowMs: 60_000, authPerWindow: 2, publicPerWindow: 2 },
+    });
     const body = { email: 'nobody@test.example', password: 'x' };
     await request(limited.app).post('/api/v1/auth/login').send(body);
     await request(limited.app).post('/api/v1/auth/login').send(body);
@@ -131,7 +136,9 @@ describe('MFA (§5.2)', () => {
     const first = await loginReq(email);
     expect(first.body).toMatchObject({ mfaSetupRequired: true });
 
-    const setup = await api().post('/api/v1/auth/mfa/setup').send({ mfaToken: first.body.mfaToken });
+    const setup = await api()
+      .post('/api/v1/auth/mfa/setup')
+      .send({ mfaToken: first.body.mfaToken });
     expect(setup.status).toBe(200);
     expect(setup.body.otpauthUrl).toMatch(/^otpauth:\/\/totp\//);
     expect(setup.body.qrDataUrl).toMatch(/^data:image\/png;base64,/);
@@ -148,7 +155,9 @@ describe('MFA (§5.2)', () => {
 
     const again = await loginReq(email);
     expect(again.body).toMatchObject({ mfaRequired: true });
-    const reSetup = await api().post('/api/v1/auth/mfa/setup').send({ mfaToken: again.body.mfaToken });
+    const reSetup = await api()
+      .post('/api/v1/auth/mfa/setup')
+      .send({ mfaToken: again.body.mfaToken });
     expect(reSetup.status).toBe(409);
   });
 
@@ -229,7 +238,9 @@ describe('sessions', () => {
     expect(await reuseCount()).toBe(1);
 
     // The newest token was revoked with its family, so presenting it is also a reuse.
-    expect((await api().post('/api/v1/auth/refresh').set(CSRF).set('cookie', newCookie)).status).toBe(401);
+    expect(
+      (await api().post('/api/v1/auth/refresh').set(CSRF).set('cookie', newCookie)).status,
+    ).toBe(401);
     expect(await prisma.session.count({ where: { user: { email }, revokedAt: null } })).toBe(0);
     expect(await reuseCount()).toBe(2);
   });
@@ -238,14 +249,18 @@ describe('sessions', () => {
     const { agent } = await login(app, SEED.acmeUser);
     expect((await agent.post('/api/v1/auth/refresh')).status).toBe(403);
     expect(
-      (await agent.post('/api/v1/auth/refresh').set(CSRF).set('origin', 'https://evil.example')).status,
+      (await agent.post('/api/v1/auth/refresh').set(CSRF).set('origin', 'https://evil.example'))
+        .status,
     ).toBe(403);
     expect((await agent.post('/api/v1/auth/logout')).status).toBe(403);
   });
 
   it('refresh without a cookie, or with an unknown one, is 401', async () => {
     expect((await api().post('/api/v1/auth/refresh').set(CSRF)).status).toBe(401);
-    const res = await api().post('/api/v1/auth/refresh').set(CSRF).set('cookie', 'ds_refresh=unknown');
+    const res = await api()
+      .post('/api/v1/auth/refresh')
+      .set(CSRF)
+      .set('cookie', 'ds_refresh=unknown');
     expect(res.status).toBe(401);
   });
 
@@ -263,14 +278,18 @@ describe('sessions', () => {
     const email = await makeClientUser();
     const a = await login(app, email);
     const b = await login(app, email);
-    expect((await api().post('/api/v1/auth/sessions/revoke-all').set(bearer(a.token))).status).toBe(204);
+    expect((await api().post('/api/v1/auth/sessions/revoke-all').set(bearer(a.token))).status).toBe(
+      204,
+    );
     expect((await api().get('/api/v1/auth/me').set(bearer(b.token))).status).toBe(401);
   });
 
   it('idle timeout: 30 min in the portal (§5.2)', async () => {
     const email = await makeClientUser();
     const { token, agent } = await login(app, email);
-    const s = await prisma.session.findFirstOrThrow({ where: { user: { email }, revokedAt: null } });
+    const s = await prisma.session.findFirstOrThrow({
+      where: { user: { email }, revokedAt: null },
+    });
     expect(s.surface).toBe('portal');
     const ago = (min: number) => new Date(Date.now() - min * 60_000);
     await prisma.session.update({ where: { id: s.id }, data: { lastUsedAt: ago(29) } });
@@ -342,12 +361,14 @@ describe('registration and email verification (§5.2)', () => {
   });
 
   it('enforces the password policy', async () => {
-    const res = await api().post('/api/v1/auth/register').send({
-      organizationName: 'Weak Firm',
-      name: 'W',
-      email: uniqueEmail('weak'),
-      password: 'short',
-    });
+    const res = await api()
+      .post('/api/v1/auth/register')
+      .send({
+        organizationName: 'Weak Firm',
+        name: 'W',
+        email: uniqueEmail('weak'),
+        password: 'short',
+      });
     expect(res.status).toBe(400);
   });
 });
@@ -355,7 +376,9 @@ describe('registration and email verification (§5.2)', () => {
 describe('forgot / reset password (§5.2)', () => {
   it('unknown emails get the same 202 and no mail', async () => {
     const count = mailer.sent.length;
-    expect((await api().post('/api/v1/auth/forgot').send({ email: 'ghost@test.example' })).status).toBe(202);
+    expect(
+      (await api().post('/api/v1/auth/forgot').send({ email: 'ghost@test.example' })).status,
+    ).toBe(202);
     expect(mailer.sent.length).toBe(count);
   });
 
@@ -370,7 +393,8 @@ describe('forgot / reset password (§5.2)', () => {
     expect((await api().post('/api/v1/auth/forgot').send({ email })).status).toBe(202);
     const resetToken = tokenFromMail(mailer.lastTo(email));
     const newPassword = 'Brand-new-password-456!';
-    const reset = () => api().post('/api/v1/auth/reset').send({ token: resetToken, password: newPassword });
+    const reset = () =>
+      api().post('/api/v1/auth/reset').send({ token: resetToken, password: newPassword });
     expect((await reset()).status).toBe(200);
     expect((await reset()).status).toBe(400);
 

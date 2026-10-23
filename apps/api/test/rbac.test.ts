@@ -73,14 +73,22 @@ describe('§4.4 rule 1: a client user can never read another organisation’s da
     const a = await get('/api/v1/cases', tokens[SEED.acmeAdmin]!);
     expect(a.status).toBe(200);
     expect(a.body.items.length).toBeGreaterThanOrEqual(2);
-    expect(a.body.items.every((c: { organizationId: string }) => c.organizationId === acme)).toBe(true);
+    expect(a.body.items.every((c: { organizationId: string }) => c.organizationId === acme)).toBe(
+      true,
+    );
     const h = await get('/api/v1/cases', tokens[SEED.harborAdmin]!);
-    expect(h.body.items.every((c: { organizationId: string }) => c.organizationId === harbor)).toBe(true);
+    expect(h.body.items.every((c: { organizationId: string }) => c.organizationId === harbor)).toBe(
+      true,
+    );
   });
 
   it('even a custom role with all-scope grants cannot cross organisations for a client user', async () => {
     const perms = await prisma.permission.findMany({
-      where: { module: { in: ['cases', 'documents', 'deliverables'] }, action: 'view', scope: 'all' },
+      where: {
+        module: { in: ['cases', 'documents', 'deliverables'] },
+        action: 'view',
+        scope: 'all',
+      },
     });
     const role = await prisma.role.create({
       data: {
@@ -107,7 +115,9 @@ describe('§4.4 rule 1: a client user can never read another organisation’s da
     }
     const list = await get('/api/v1/cases', token);
     const acme = await orgId('acme');
-    expect(list.body.items.every((c: { organizationId: string }) => c.organizationId === acme)).toBe(true);
+    expect(
+      list.body.items.every((c: { organizationId: string }) => c.organizationId === acme),
+    ).toBe(true);
   });
 });
 
@@ -177,7 +187,9 @@ describe('scopes', () => {
 
   it('custom role changes take effect on the next request, without restart', async () => {
     const email = uniqueEmail('custom');
-    const role = await prisma.role.create({ data: { key: `custom_${Date.now()}`, name: 'Custom' } });
+    const role = await prisma.role.create({
+      data: { key: `custom_${Date.now()}`, name: 'Custom' },
+    });
     await prisma.user.create({
       data: {
         email,
@@ -189,7 +201,9 @@ describe('scopes', () => {
       },
     });
     // internal → MFA enrolment required; enable directly with the shared test secret
-    const finance = await prisma.user.findUniqueOrThrow({ where: { email: SEED.internal('finance') } });
+    const finance = await prisma.user.findUniqueOrThrow({
+      where: { email: SEED.internal('finance') },
+    });
     await prisma.user.update({
       where: { email },
       data: { mfaEnabled: true, mfaSecret: finance.mfaSecret },
@@ -223,9 +237,13 @@ describe('§4.4 rule 3: document and deliverable views are audited', () => {
 
   it('refused attempts do not produce view audit rows', async () => {
     const actor = await prisma.user.findUniqueOrThrow({ where: { email: SEED.acmeAdmin } });
-    const before = await prisma.auditLog.count({ where: { actorId: actor.id, entityId: harborCase } });
+    const before = await prisma.auditLog.count({
+      where: { actorId: actor.id, entityId: harborCase },
+    });
     await get(`/api/v1/cases/${harborCase}/documents`, tokens[SEED.acmeAdmin]!);
-    expect(await prisma.auditLog.count({ where: { actorId: actor.id, entityId: harborCase } })).toBe(before);
+    expect(
+      await prisma.auditLog.count({ where: { actorId: actor.id, entityId: harborCase } }),
+    ).toBe(before);
   });
 });
 
@@ -263,9 +281,17 @@ describe('invites (§5.2)', () => {
 
   it('client_admin cannot invite into another firm or grant internal roles', async () => {
     const t = tokens[SEED.acmeAdmin]!;
-    const other = await invite(t, { organizationId: await orgId('harbor'), email: uniqueEmail('x'), roleKey: 'client_user' });
+    const other = await invite(t, {
+      organizationId: await orgId('harbor'),
+      email: uniqueEmail('x'),
+      roleKey: 'client_user',
+    });
     expect(other.status).toBe(404);
-    const internalRole = await invite(t, { organizationId: await orgId('acme'), email: uniqueEmail('x'), roleKey: 'case_manager' });
+    const internalRole = await invite(t, {
+      organizationId: await orgId('acme'),
+      email: uniqueEmail('x'),
+      roleKey: 'case_manager',
+    });
     expect(internalRole.status).toBe(403);
   });
 
@@ -306,13 +332,21 @@ describe('invites (§5.2)', () => {
   it('rejects existing emails, unknown roles and expired invites', async () => {
     const t = tokens[SEED.acmeAdmin]!;
     const acme = await orgId('acme');
-    expect((await invite(t, { organizationId: acme, email: SEED.acmeUser, roleKey: 'client_user' })).status).toBe(409);
-    expect((await invite(t, { organizationId: acme, email: uniqueEmail('x'), roleKey: 'nope' })).status).toBe(400);
+    expect(
+      (await invite(t, { organizationId: acme, email: SEED.acmeUser, roleKey: 'client_user' }))
+        .status,
+    ).toBe(409);
+    expect(
+      (await invite(t, { organizationId: acme, email: uniqueEmail('x'), roleKey: 'nope' })).status,
+    ).toBe(400);
 
     const email = uniqueEmail('late');
     await invite(t, { organizationId: acme, email, roleKey: 'client_user' });
     const token = /token=([A-Za-z0-9_-]+)/.exec(mailer.lastTo(email)!.text)![1]!;
-    await prisma.invite.updateMany({ where: { email }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    await prisma.invite.updateMany({
+      where: { email },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
     const res = await request(app)
       .post(`/api/v1/invites/${token}/accept`)
       .send({ name: 'Late', password: TEST_PASSWORD });

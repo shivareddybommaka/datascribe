@@ -1,29 +1,30 @@
 # Datascribe — STATUS
 
-## Current state (2026-10-23)
+## Current state (2026-10-24)
 
 - **Build order: M0 → M1 → M7 (CRM first)**, Shiva's decision (D-016).
-- **M0 Foundation: done locally.** Remote: https://github.com/shivareddybommaka/datascribe (private,
-  push via deploy key, host alias `github-datascribe`). First GitHub CI run still needs Shiva to confirm.
-  - Infra on Colima: Postgres 16 (:5433, confirmed; :5432 is the existing CRM, never touch),
-    Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025).
-- **M1 Auth + RBAC: code written, NOT yet verified or committed.**
-  - Written: register/verify-email, login + lockout, TOTP MFA (mandatory internal), refresh rotation with
-    reuse detection, logout / revoke-all, forgot/reset, idle timeouts, invites, permission + org-scoping
-    middleware, audit middleware, read-only case/document/deliverable routes, GET /permissions.
-  - Tests written: `apps/api/test/auth.test.ts`, `rbac.test.ts` (cross-org isolation over the route list,
-    sales/finance PHI refusal, scopes, audit, invites), using a `datascribe_test` DB on 5433.
-  - Migration `m1_auth` applied to the dev DB on 5433.
-  - Blocked: the OpenClaw exec tool fails with `missing scope: operator.approvals`, so typecheck,
-    tests, format and commit can't run yet.
+- **M0 Foundation: done.** Remote: https://github.com/shivareddybommaka/datascribe (private, deploy key,
+  host alias `github-datascribe`). Infra on Colima: Postgres 16 (:5433; :5432 is the existing CRM, never
+  touch), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025).
+- **M1 Auth + RBAC: done.** Commit `cafeed9`, pushed. 59/59 tests, typecheck and lint green (run by Nova).
+  First CI run with the test Postgres is pending; Shiva to confirm.
+- **M7a CRM API: written, checks pending.** Leads, pipeline summary, convert-to-client, contacts,
+  activities + my-tasks, accounts, CSV import/export, public website lead endpoint. Tests in
+  `apps/api/test/crm.test.ts` and `src/lib/csv.test.ts`. Uncommitted.
+- **M7b CRM UI: not started.** Needs UI packages (TanStack Query, React Hook Form, Zod resolver, shadcn/ui
+  deps); an install must be run for us.
 
-## Waiting on Shiva
+## Blockers
 
-- Restore exec for the Datascribe agent (missing scope `operator.approvals`).
-- Confirm the first CI run on GitHub Actions is green.
+- Agent exec can't run pnpm/node: `missing scope: operator.approvals`. Nova runs format, lint,
+  typecheck, test and commit for us. Fixing the scope is OpenClaw config, so it needs Shiva's OK.
+
+## Waiting on Shiva / Nova
+
+- Nova: run gates for M7a (format → lint → typecheck → test), then commit.
+- Shiva: CI result for `cafeed9`.
 
 ## Next steps
 
-- When exec works: typecheck → fix → run tests (creates `datascribe_test`) → format → commit → push.
-- Then M7 CRM: leads/pipeline/accounts/contacts/activities, convert-to-client (reuses `createInvite`),
-  CSV import/export, public lead endpoint, console CRM UI with login.
+- M7b: console login (password + TOTP), CRM pipeline board and table, lead detail with activities,
+  convert dialog, accounts, contacts, My tasks today widget, CSV import/export buttons.
