@@ -57,7 +57,12 @@ describe('log redaction', () => {
 
 describe('env validation', () => {
   it('refuses a real LLM provider in production without a BAA (§8.3)', () => {
-    const prod = { ...baseEnv, NODE_ENV: 'production', STRIPE_SECRET_KEY: 'sk_test_x' };
+    const prod = {
+      ...baseEnv,
+      NODE_ENV: 'production',
+      STRIPE_SECRET_KEY: 'sk_test_x',
+      CLAMAV_HOST: 'clamav',
+    };
     expect(() => loadEnv({ ...prod, SUMMARY_PROVIDER: 'anthropic' })).toThrow(
       /PHI_LLM_BAA_CONFIRMED/,
     );
@@ -72,10 +77,24 @@ describe('env validation', () => {
       /STRIPE_SECRET_KEY/,
     );
     expect(loadEnv({ ...baseEnv, STRIPE_SECRET_KEY: '' }).STRIPE_SECRET_KEY).toBeUndefined();
-    const prod = { ...baseEnv, NODE_ENV: 'production' };
+    const prod = { ...baseEnv, NODE_ENV: 'production', CLAMAV_HOST: 'clamav' };
     expect(() => loadEnv(prod)).toThrow(/PAYMENT_GATEWAY/);
     expect(() => loadEnv({ ...prod, PAYMENT_GATEWAY: 'fake' })).toThrow(/PAYMENT_GATEWAY/);
     expect(() => loadEnv({ ...prod, STRIPE_SECRET_KEY: 'sk_test_abc' })).not.toThrow();
+  });
+
+  it('requires encrypted buckets and a real virus scanner in production (§10)', () => {
+    const prod = {
+      ...baseEnv,
+      NODE_ENV: 'production',
+      STRIPE_SECRET_KEY: 'sk_test_abc',
+      CLAMAV_HOST: 'clamav',
+    };
+    expect(() => loadEnv(prod)).not.toThrow();
+    expect(loadEnv(prod).S3_SSE).toBe('AES256');
+    expect(() => loadEnv({ ...prod, S3_SSE: 'none' })).toThrow(/S3_SSE/);
+    expect(() => loadEnv({ ...prod, CLAMAV_HOST: '' })).toThrow(/CLAMAV_HOST/);
+    expect(loadEnv({ ...baseEnv, S3_SSE: 'none' }).S3_SSE).toBe('none');
   });
 
   it('requires strong JWT secrets and names the variable, never the value', () => {

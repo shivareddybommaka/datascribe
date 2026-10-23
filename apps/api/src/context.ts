@@ -4,6 +4,8 @@ import type { MedicalData } from '@datascribe/medical-data';
 import type { Logger } from 'pino';
 import type { Env } from './config/env';
 import type { Mailer } from './lib/mailer';
+import type { VirusScanner } from './lib/scanner';
+import type { DocumentStorage } from './lib/storage';
 
 export interface RateLimits {
   windowMs: number;
@@ -32,4 +34,12 @@ export interface Deps {
   /** M8 billing: Stripe (test) / Fake / Razorpay stub, and where invoice PDFs are kept */
   gateway: PaymentGateway;
   store: ObjectStore;
+  /** M4 uploaded records: S3 (SeaweedFS locally) and the virus scanner (ClamAV or mock) */
+  storage: DocumentStorage;
+  scanner: VirusScanner;
+  /**
+   * When a completed upload is hashed/scanned: in the background (default; the client polls the
+   * document), or before /complete responds (tests, deterministic).
+   */
+  verifyUploads?: 'background' | 'inline';
 }

@@ -50,6 +50,22 @@ export const EnvSchema = z
     FAKE_GATEWAY_SECRET: z.string().min(16).default('dev-only-fake-gateway-secret'),
     /** invoice PDFs (local stub until S3 in M4); relative paths resolve from the repo root */
     INVOICE_STORAGE_DIR: z.string().default('.data/invoices'),
+    /** M4 document storage (§2: private buckets, SSE, signed URLs). Unset endpoint = AWS S3. */
+    S3_ENDPOINT: optionalString.pipe(z.string().url().optional()),
+    S3_REGION: z.string().min(1).default('ap-south-1'),
+    S3_BUCKET_DOCUMENTS: z.string().min(3).default('ds-documents'),
+    S3_BUCKET_DELIVERABLES: z.string().min(3).default('ds-deliverables'),
+    /** unset = the AWS default credential chain (instance role in production) */
+    S3_ACCESS_KEY_ID: optionalString,
+    S3_SECRET_ACCESS_KEY: optionalString,
+    /** AES256 (SSE-S3) | aws:kms (SSE-KMS) | none (local SeaweedFS only, D-070) */
+    S3_SSE: z.enum(['AES256', 'aws:kms', 'none']).default('AES256'),
+    S3_SSE_KMS_KEY_ID: optionalString,
+    /** multipart part size; S3 needs ≥ 5 MiB for every part but the last */
+    UPLOAD_PART_SIZE_MB: z.coerce.number().int().min(5).max(512).default(8),
+    /** clamd (ClamAV) host; unset = mock scanner (EICAR test string only), refused in production */
+    CLAMAV_HOST: optionalString,
+    CLAMAV_PORT: z.coerce.number().int().positive().default(3310),
     SUMMARY_PROVIDER: z.enum(['mock', 'anthropic', 'openai']).default('mock'),
     PHI_LLM_BAA_CONFIRMED: bool,
     LOG_LEVEL: z
@@ -74,6 +90,21 @@ export const EnvSchema = z
         code: z.ZodIssueCode.custom,
         path: ['PHI_LLM_BAA_CONFIRMED'],
         message: 'A real SUMMARY_PROVIDER in production requires PHI_LLM_BAA_CONFIRMED=true',
+      });
+    }
+    // §10: documents are encrypted at rest and virus-scanned for real in production.
+    if (env.NODE_ENV === 'production' && env.S3_SSE === 'none') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['S3_SSE'],
+        message: 'production needs server-side encryption (AES256 or aws:kms)',
+      });
+    }
+    if (env.NODE_ENV === 'production' && !env.CLAMAV_HOST) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['CLAMAV_HOST'],
+        message: 'production needs a real virus scanner (set CLAMAV_HOST)',
       });
     }
     // The fake gateway marks invoices paid without money changing hands: never in production.

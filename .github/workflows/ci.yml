@@ -40,10 +40,18 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      # Local S3 for the upload tests (SeaweedFS, D-014). Not a service container: it needs a command.
+      - name: Start S3 (SeaweedFS)
+        run: >-
+          docker run -d --name s3 -p 127.0.0.1:9000:8333
+          -e AWS_ACCESS_KEY_ID=datascribe -e AWS_SECRET_ACCESS_KEY=datascribe-dev-secret
+          chrislusf/seaweedfs:latest server -dir=/data -s3 -s3.port=8333
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:generate
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm typecheck
+      - name: Wait for S3
+        run: timeout 90 bash -c 'until curl -s -o /dev/null http://127.0.0.1:9000; do sleep 2; done'
       - run: pnpm test
       - run: pnpm build

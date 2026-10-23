@@ -23,6 +23,9 @@ export function encrypt(plaintext: string, key: Buffer): string {
   return [VERSION, iv.toString('base64'), tag.toString('base64'), ct.toString('base64')].join(':');
 }
 
+/** True for a value produced by encrypt() (any future version prefix included). */
+export const isEnvelope = (value: string): boolean => /^v\d+:[^:]*:[^:]*:[^:]*$/.test(value);
+
 export function decrypt(envelope: string, key: Buffer): string {
   const [version, iv, tag, ct] = envelope.split(':');
   if (version !== VERSION || !iv || !tag || ct === undefined) {
