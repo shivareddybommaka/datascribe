@@ -10,6 +10,9 @@
 - **M7 CRM: done.** API (`94eaf55`) + console UI + E2E (this commit).
   - Tests: api 95, shared 83, worker 1, Playwright e2e 3. Lint, typecheck, format and build green.
   - Demo: `docs/demos/M7.md`.
+- **M3 Marketing website + CMS: built on branch `storefront/m3`** (worktree `.worktrees/storefront`),
+  waiting on Nova to merge. Demo: `docs/demos/M3.md`; design notes D-030. Lighthouse ≥ 90 on Home not
+  yet measured (Lighthouse not installed).
 - Agent exec works again (pnpm runs); earlier `operator.approvals` block cleared on 2026-10-24.
 
 ## Autopilot (from 2026-10-24)
@@ -23,6 +26,8 @@
 
 - CI result on GitHub Actions for the latest push (agent can't read Actions with the deploy key).
   CI runs lint/typecheck/unit+API tests/build; e2e is local only until M10.
+- M3: approve installing Lighthouse (e.g. `lighthouse` as a dev dependency) to measure the
+  performance/SEO ≥ 90 AC on Home, and decide on an email adapter for CMS editor password resets.
 
 ## Known follow-ups
 
