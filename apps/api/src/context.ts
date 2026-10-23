@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@datascribe/db';
+import type { MedicalData } from '@datascribe/medical-data';
 import type { Logger } from 'pino';
 import type { Env } from './config/env';
 import type { Mailer } from './lib/mailer';
@@ -25,4 +26,6 @@ export interface Deps {
   logger: Logger;
   phiKey: Buffer;
   rateLimits: RateLimits;
+  /** §8 adapters. Optional so tests default to the deterministic mocks. */
+  medical?: MedicalData;
 }

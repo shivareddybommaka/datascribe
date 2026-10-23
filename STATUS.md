@@ -19,7 +19,17 @@
   (1–6 h). Stop it by telling Datascribe Dev "stop autopilot".
 - **Current milestone: M2 Admin console** (spec order: M2 → M3 → M4 → M5 → M6 → M8 → M9 → M10).
 
+## M5a medical data adapters (branch `pipeline/m5-adapters`, parallel worktree)
+
+- Done: `packages/medical-data` adapters (NLM ICD-10-CM/HCPCS, RxNorm, openFDA, MedlinePlus, mocks),
+  `deidentifyTerm()`, resilience wrapper, usage stats, `/api/v1/medical/*` staff routes. D-050..D-056.
+- Next (M5b, after M4 uploads): worker pipeline stages, Synthea PDF script, coding step using these
+  adapters with `knownIdentifiers`, cache purge cron, admin page wiring for provider toggles and stats (M2).
+
 ## Waiting on Shiva
+
+- openFDA API key (free) before production; the docs now say a key is required (D-052).
+- Should QA reviewers use the medical lookup routes? Currently 403 (needs `cases:edit`, D-056).
 
 - CI result on GitHub Actions for the latest push (agent can't read Actions with the deploy key).
   CI runs lint/typecheck/unit+API tests/build; e2e is local only until M10.
