@@ -104,6 +104,24 @@ export async function logout() {
   setAccessToken(null);
 }
 
+/** Download a binary file (e.g. an invoice PDF) with the bearer token. */
+export async function downloadFile(path: string, filename: string) {
+  const send = () =>
+    fetch(`/api/v1${path}`, {
+      headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {},
+      credentials: 'same-origin',
+    });
+  let res = await send();
+  if (res.status === 401 && (await refreshSession())) res = await send();
+  if (!res.ok) throw await toError(res);
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 /** Download a CSV export with the bearer token (a plain link can't send it). */
 export async function downloadCsv(path: string, filename: string) {
   const text = await api<string>(path, { raw: true });

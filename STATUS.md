@@ -10,6 +10,9 @@
 - **M7 CRM: done.** API (`94eaf55`) + console UI + E2E (this commit).
   - Tests: api 95, shared 83, worker 1, Playwright e2e 3. Lint, typecheck, format and build green.
   - Demo: `docs/demos/M7.md`.
+- **M8 Billing + subscriptions: done on branch `ledger/m8`** (worktree `.worktrees/ledger`, not yet
+  merged). Billing package, API, worker jobs, finance console. Tests: api 130, billing 36, shared 83,
+  worker 5, e2e 6. Demo: `docs/demos/M8.md`. Portal billing screens (firm pays by card) still to build.
 - Agent exec works again (pnpm runs); earlier `operator.approvals` block cleared on 2026-10-24.
 
 ## Autopilot (from 2026-10-24)

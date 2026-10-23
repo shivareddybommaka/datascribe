@@ -187,6 +187,58 @@ Shiva's decision on 2026-10-23, departing from §0 rule 2. M7 runs before M2–M
   using the installed Google Chrome (`channel: 'chrome'`) so no browser download is needed. It runs locally
   against `datascribe_e2e` (5433) + Mailpit. CI e2e (browser + Mailpit services) is planned for M10.
 
+## D-040 — Usage and plan changes (M8, 2026-10-24)
+
+- **A case's pages count once, on first delivery.** `UsageRecord` is unique per case, so a
+  redelivery or a retried job never bills twice. Manual entries (`POST /usage`, finance only) cover
+  corrections and work done outside the pipeline.
+- Usage is filed under the billing period that contains the delivery (the subscription's current
+  period, or the calendar month when the firm has no subscription).
+- **No proration in v1.** A plan change takes effect at once. The period invoice uses the plan in force
+  when the period ends: plan fee + overage pages × that plan's overage price. Changing plan also clears a
+  pending cancel-at-period-end.
+
+## D-041 — Billing money arithmetic
+
+Extends D-013. `packages/billing/src/money.ts` works in bigint units of 1/10,000 of a currency unit,
+so 4-decimal per-page prices multiply exactly. Line amounts, tax and totals are rounded half-up to
+cents at the point they are produced. API responses carry amounts as decimal strings, never floats.
+
+## D-042 — Payment gateways
+
+- `PaymentGateway` interface (checkout session, webhook parse, refund) with three implementations:
+  **Stripe** (test-mode keys only: `sk_test_` / `rk_test_`, anything else throws), **Fake** (signed
+  webhooks, a simulated checkout page) and a **Razorpay** stub for later.
+- `PAYMENT_GATEWAY=stripe` without `STRIPE_SECRET_KEY` falls back to Fake, so dev, CI and E2E never
+  need Stripe. Production env validation refuses Fake.
+- The webhook, not the pay call, marks an invoice paid. It is signature-checked and idempotent on the
+  gateway event, so replays record nothing new.
+- Refunds (finance, `payments:approve`) call the gateway first, then update the payment with a
+  compare-and-set on `refundedAmount`, so two concurrent refunds can't both apply.
+
+## D-043 — Billing schedule
+
+The worker runs two BullMQ repeatable jobs (UTC): `monthly-invoicing` daily at 02:00 and `dunning`
+daily at 09:00. Invoicing bills every subscription whose period has ended, so each firm is invoiced on
+its own anniversary, a missed day catches up (one invoice per period) and a re-run never bills a period
+twice. Dunning emails client admins on the due date, +7 and +14 days (Mailpit only) and marks
+invoices overdue. Finance can trigger both runs from the console; `asOf` is refused in production.
+
+## D-044 — M8 finance console UI
+
+- `/console/finance`: overview, invoices (list + detail), subscriptions, plans. The console header
+  gets a section switcher (CRM | Finance), shown by `crm:view` / `invoices:view`. As in D-019 this
+  only hides links; the API enforces access.
+- MRR on the overview is the sum of live subscriptions' plan prices, computed in the browser. It is
+  shown **per currency** with no conversion. `/dashboards/finance` (revenue by client etc.) is M9.
+- Forms use plain controlled state rather than React Hook Form: the API validates every field and
+  returns the message, and the one-off invoice's variable line list is simpler this way.
+- Invoice PDFs download through `downloadFile()` with the bearer token, because a plain link can't
+  send it.
+- Paying is for the firm (client_admin, §5.3 portal billing), so the console has no pay button. The
+  portal billing screens are not built yet; checkout's return URLs already point at
+  `/portal/billing/invoices/:id`.
+
 ## D-013 — Money and encrypted fields
 
 Money is `Decimal(12,2)` (per-page prices `Decimal(12,4)`). Encrypted PHI fields (`Case.patientName`,

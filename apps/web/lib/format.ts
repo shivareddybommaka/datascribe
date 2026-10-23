@@ -28,6 +28,17 @@ export function money(value: string | number | null | undefined, currency = 'USD
   }).format(Number(value));
 }
 
+/** Exact amounts for billing (2 decimals), e.g. "US$1,935.18". */
+export function money2(value: string | number | null | undefined, currency = 'USD'): string {
+  if (value === null || value === undefined || value === '') return '—';
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number(value));
+}
+
 export function date(value: string | null | undefined): string {
   if (!value) return '—';
   return new Date(value).toLocaleDateString(undefined, {
