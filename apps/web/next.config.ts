@@ -9,6 +9,8 @@ if (fs.existsSync(rootEnv)) process.loadEnvFile(rootEnv);
 const apiUrl = process.env.API_URL ?? 'http://localhost:4000';
 
 const nextConfig: NextConfig = {
+  // `next dev` writes to .next-dev so a running preview never collides with `next build` (.next).
+  distDir: process.env.NEXT_DIST_DIR || '.next',
   transpilePackages: ['@datascribe/shared', '@datascribe/ui', '@datascribe/site-content'],
   poweredByHeader: false,
   // Baseline security headers (audit finding M8). A full script CSP comes with M10 hardening.

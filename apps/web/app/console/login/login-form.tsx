@@ -90,6 +90,12 @@ export function LoginForm() {
         <Button type="submit" className="w-full" disabled={busy}>
           {busy ? 'Signing in…' : 'Continue'}
         </Button>
+        <a
+          href="/forgot-password"
+          className="block text-center text-sm text-brand-700 hover:underline"
+        >
+          Forgot password?
+        </a>
       </form>
     );
   }

@@ -137,6 +137,50 @@ test('marking a lead lost on the board requires a reason', async ({ page }) => {
   ).toBeVisible();
 });
 
+test('forgot password: emailed link sets a new password that works', async ({ page }) => {
+  const email = 'case.manager@datascribe.example';
+  await page.goto('/console/login');
+  await page.getByRole('link', { name: 'Forgot password?' }).click();
+  await expect(page).toHaveURL(/\/forgot-password/);
+  await page.waitForLoadState('networkidle'); // hydrated: submit goes through React, not a native GET
+  await page.getByLabel('Email').fill(email);
+  await page.getByRole('button', { name: 'Send reset link' }).click();
+  await expect(page.getByRole('status')).toContainText('reset link is on its way');
+
+  let token = '';
+  for (let i = 0; i < 20 && !token; i++) {
+    const list = (await (
+      await fetch(
+        `${E2E.mailpit}/api/v1/search?query=${encodeURIComponent(`to:${email} subject:Reset`)}`,
+      )
+    ).json()) as { messages: { ID: string }[] };
+    if (list.messages[0]) {
+      const msg = (await (
+        await fetch(`${E2E.mailpit}/api/v1/message/${list.messages[0].ID}`)
+      ).json()) as {
+        Text: string;
+      };
+      token = /token=([A-Za-z0-9_-]+)/.exec(msg.Text)?.[1] ?? '';
+    }
+    if (!token) await new Promise((r) => setTimeout(r, 250));
+  }
+  expect(token).not.toBe('');
+
+  const newPassword = 'Reset-flow-password-789';
+  await page.goto(`/reset-password?token=${token}`);
+  await page.waitForLoadState('networkidle');
+  await page.getByLabel('New password (12+ characters)').fill(newPassword);
+  await page.getByLabel('Confirm new password').fill(newPassword);
+  await page.getByRole('button', { name: 'Save new password' }).click();
+  await expect(page.getByRole('status')).toContainText('password was changed');
+
+  await page.getByRole('link', { name: 'Sign in' }).click();
+  await page.getByLabel('Email').fill(email);
+  await page.getByLabel('Password').fill(newPassword);
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByLabel('Authentication code')).toBeVisible();
+});
+
 test('client users cannot use the staff console', async ({ page }) => {
   await page.goto('/console/login');
   await page.getByLabel('Email').fill('client.admin@acme.example');

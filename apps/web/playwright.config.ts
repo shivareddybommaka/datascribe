@@ -57,7 +57,11 @@ export default defineConfig({
       url: webUrl,
       reuseExistingServer: false,
       timeout: 120_000,
-      env: { API_URL: `http://localhost:${E2E.apiPort}`, NEXT_TELEMETRY_DISABLED: '1' },
+      env: {
+        API_URL: `http://localhost:${E2E.apiPort}`,
+        NEXT_TELEMETRY_DISABLED: '1',
+        NEXT_DIST_DIR: `.next-e2e-${E2E.webPort}`,
+      },
     },
   ],
 });
