@@ -19,7 +19,27 @@
   (1–6 h). Stop it by telling Datascribe Dev "stop autopilot".
 - **Current milestone: M2 Admin console** (spec order: M2 → M3 → M4 → M5 → M6 → M8 → M9 → M10).
 
+## Agent team (from 2026-10-24 01:15)
+
+Master: **datascribe-dev** (this agent, session `agent:datascribe:main`) works on M2 and merges
+everyone's branches into `main`. Subagents work in git worktrees under `.worktrees/` (git-ignored),
+each with its own `.env`, ports and databases on 5433 (`datascribe_<name>_dev` / `_test`):
+
+| Subagent              | Branch                 | Scope                                                               | Ports                        |
+| --------------------- | ---------------------- | ------------------------------------------------------------------- | ---------------------------- |
+| datascribe-storefront | `storefront/m3`        | M3 website + Payload CMS, public plans endpoint                     | web 3200, api 4200, cms 3201 |
+| datascribe-ledger     | `ledger/m8`            | M8 billing, Stripe test mode behind PaymentGateway, finance console | web 3300, api 4300           |
+| datascribe-pipeline   | `pipeline/m5-adapters` | M5 medical-data adapters, deidentifyTerm, /medical routes           | api 4400                     |
+| datascribe-auditor    | `auditor/review-m1-m7` | read-only security + PHI review of M0/M1/M7                         | —                            |
+
+DECISIONS numbering per agent to avoid clashes: storefront D-030+, ledger D-040+, pipeline D-050+.
+Only the master runs e2e and pushes.
+
 ## Waiting on Shiva
+
+- Telegram control: create a Telegram group with the existing bot (bot as admin or privacy off), send
+  a message, send the group id (forward a message to @RawDataBot). Then the binding to the
+  `datascribe` agent is proposed via OpenClaw for approval.
 
 - CI result on GitHub Actions for the latest push (agent can't read Actions with the deploy key).
   CI runs lint/typecheck/unit+API tests/build; e2e is local only until M10.
