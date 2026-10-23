@@ -12,6 +12,7 @@
     "test": "vitest run --coverage"
   },
   "dependencies": {
+    "@datascribe/billing": "workspace:*",
     "@datascribe/shared": "workspace:*",
     "@datascribe/db": "workspace:*",
     "argon2": "^0.43.0",
