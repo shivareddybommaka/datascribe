@@ -22,7 +22,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['packages/db/prisma/seed.ts', '**/scripts/**'],
+    files: ['packages/db/prisma/seed.ts', 'packages/db/prisma/seed-demo.ts', '**/scripts/**'],
     rules: { 'no-console': 'off' },
   },
 );
