@@ -14,12 +14,15 @@ export interface RateLimits {
   authPerWindow: number;
   /** register / forgot / invite accept, per IP */
   publicPerWindow: number;
+  /** login / MFA / forgot / register, per target account whatever the IP (audit M6) */
+  accountPerWindow?: number;
 }
 
-export const DEFAULT_RATE_LIMITS: RateLimits = {
+export const DEFAULT_RATE_LIMITS: Required<RateLimits> = {
   windowMs: 15 * 60 * 1000,
   authPerWindow: 30,
   publicPerWindow: 10,
+  accountPerWindow: 10,
 };
 
 /** Everything a request handler needs. Passed in so tests can swap DB, mailer and limits. */

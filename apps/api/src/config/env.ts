@@ -69,6 +69,21 @@ export const EnvSchema = z
     /** per-IP requests per 15 min: login/MFA/refresh, and register/forgot/invite-accept (D-017) */
     RATE_LIMIT_AUTH: z.coerce.number().int().min(1).default(30),
     RATE_LIMIT_PUBLIC: z.coerce.number().int().min(1).default(10),
+    /** per-account requests per 15 min on login/MFA/forgot/register, whatever the IP (audit M6) */
+    RATE_LIMIT_ACCOUNT: z.coerce.number().int().min(1).default(10),
+    /**
+     * Express `trust proxy`: which hops may set X-Forwarded-For (audit M6). `loopback` (default)
+     * trusts the local Next.js proxy only; behind a load balancer give its hop count or CIDRs.
+     * `true` is refused: it lets any client choose its own IP and dodge the per-IP limits.
+     */
+    TRUST_PROXY: z
+      .string()
+      .default('loopback')
+      .transform((v) => v.trim())
+      .refine((v) => v !== 'true', 'trusting every hop lets clients spoof their IP')
+      .transform((v): string | number | false =>
+        v === 'false' || v === '' ? false : /^\d+$/.test(v) ? Number(v) : v,
+      ),
     SUMMARY_PROVIDER: z.enum(['mock', 'anthropic', 'openai']).default('mock'),
     PHI_LLM_BAA_CONFIRMED: bool,
     LOG_LEVEL: z

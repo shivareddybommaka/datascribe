@@ -684,3 +684,14 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
   turned on `enforceMfa`) and the user has not enrolled, the whole family is revoked (401
   `mfa_required`, audit `auth.refresh.mfa_required`). The next sign-in goes through enrolment. A
   suspended org also ends the session at refresh, as it already did per request.
+
+## D-101 — Trust-proxy setting and per-account auth limits (audit M6, M10, 2026-10-24)
+
+- `TRUST_PROXY` replaces the hard-coded `trust proxy 1`, which let a client that reached the API
+  directly send its own `X-Forwarded-For` and get a fresh per-IP bucket on every request. Default
+  `loopback`: only the local Next.js proxy (dev, e2e) is trusted. Behind a load balancer set its hop
+  count or CIDRs (M10 part 3 IaC). `true` is refused at startup.
+- Per-account limiter (`RATE_LIMIT_ACCOUNT`, default 10 / 15 min) on login, MFA setup/verify,
+  forgot and register, keyed by SHA-256 of the normalised email (or the MFA step's user id). It counts
+  every request, so it also caps reset and "sign-up attempt" mails to one inbox. Lockout (5 wrong
+  secrets) still applies on top. Keys never hold an email in clear, ready for the Redis store.

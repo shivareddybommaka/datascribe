@@ -5,7 +5,17 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { tokenFromMail } from '../src/lib/mailer';
 import { hashPassword } from '../src/lib/password';
 import { TEST_PASSWORD, testPhiKey } from './constants';
-import { CSRF, SEED, bearer, buildApp, login, orgId, prisma, uniqueEmail } from './helpers';
+import {
+  CSRF,
+  SEED,
+  bearer,
+  buildApp,
+  login,
+  orgId,
+  prisma,
+  testEnv,
+  uniqueEmail,
+} from './helpers';
 
 const { app, mailer } = buildApp();
 const api = () => request(app);
@@ -103,6 +113,55 @@ describe('login', () => {
     const third = await request(limited.app).post('/api/v1/auth/login').send(body);
     expect(third.status).toBe(429);
     expect(third.body.error.code).toBe('rate_limited');
+  });
+
+  it('without a trusted proxy, X-Forwarded-For cannot reset the per-IP limit (audit M6)', async () => {
+    const limited = buildApp({
+      rateLimits: { windowMs: 60_000, authPerWindow: 2, publicPerWindow: 2 },
+      envOverrides: { TRUST_PROXY: 'false' },
+    });
+    const body = { email: 'nobody@test.example', password: 'x' };
+    const send = (ip: string) =>
+      request(limited.app).post('/api/v1/auth/login').set('x-forwarded-for', ip).send(body);
+    await send('203.0.113.1');
+    await send('203.0.113.2');
+    expect((await send('203.0.113.3')).status).toBe(429);
+  });
+
+  it('TRUST_PROXY=true is refused; the default trusts only the loopback proxy', () => {
+    expect(() => testEnv({ TRUST_PROXY: 'true' })).toThrow(/TRUST_PROXY/);
+    expect(testEnv().TRUST_PROXY).toBe('loopback');
+    expect(testEnv({ TRUST_PROXY: '1' }).TRUST_PROXY).toBe(1);
+  });
+
+  it('limits attempts per account even when they come from many IPs (audit M6)', async () => {
+    const limited = buildApp({
+      rateLimits: {
+        windowMs: 60_000,
+        authPerWindow: 100,
+        publicPerWindow: 100,
+        accountPerWindow: 3,
+      },
+    });
+    const email = await makeClientUser();
+    const send = (i: number, target = email) =>
+      request(limited.app)
+        .post('/api/v1/auth/login')
+        .set('x-forwarded-for', `198.51.100.${i}`)
+        .send({ email: target.toUpperCase(), password: 'wrong-password-x' });
+    for (let i = 1; i <= 3; i++) expect((await send(i)).status).toBe(401);
+    const blocked = await send(4);
+    expect(blocked.status).toBe(429);
+    expect(blocked.body.error.code).toBe('rate_limited');
+    // other accounts are unaffected
+    expect((await send(5, 'nobody@test.example')).status).toBe(401);
+    // reset mails to one inbox are capped the same way
+    for (let i = 0; i < 3; i++)
+      await request(limited.app).post('/api/v1/auth/forgot').send({ email: SEED.harborAdmin });
+    expect(
+      (await request(limited.app).post('/api/v1/auth/forgot').send({ email: SEED.harborAdmin }))
+        .status,
+    ).toBe(429);
   });
 });
 

@@ -87,6 +87,7 @@ const app = createApp({
     ...DEFAULT_RATE_LIMITS,
     authPerWindow: env.RATE_LIMIT_AUTH,
     publicPerWindow: env.RATE_LIMIT_PUBLIC,
+    accountPerWindow: env.RATE_LIMIT_ACCOUNT,
   },
   medical: createMedicalData({
     provider: env.MEDICAL_DATA_PROVIDER,

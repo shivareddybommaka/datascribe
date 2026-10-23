@@ -4,7 +4,7 @@ import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 import { authenticate, requireAuth, requireCsrf, resolveAuth } from '../auth/middleware';
 import { REFRESH_COOKIE, clearRefreshCookie, isIdle, issueSession } from '../auth/session';
-import type { Deps } from '../context';
+import { DEFAULT_RATE_LIMITS, type Deps } from '../context';
 import { HttpError, badRequest, conflict, forbidden, unauthorized } from '../lib/errors';
 import { PasswordSchema, burnPasswordCheck, hashPassword, verifyPassword } from '../lib/password';
 import { renderEmail } from '../lib/templates';
@@ -22,12 +22,20 @@ export const Email = z.string().trim().toLowerCase().email().max(254);
 const invalidCredentials = () =>
   unauthorized('invalid_credentials', 'Email or password is incorrect');
 
-export function rateLimiter(windowMs: number, limit: number) {
+export function rateLimiter(
+  windowMs: number,
+  limit: number,
+  /** key requests by something other than the client IP; requests without a key are not counted */
+  keyOf?: (req: Request) => string | undefined,
+) {
   return rateLimit({
     windowMs,
     limit,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
+    ...(keyOf
+      ? { keyGenerator: (req: Request) => keyOf(req) ?? '', skip: (req: Request) => !keyOf(req) }
+      : {}),
     handler: (_req, res) => {
       res
         .status(429)
@@ -35,6 +43,12 @@ export function rateLimiter(windowMs: number, limit: number) {
     },
   });
 }
+
+/** The account a request targets, hashed (limiter keys never hold an email address). */
+const accountKey = (prefix: string, value: unknown): string | undefined =>
+  typeof value === 'string' && value.trim()
+    ? `${prefix}:${sha256(value.trim().toLowerCase())}`
+    : undefined;
 
 type LoginUser = {
   mfaEnabled: boolean;
@@ -61,6 +75,19 @@ export function authRouter(deps: Deps): Router {
   const r = Router();
   const authLimit = rateLimiter(deps.rateLimits.windowMs, deps.rateLimits.authPerWindow);
   const publicLimit = rateLimiter(deps.rateLimits.windowMs, deps.rateLimits.publicPerWindow);
+  // Per target account, so spreading guesses or reset mails over many IPs doesn't help (audit M6).
+  // Email for login/forgot/register, the MFA step's user for the TOTP step.
+  const accountLimit = rateLimiter(
+    deps.rateLimits.windowMs,
+    deps.rateLimits.accountPerWindow ?? DEFAULT_RATE_LIMITS.accountPerWindow,
+    (req) => {
+      const body = (req.body ?? {}) as { email?: unknown; mfaToken?: unknown };
+      if (body.email !== undefined) return accountKey('email', body.email);
+      if (typeof body.mfaToken !== 'string') return undefined;
+      const claims = verifyToken<MfaClaims>(body.mfaToken, env.JWT_REFRESH_SECRET, 'mfa');
+      return claims ? accountKey('user', claims.sub) : undefined;
+    },
+  );
 
   async function completeLogin(req: Request, res: Response, userId: string) {
     const user = await prisma.user.update({
@@ -136,7 +163,7 @@ export function authRouter(deps: Deps): Router {
   }
 
   // ── Login ──────────────────────────────────────────────────────────────
-  r.post('/auth/login', authLimit, async (req, res) => {
+  r.post('/auth/login', authLimit, accountLimit, async (req, res) => {
     const body = parse(z.object({ email: Email, password: z.string().min(1).max(128) }), req.body);
     const user = await prisma.user.findUnique({
       where: { email: body.email },
@@ -191,7 +218,7 @@ export function authRouter(deps: Deps): Router {
     return { userId: ctx.user.id, viaLogin: false, setup: true };
   }
 
-  r.post('/auth/mfa/setup', authLimit, async (req, res) => {
+  r.post('/auth/mfa/setup', authLimit, accountLimit, async (req, res) => {
     const subject = await mfaSubject(req);
     const user = await prisma.user.findUniqueOrThrow({ where: { id: subject.userId } });
     if (user.mfaEnabled) throw conflict('mfa_already_enabled', 'MFA is already enabled');
@@ -205,7 +232,7 @@ export function authRouter(deps: Deps): Router {
     res.json({ otpauthUrl, qrDataUrl: await totpQrDataUrl(otpauthUrl), secret });
   });
 
-  r.post('/auth/mfa/verify', authLimit, async (req, res) => {
+  r.post('/auth/mfa/verify', authLimit, accountLimit, async (req, res) => {
     const subject = await mfaSubject(req);
     const { code } = parse(
       z.object({ code: z.string().regex(/^\d{6}$/), mfaToken: z.string().optional() }),
@@ -381,7 +408,7 @@ export function authRouter(deps: Deps): Router {
   });
 
   // ── Self-registration (§5.2): creates Organization + first client_admin ──
-  r.post('/auth/register', publicLimit, async (req, res) => {
+  r.post('/auth/register', publicLimit, accountLimit, async (req, res) => {
     const body = parse(
       z.object({
         organizationName: z.string().trim().min(2).max(200),
@@ -477,7 +504,7 @@ export function authRouter(deps: Deps): Router {
   });
 
   // ── Forgot / reset password ────────────────────────────────────────────
-  r.post('/auth/forgot', publicLimit, async (req, res) => {
+  r.post('/auth/forgot', publicLimit, accountLimit, async (req, res) => {
     const { email } = parse(z.object({ email: Email }), req.body);
     const user = await prisma.user.findUnique({ where: { email } });
     if (user && user.status === 'active') {

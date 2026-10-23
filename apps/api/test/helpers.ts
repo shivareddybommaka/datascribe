@@ -46,7 +46,12 @@ export const testStorage = () => {
   return { storage, ready: bucketsReady };
 };
 
-const GENEROUS: RateLimits = { windowMs: 60_000, authPerWindow: 10_000, publicPerWindow: 10_000 };
+const GENEROUS: RateLimits = {
+  windowMs: 60_000,
+  authPerWindow: 10_000,
+  publicPerWindow: 10_000,
+  accountPerWindow: 10_000,
+};
 
 export function buildApp(
   opts: {
