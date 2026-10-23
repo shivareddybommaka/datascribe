@@ -1,3 +1,4 @@
+import { FakeGateway, MemoryObjectStore } from '@datascribe/billing';
 import { PrismaClient } from '@datascribe/db';
 import { internalSeedEmail } from '@datascribe/db/seed';
 import type { RoleKey } from '@datascribe/shared';
@@ -32,6 +33,11 @@ const GENEROUS: RateLimits = { windowMs: 60_000, authPerWindow: 10_000, publicPe
 
 export function buildApp(opts: { rateLimits?: RateLimits } = {}) {
   const mailer = new MemoryMailer();
+  const gateway = new FakeGateway({
+    secret: 'test-fake-gateway-secret',
+    checkoutBaseUrl: `${APP_URL}/api/v1/payments/fake-checkout`,
+  });
+  const store = new MemoryObjectStore();
   const app = createApp({
     env: testEnv(),
     prisma,
@@ -39,8 +45,10 @@ export function buildApp(opts: { rateLimits?: RateLimits } = {}) {
     logger: createLogger('silent'),
     phiKey: testPhiKey,
     rateLimits: opts.rateLimits ?? GENEROUS,
+    gateway,
+    store,
   });
-  return { app, mailer };
+  return { app, mailer, gateway, store };
 }
 
 export const CSRF = { 'x-datascribe-csrf': '1' };

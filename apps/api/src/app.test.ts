@@ -47,7 +47,7 @@ describe('api skeleton', () => {
 
 describe('env validation', () => {
   it('refuses a real LLM provider in production without a BAA (§8.3)', () => {
-    const prod = { ...baseEnv, NODE_ENV: 'production' };
+    const prod = { ...baseEnv, NODE_ENV: 'production', STRIPE_SECRET_KEY: 'sk_test_x' };
     expect(() => loadEnv({ ...prod, SUMMARY_PROVIDER: 'anthropic' })).toThrow(
       /PHI_LLM_BAA_CONFIRMED/,
     );
@@ -55,6 +55,17 @@ describe('env validation', () => {
       loadEnv({ ...prod, SUMMARY_PROVIDER: 'anthropic', PHI_LLM_BAA_CONFIRMED: 'true' }),
     ).not.toThrow();
     expect(() => loadEnv({ ...prod, SUMMARY_PROVIDER: 'mock' })).not.toThrow();
+  });
+
+  it('allows Stripe test keys only, and no fake gateway in production (§5.6)', () => {
+    expect(() => loadEnv({ ...baseEnv, STRIPE_SECRET_KEY: 'sk_live_abc' })).toThrow(
+      /STRIPE_SECRET_KEY/,
+    );
+    expect(loadEnv({ ...baseEnv, STRIPE_SECRET_KEY: '' }).STRIPE_SECRET_KEY).toBeUndefined();
+    const prod = { ...baseEnv, NODE_ENV: 'production' };
+    expect(() => loadEnv(prod)).toThrow(/PAYMENT_GATEWAY/);
+    expect(() => loadEnv({ ...prod, PAYMENT_GATEWAY: 'fake' })).toThrow(/PAYMENT_GATEWAY/);
+    expect(() => loadEnv({ ...prod, STRIPE_SECRET_KEY: 'sk_test_abc' })).not.toThrow();
   });
 
   it('requires strong JWT secrets and names the variable, never the value', () => {

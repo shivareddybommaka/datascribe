@@ -1,3 +1,4 @@
+import { createOneOffInvoice } from '@datascribe/billing';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hashPassword } from '../src/lib/password';
@@ -118,6 +119,98 @@ describe('§4.4 rule 1: a client user can never read another organisation’s da
     expect(
       list.body.items.every((c: { organizationId: string }) => c.organizationId === acme),
     ).toBe(true);
+  });
+});
+
+/** Billing records owned by a firm (M8). Same rule: other firms' ids are 404, lists stay in-firm. */
+const BILLING_ROUTES: { name: string; method: 'get' | 'post'; path: (invoiceId: string) => string }[] =
+  [
+    { name: 'invoice detail', method: 'get', path: (id) => `/api/v1/invoices/${id}` },
+    { name: 'invoice PDF', method: 'get', path: (id) => `/api/v1/invoices/${id}/pdf` },
+    { name: 'invoice pay', method: 'post', path: (id) => `/api/v1/invoices/${id}/pay` },
+  ];
+
+describe('§4.4 rule 1 for billing: firms never see each other’s invoices or subscriptions', () => {
+  let acmeInvoice: string;
+  let harborInvoice: string;
+  const line = [{ description: 'Isolation test', quantity: 1, unitPrice: '10' }];
+
+  beforeAll(async () => {
+    acmeInvoice = (await createOneOffInvoice(prisma, { organizationId: await orgId('acme'), lines: line })).id;
+    harborInvoice = (
+      await createOneOffInvoice(prisma, { organizationId: await orgId('harbor'), lines: line })
+    ).id;
+  });
+
+  const call = (method: 'get' | 'post', path: string, token: string) =>
+    request(app)[method](path).set(bearer(token));
+
+  for (const route of BILLING_ROUTES) {
+    it(`Acme admin gets 404 for Harbor's ${route.name}, and the reverse`, async () => {
+      expect((await call(route.method, route.path(harborInvoice), tokens[SEED.acmeAdmin]!)).status).toBe(
+        404,
+      );
+      expect((await call(route.method, route.path(acmeInvoice), tokens[SEED.harborAdmin]!)).status).toBe(
+        404,
+      );
+    });
+  }
+
+  it('own-firm access works, and lists and subscriptions never cross firms', async () => {
+    expect((await get(`/api/v1/invoices/${acmeInvoice}`, tokens[SEED.acmeAdmin]!)).status).toBe(200);
+    const acme = await orgId('acme');
+    const harbor = await orgId('harbor');
+    const list = await get('/api/v1/invoices?limit=500', tokens[SEED.acmeAdmin]!);
+    expect(list.body.items.every((i: { organizationId: string }) => i.organizationId === acme)).toBe(
+      true,
+    );
+    const subs = await get('/api/v1/subscriptions', tokens[SEED.harborAdmin]!);
+    expect(subs.body.items.every((s: { organizationId: string }) => s.organizationId === harbor)).toBe(
+      true,
+    );
+    expect(
+      (await get(`/api/v1/subscriptions/current?organizationId=${acme}`, tokens[SEED.harborAdmin]!))
+        .status,
+    ).toBe(404);
+  });
+
+  it('a client-org custom role with all-scope billing grants still cannot cross firms', async () => {
+    const perms = await prisma.permission.findMany({
+      where: {
+        module: { in: ['invoices', 'payments', 'subscriptions'] },
+        action: { in: ['view', 'create', 'manage'] },
+        scope: 'all',
+      },
+    });
+    const role = await prisma.role.create({
+      data: {
+        key: `custom_billing_wide_${Date.now()}`,
+        name: 'Misconfigured billing role',
+        permissions: { create: perms.map((p) => ({ permissionId: p.id })) },
+      },
+    });
+    const email = uniqueEmail('billingwide');
+    await prisma.user.create({
+      data: {
+        email,
+        name: 'Wide Billing User',
+        organizationId: await orgId('acme'),
+        passwordHash: await hashPassword(TEST_PASSWORD),
+        emailVerifiedAt: new Date(),
+        roles: { create: { roleId: role.id } },
+      },
+    });
+    const { token } = await login(app, email);
+    for (const route of BILLING_ROUTES) {
+      expect((await call(route.method, route.path(harborInvoice), token)).status, route.name).toBe(404);
+    }
+    const list = await get('/api/v1/invoices?limit=500', token);
+    const acme = await orgId('acme');
+    expect(list.body.items.every((i: { organizationId: string }) => i.organizationId === acme)).toBe(
+      true,
+    );
+    // all-scope staff-only actions stay closed to client orgs
+    expect((await request(app).post('/api/v1/invoices').set(bearer(token)).send({})).status).toBe(403);
   });
 });
 

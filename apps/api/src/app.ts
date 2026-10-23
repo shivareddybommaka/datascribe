@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { BillingError, GatewayError } from '@datascribe/billing';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express, { Router, type ErrorRequestHandler, type Express } from 'express';
@@ -8,6 +9,10 @@ import type { Deps } from './context';
 import { writeAudit } from './lib/audit';
 import { HttpError } from './lib/errors';
 import { authRouter } from './routes/auth';
+import { invoicesRouter } from './routes/billing/invoices';
+import { paymentsRouter } from './routes/billing/payments';
+import { plansRouter } from './routes/billing/plans';
+import { subscriptionsRouter } from './routes/billing/subscriptions';
 import { casesRouter } from './routes/cases';
 import { accountsRouter } from './routes/crm/accounts';
 import { activitiesRouter } from './routes/crm/activities';
@@ -45,6 +50,9 @@ export function createApp(deps: Deps): Express {
   );
   app.use(helmet());
   app.use(cors({ origin: [env.APP_URL], credentials: true }));
+  // Payment webhooks are verified against the exact bytes received, so they get the raw body
+  // (express.json then skips them).
+  app.use('/api/v1/payments/webhook', express.raw({ type: () => true, limit: '1mb' }));
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
 
@@ -65,6 +73,10 @@ export function createApp(deps: Deps): Express {
   v1.use(activitiesRouter(deps));
   v1.use(accountsRouter(deps));
   v1.use(publicRouter(deps));
+  v1.use(plansRouter(deps));
+  v1.use(subscriptionsRouter(deps));
+  v1.use(invoicesRouter(deps));
+  v1.use(paymentsRouter(deps));
   app.use('/api/v1', v1);
 
   app.use((_req, res) => {
@@ -80,6 +92,15 @@ export function createApp(deps: Deps): Express {
           ...(err.details ? { details: err.details } : {}),
         },
       });
+      return;
+    }
+    if (err instanceof BillingError) {
+      res.status(err.status).json({ error: { code: err.code, message: err.message } });
+      return;
+    }
+    if (err instanceof GatewayError) {
+      req.log.warn({ err: { name: err.name, message: err.message } }, 'payment gateway error');
+      res.status(502).json({ error: { code: 'gateway_error', message: err.message } });
       return;
     }
     const e = err as { type?: string; status?: number; name?: string; message?: string };

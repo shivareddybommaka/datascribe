@@ -7,6 +7,12 @@ const bool = z
 
 const secret = z.string().min(32, 'must be at least 32 characters');
 
+/** `KEY=` in .env arrives as ""; treat it as unset. */
+const optionalString = z
+  .string()
+  .optional()
+  .transform((v) => (v ? v : undefined));
+
 export const EnvSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -21,6 +27,16 @@ export const EnvSchema = z
     MAIL_FROM: z.string().default('no-reply@datascribe.example'),
     /** website contact / demo forms notify this inbox (§5.1) */
     SALES_INBOX: z.string().email().default('sales@datascribe.example'),
+    /** stripe (test keys only) | razorpay (stub) | fake. stripe without a key falls back to fake (D-042) */
+    PAYMENT_GATEWAY: z.enum(['stripe', 'razorpay', 'fake']).default('stripe'),
+    STRIPE_SECRET_KEY: optionalString.refine(
+      (v) => !v || /^(sk|rk)_test_/.test(v),
+      'only Stripe test-mode keys (sk_test_…) are allowed',
+    ),
+    STRIPE_WEBHOOK_SECRET: optionalString,
+    FAKE_GATEWAY_SECRET: z.string().min(16).default('dev-only-fake-gateway-secret'),
+    /** invoice PDFs (local stub until S3 in M4); relative paths resolve from the repo root */
+    INVOICE_STORAGE_DIR: z.string().default('.data/invoices'),
     SUMMARY_PROVIDER: z.enum(['mock', 'anthropic', 'openai']).default('mock'),
     PHI_LLM_BAA_CONFIRMED: bool,
     LOG_LEVEL: z
@@ -38,6 +54,16 @@ export const EnvSchema = z
         code: z.ZodIssueCode.custom,
         path: ['PHI_LLM_BAA_CONFIRMED'],
         message: 'A real SUMMARY_PROVIDER in production requires PHI_LLM_BAA_CONFIRMED=true',
+      });
+    }
+    // The fake gateway marks invoices paid without money changing hands: never in production.
+    const fake =
+      env.PAYMENT_GATEWAY === 'fake' || (env.PAYMENT_GATEWAY === 'stripe' && !env.STRIPE_SECRET_KEY);
+    if (env.NODE_ENV === 'production' && fake) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['PAYMENT_GATEWAY'],
+        message: 'production needs a real payment gateway (set STRIPE_SECRET_KEY)',
       });
     }
   });

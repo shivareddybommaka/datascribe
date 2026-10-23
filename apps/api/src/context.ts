@@ -1,3 +1,4 @@
+import type { ObjectStore, PaymentGateway } from '@datascribe/billing';
 import type { PrismaClient } from '@datascribe/db';
 import type { Logger } from 'pino';
 import type { Env } from './config/env';
@@ -25,4 +26,7 @@ export interface Deps {
   logger: Logger;
   phiKey: Buffer;
   rateLimits: RateLimits;
+  /** M8 billing: Stripe (test) / Fake / Razorpay stub, and where invoice PDFs are kept */
+  gateway: PaymentGateway;
+  store: ObjectStore;
 }
