@@ -1,4 +1,4 @@
-import type { Prisma } from '@datascribe/db';
+import { errorInfo, type Prisma } from '@datascribe/db';
 import { Router, type Request } from 'express';
 import { z } from 'zod';
 import { authenticate, requireAuth, requirePermission } from '../auth/middleware';
@@ -251,8 +251,8 @@ export function documentsRouter(deps: Deps): Router {
     if (deps.verifyUploads === 'inline') {
       await verifyDocument(deps, doc.id);
     } else {
-      void verifyDocument(deps, doc.id).catch((err: Error) =>
-        deps.logger.error({ err: { name: err.name, message: err.message } }, 'verify failed'),
+      void verifyDocument(deps, doc.id).catch((err: unknown) =>
+        deps.logger.error({ err: errorInfo(err) }, 'verify failed'),
       );
     }
     const fresh = await prisma.document.findUniqueOrThrow({

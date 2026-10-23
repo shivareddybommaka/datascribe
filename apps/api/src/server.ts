@@ -1,5 +1,5 @@
 import { LocalObjectStore, createGateway, repoPath } from '@datascribe/billing';
-import { prisma } from '@datascribe/db';
+import { errorInfo, prisma } from '@datascribe/db';
 import { PrismaCacheStore, createMedicalData } from '@datascribe/medical-data';
 import { loadKey } from '@datascribe/shared';
 import { createApp } from './app';
@@ -35,10 +35,7 @@ if (scanner.name === 'mock') {
   logger.warn('uploads use the mock virus scanner (no CLAMAV_HOST): only EICAR is detected');
 }
 
-const errInfo = (err: unknown) => {
-  const e = err as Error;
-  return { err: { name: e.name, message: e.message } };
-};
+const errInfo = (err: unknown) => ({ err: errorInfo(err) });
 
 /** Private buckets, CORS for browser part uploads and default SSE (D-014); retried until S3 is up. */
 function prepareBuckets() {

@@ -736,3 +736,15 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
 - Residual: if the owner clicks a link from a later squatter registration, they verify the
   squatter's password. They can't sign in with their own password, so they use "Forgot password",
   which ends the squatter's sessions (reset revokes all).
+
+## D-105 — Error logs carry no values (audit L7, M10, 2026-10-24)
+
+- Prisma error messages quote the failed call with its arguments (names, notes, emails). The API
+  logged `err.message` for unhandled errors, and the shared client's `log: ['error']` printed the
+  same text to stdout.
+- `errorInfo(err)` in `@datascribe/db` is now the only way the API logs an error. For Prisma errors
+  it keeps the name, P-code, model and constraint column names (`meta.target`), never the message.
+  Other errors keep name, code and message. The shared client logs Prisma errors by target only,
+  and warnings in full (they carry no query values).
+- The worker should use `errorInfo` too. Its pipeline code is being written on another branch, so
+  this run didn't touch it (worker code outside the pipeline logs no error messages today).

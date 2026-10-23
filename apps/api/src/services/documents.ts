@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { PassThrough } from 'node:stream';
-import type { Document, Prisma, PrismaClient } from '@datascribe/db';
+import { errorInfo, type Document, type Prisma, type PrismaClient } from '@datascribe/db';
 import { PDFDocument } from 'pdf-lib';
 import type { Logger } from 'pino';
 import { tiffPageCount, type UploadMime } from '../lib/filetype';
@@ -108,11 +108,7 @@ export async function verifyDocument(
         signature: result.signature,
       };
     } catch (err) {
-      const e = err as Error;
-      logger.error(
-        { err: { name: e.name, message: e.message }, documentId },
-        'document scan failed',
-      );
+      logger.error({ err: errorInfo(err), documentId }, 'document scan failed');
       const updated = await prisma.document.update({
         where: { id: doc.id },
         data: { scanStatus: 'error' },
