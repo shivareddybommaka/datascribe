@@ -17,8 +17,8 @@ existing CRM, never touch), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025). CMS 
 | M6 Workspace + QA + delivery  | not started                        |                                                                                             |
 | M7 CRM                        | done                               |                                                                                             |
 | M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen built in M4; Stripe test key needed for the manual test-card demo |
-| M9 Notifications + dashboards | not started                        |                                                                                             |
-| M10 Hardening                 | not started                        |                                                                                             |
+| M9 Notifications + dashboards | in progress (`herald/m9`)          |                                                                                             |
+| M10 Hardening                 | in progress (`sentinel/m10`)       |                                                                                             |
 
 Tests on `main` (2026-10-24, after the M2 + M4 merges and M5b steps 1–2): lint, typecheck,
 unit/API tests and build green (33/33 turbo tasks; worker 34 tests); Playwright e2e 18/18.
@@ -38,16 +38,20 @@ needs a system install).
 ## Autopilot
 
 Rules: `docs/AUTOPILOT.md`. OpenClaw automation "Datascribe autopilot" (id
-`a0d9299e-b264-4e09-8e61-60682d25c151`) resumes work on a paced loop (1–6 h). "stop autopilot" removes it.
-Remaining order: M5b → M6 → M9 → M10.
+`4c01861d-9cfe-4682-a644-4e1e1754408d`) resumes work on a paced loop (1–6 h). "stop autopilot" removes it.
+Master on main: M5b → M6. In parallel (Shiva, 2026-10-24): M9 on `herald/m9`, M10 on `sentinel/m10`;
+the autopilot merges finished parts and re-spawns the next part.
 
 ## Agent team
 
 Master **datascribe-dev** (`agent:datascribe:main`) merges into `main`; subagents work in git worktrees
 under `.worktrees/` (own `.env`, ports, `datascribe_<name>_*` DBs on 5433) and report to the master.
 Named agents: datascribe-storefront (web/CMS), datascribe-ledger (billing), datascribe-pipeline
-(processing pipeline), datascribe-auditor (read-only security/PHI review). DECISIONS numbering per
-agent: storefront D-030+, ledger D-040+, pipeline D-050+.
+(processing pipeline), datascribe-auditor (read-only security/PHI review) — all merged, worktrees
+removed 2026-10-24. Active: **datascribe-herald** (M9, `.worktrees/herald`, ports 3700/4700, DB
+`datascribe_herald_dev`, Redis /2) and **datascribe-sentinel** (M10, `.worktrees/sentinel`, ports
+3800/4800, DB `datascribe_sentinel_dev`, Redis /3). DECISIONS numbering per agent: storefront D-030+,
+ledger D-040+, pipeline D-050+, herald D-090+, sentinel D-100+.
 
 ## Waiting on Shiva
 
