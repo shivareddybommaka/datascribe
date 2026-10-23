@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { APP_URL, buildApp } from '../test/helpers';
+import { redactPath } from './app';
 import { loadEnv } from './config/env';
 
 const { app } = buildApp();
@@ -42,6 +43,15 @@ describe('api skeleton', () => {
     expect(ok.headers['access-control-allow-origin']).toBe(APP_URL);
     const bad = await request(app).get('/api/v1/health').set('Origin', 'https://evil.example');
     expect(bad.headers['access-control-allow-origin']).toBeUndefined();
+  });
+});
+
+describe('log redaction', () => {
+  it('drops query strings and invite tokens from logged paths', () => {
+    expect(redactPath('/api/v1/cases?q=Jane')).toBe('/api/v1/cases');
+    expect(redactPath('/api/v1/invites/abc123SECRET/accept')).toBe(
+      '/api/v1/invites/[token]/accept',
+    );
   });
 });
 

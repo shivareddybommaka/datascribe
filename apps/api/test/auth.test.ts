@@ -245,6 +245,18 @@ describe('sessions', () => {
     expect(await reuseCount()).toBe(2);
   });
 
+  it('two concurrent refreshes with one token cannot both succeed (audit M1)', async () => {
+    const email = await makeClientUser();
+    const cookie = cookieOf(await loginReq(email));
+    const send = () => api().post('/api/v1/auth/refresh').set(CSRF).set('cookie', cookie);
+    const results = await Promise.all([send(), send(), send()]);
+    const ok = results.filter((r) => r.status === 200);
+    expect(ok.length).toBeLessThanOrEqual(1);
+    if (results.some((r) => r.body?.error?.code === 'refresh_token_reused')) {
+      expect(await prisma.session.count({ where: { user: { email }, revokedAt: null } })).toBe(0);
+    }
+  });
+
   it('refresh and logout require the CSRF header and a matching Origin', async () => {
     const { agent } = await login(app, SEED.acmeUser);
     expect((await agent.post('/api/v1/auth/refresh')).status).toBe(403);

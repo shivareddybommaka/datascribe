@@ -8,7 +8,8 @@ services:
       POSTGRES_PASSWORD: datascribe
       POSTGRES_DB: datascribe
     ports:
-      - '${POSTGRES_PORT:-5432}:5432'
+      # 5433 on the host: 5432 belongs to another system on the dev Mac (D-011). Localhost only.
+      - '127.0.0.1:${POSTGRES_PORT:-5433}:5432'
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -19,7 +20,7 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - '6379:6379'
+      - '127.0.0.1:6379:6379'
     healthcheck:
       test: ['CMD', 'redis-cli', 'ping']
       interval: 5s
@@ -33,22 +34,22 @@ services:
       AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-datascribe}
       AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-datascribe-dev-secret}
     ports:
-      - '9000:8333'
+      - '127.0.0.1:9000:8333'
     volumes:
       - s3data:/data
 
   mailpit:
     image: axllent/mailpit:latest
     ports:
-      - '1025:1025'
-      - '8025:8025'
+      - '127.0.0.1:1025:1025'
+      - '127.0.0.1:8025:8025'
 
   # Virus scanning (M4). Opt-in: docker compose --profile scan up -d
   clamav:
     image: clamav/clamav:stable
     profiles: ['scan']
     ports:
-      - '3310:3310'
+      - '127.0.0.1:3310:3310'
 
 volumes:
   pgdata:

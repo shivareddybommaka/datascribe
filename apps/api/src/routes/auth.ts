@@ -228,8 +228,8 @@ export function authRouter(deps: Deps): Router {
       clearRefreshCookie(deps, res);
       throw unauthorized('invalid_refresh_token', 'Not signed in');
     }
-    if (session.revokedAt) {
-      // A rotated token was presented again: assume theft and end the whole family.
+    // A rotated token was presented again: assume theft and end the whole family.
+    const reuseDetected = async () => {
       await prisma.session.updateMany({
         where: { familyId: session.familyId, revokedAt: null },
         data: { revokedAt: now },
@@ -242,14 +242,21 @@ export function authRouter(deps: Deps): Router {
         organizationId: session.user.organizationId,
       });
       clearRefreshCookie(deps, res);
-      throw unauthorized('refresh_token_reused', 'Session ended for security, sign in again');
-    }
+      return unauthorized('refresh_token_reused', 'Session ended for security, sign in again');
+    };
+    if (session.revokedAt) throw await reuseDetected();
     if (session.expiresAt < now || isIdle(session, now) || session.user.status !== 'active') {
       await prisma.session.update({ where: { id: session.id }, data: { revokedAt: now } });
       clearRefreshCookie(deps, res);
       throw unauthorized('session_expired', 'Session has ended, sign in again');
     }
-    await prisma.session.update({ where: { id: session.id }, data: { revokedAt: now } });
+    // Claim the token atomically: of two concurrent refreshes with the same token, only one wins;
+    // the loser is treated as reuse (audit finding M1).
+    const claimed = await prisma.session.updateMany({
+      where: { id: session.id, revokedAt: null },
+      data: { revokedAt: now },
+    });
+    if (claimed.count !== 1) throw await reuseDetected();
     const { accessToken } = await issueSession(
       deps,
       req,

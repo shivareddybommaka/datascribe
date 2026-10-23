@@ -12,6 +12,14 @@ if (process.env.NODE_ENV === 'production') {
   process.exit(1);
 }
 
+// Port 5432 on the dev Mac is another (live) system. Never seed it, whatever .env says.
+const dbPort =
+  new URL(process.env.DATABASE_URL ?? 'postgresql://x@localhost:5433/x').port || '5432';
+if (dbPort === '5432') {
+  console.error('Refusing to seed a database on port 5432. Datascribe uses 5433.');
+  process.exit(1);
+}
+
 const password = process.env.SEED_USER_PASSWORD;
 if (!password || password.length < 12) {
   console.error('Set SEED_USER_PASSWORD (min 12 chars) in .env before seeding.');

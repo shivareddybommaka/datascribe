@@ -18,6 +18,10 @@ import { invitesRouter } from './routes/invites';
 import { permissionsRouter } from './routes/permissions';
 import { publicRouter } from './routes/public';
 
+/** Log path without query string or secrets in the path (invite tokens, audit finding M3). */
+export const redactPath = (url: string): string =>
+  (url.split('?')[0] ?? '').replace(/\/invites\/[^/]+/, '/invites/[token]');
+
 export function createApp(deps: Deps): Express {
   const { env, logger } = deps;
   const app = express();
@@ -38,7 +42,7 @@ export function createApp(deps: Deps): Express {
         req: (req: { id: string; method: string; url: string }) => ({
           id: req.id,
           method: req.method,
-          path: req.url.split('?')[0],
+          path: redactPath(req.url),
         }),
       },
     }),
