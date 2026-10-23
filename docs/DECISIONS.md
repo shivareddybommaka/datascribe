@@ -708,3 +708,15 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
   password step pending on device A (it re-enters the password). TOTP code replay within the same
   30 s step is still open (D-017 item, needs a `mfaLastStep` column); not done here, to keep this
   run free of schema changes.
+
+## D-103 — Revoke reasons: only rotated tokens raise reuse alerts (audit L1, M10, 2026-10-24)
+
+- New nullable `Session.revokedReason` (migration `20261024150000_session_revoked_reason`). Every
+  revocation goes through `revoked(reason)` in `auth/session.ts`: `rotated`, `reuse`, `logout`,
+  `revoke_all`, `idle`, `expired`, `password_reset`, `mfa_required`, `admin_action`,
+  `org_suspended`, `impersonation_ended`.
+- Presenting a revoked refresh token is a reuse alert (family revoked, `auth.refresh.reuse_detected`)
+  only for `rotated` / `reuse`. Any other reason gives `401 session_revoked`, no alert, and other
+  devices keep their sessions. Before, a tab refreshing after logout or a password reset raised a
+  false theft alert, which drowns the real ones.
+- Rows without a reason (from before the migration) keep the old strict rule and count as reuse.

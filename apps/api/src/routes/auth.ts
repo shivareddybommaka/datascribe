@@ -3,7 +3,14 @@ import { Router, type Request, type Response } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 import { authenticate, requireAuth, requireCsrf, resolveAuth } from '../auth/middleware';
-import { REFRESH_COOKIE, clearRefreshCookie, isIdle, issueSession } from '../auth/session';
+import {
+  REFRESH_COOKIE,
+  clearRefreshCookie,
+  isIdle,
+  isReuseSignal,
+  issueSession,
+  revoked,
+} from '../auth/session';
 import { DEFAULT_RATE_LIMITS, type Deps } from '../context';
 import { HttpError, badRequest, conflict, forbidden, unauthorized } from '../lib/errors';
 import { PasswordSchema, burnPasswordCheck, hashPassword, verifyPassword } from '../lib/password';
@@ -311,7 +318,7 @@ export function authRouter(deps: Deps): Router {
     const reuseDetected = async () => {
       await prisma.session.updateMany({
         where: { familyId: session.familyId, revokedAt: null },
-        data: { revokedAt: now },
+        data: revoked('reuse', now),
       });
       await req.audit({
         action: 'auth.refresh.reuse_detected',
@@ -323,14 +330,24 @@ export function authRouter(deps: Deps): Router {
       clearRefreshCookie(deps, res);
       return unauthorized('refresh_token_reused', 'Session ended for security, sign in again');
     };
-    if (session.revokedAt) throw await reuseDetected();
+    if (session.revokedAt) {
+      // Only a rotated (or already-flagged) token is a theft signal. One ended by logout, idle,
+      // expiry, password reset or revoke-all is just over: no alert, other devices untouched (L1).
+      if (isReuseSignal(session.revokedReason)) throw await reuseDetected();
+      clearRefreshCookie(deps, res);
+      throw unauthorized('session_revoked', 'Session has ended, sign in again');
+    }
+    const idle = isIdle(session, now);
     if (
       session.expiresAt < now ||
-      isIdle(session, now) ||
+      idle ||
       session.user.status !== 'active' ||
       session.user.organization.status !== 'active'
     ) {
-      await prisma.session.update({ where: { id: session.id }, data: { revokedAt: now } });
+      await prisma.session.update({
+        where: { id: session.id },
+        data: revoked(idle ? 'idle' : 'expired', now),
+      });
       clearRefreshCookie(deps, res);
       throw unauthorized('session_expired', 'Session has ended, sign in again');
     }
@@ -339,7 +356,7 @@ export function authRouter(deps: Deps): Router {
     if (mfaRequired(session.user) && !session.user.mfaEnabled) {
       await prisma.session.updateMany({
         where: { familyId: session.familyId, revokedAt: null },
-        data: { revokedAt: now },
+        data: revoked('mfa_required', now),
       });
       await req.audit({
         action: 'auth.refresh.mfa_required',
@@ -355,7 +372,7 @@ export function authRouter(deps: Deps): Router {
     // the loser is treated as reuse (audit finding M1).
     const claimed = await prisma.session.updateMany({
       where: { id: session.id, revokedAt: null },
-      data: { revokedAt: now },
+      data: revoked('rotated', now),
     });
     if (claimed.count !== 1) throw await reuseDetected();
     const { accessToken } = await issueSession(
@@ -375,7 +392,7 @@ export function authRouter(deps: Deps): Router {
         where: { refreshTokenHash: sha256(token) },
       });
       if (session && !session.revokedAt) {
-        await prisma.session.update({ where: { id: session.id }, data: { revokedAt: new Date() } });
+        await prisma.session.update({ where: { id: session.id }, data: revoked('logout') });
         await req.audit({
           action: 'auth.logout',
           entity: 'Session',
@@ -392,7 +409,7 @@ export function authRouter(deps: Deps): Router {
     const auth = requireAuth(req);
     const result = await prisma.session.updateMany({
       where: { userId: auth.user.id, revokedAt: null },
-      data: { revokedAt: new Date() },
+      data: revoked('revoke_all'),
     });
     await req.audit({
       action: 'auth.sessions.revoked_all',
@@ -581,7 +598,7 @@ export function authRouter(deps: Deps): Router {
     });
     await prisma.session.updateMany({
       where: { userId: user.id, revokedAt: null },
-      data: { revokedAt: new Date() },
+      data: revoked('password_reset'),
     });
     // Any other reset link still in an inbox would undo this reset (audit L2).
     await prisma.userToken.updateMany({

@@ -428,6 +428,26 @@ describe('sessions', () => {
     expect(me.body.error.code).toBe('session_revoked');
   });
 
+  it('a token ended by logout is not reported as reuse and leaves other devices alone (audit L1)', async () => {
+    const email = await makeClientUser();
+    const laptop = cookieOf(await loginReq(email));
+    const phone = await login(app, email);
+    expect((await api().post('/api/v1/auth/logout').set(CSRF).set('cookie', laptop)).status).toBe(
+      204,
+    );
+
+    const stale = await api().post('/api/v1/auth/refresh').set(CSRF).set('cookie', laptop);
+    expect(stale.status).toBe(401);
+    expect(stale.body.error.code).toBe('session_revoked');
+    const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+    expect(
+      await prisma.auditLog.count({
+        where: { action: 'auth.refresh.reuse_detected', actorId: user.id },
+      }),
+    ).toBe(0);
+    expect((await phone.agent.post('/api/v1/auth/refresh').set(CSRF)).status).toBe(200);
+  });
+
   it('revoke-all ends every session for the user', async () => {
     const email = await makeClientUser();
     const a = await login(app, email);

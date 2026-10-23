@@ -21,6 +21,33 @@ export function isIdle(session: { surface: string; lastUsedAt: Date }, now = new
   return now.getTime() - session.lastUsedAt.getTime() > limit;
 }
 
+/** Why a session ended (`Session.revokedReason`, D-103). */
+export type RevokeReason =
+  | 'rotated'
+  | 'reuse'
+  | 'logout'
+  | 'revoke_all'
+  | 'idle'
+  | 'expired'
+  | 'password_reset'
+  | 'mfa_required'
+  | 'admin_action'
+  | 'org_suspended'
+  | 'impersonation_ended';
+
+/** Data for ending a session: `prisma.session.update({ data: revoked('logout') })`. */
+export const revoked = (reason: RevokeReason, at = new Date()) => ({
+  revokedAt: at,
+  revokedReason: reason,
+});
+
+/**
+ * Presenting a revoked refresh token is a theft signal only when the token was rotated away (or its
+ * family was already flagged). Rows from before D-103 have no reason and keep the old, strict rule.
+ */
+export const isReuseSignal = (reason: string | null): boolean =>
+  reason === null || reason === 'rotated' || reason === 'reuse';
+
 function cookieOptions(deps: Deps, maxAge = REFRESH_TOKEN_TTL_MS): CookieOptions {
   return {
     httpOnly: true,
