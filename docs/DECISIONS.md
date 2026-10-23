@@ -384,6 +384,18 @@ invoices overdue. Finance can trigger both runs from the console; `asOf` is refu
 - **`@datascribe/web#typecheck` runs after `@datascribe/web#build`** (turbo.json). Both use
   `.next/types`; in parallel, `next build` deleted files tsc had already globbed (TS6053).
 
+## D-020 — Security patching of dependencies (2026-10-24, approved by Shiva)
+
+- nodemailer 6 → 10 in api and worker (audit finding M7). The mailer API we use (createTransport and
+  sendMail) is unchanged. Verified with a real send to Mailpit.
+- The CMS moves from next 16.3.3 to 16.4.3 (Payload 3.92 allows `>=16.3.3 <17`) and from sharp
+  0.35.4 to 0.35.5. Root `pnpm.overrides` force dompurify ≥3.4.17 (inside Payload's Monaco editor),
+  postcss ≥8.5.23 (inside next 15 for apps/web) and sharp ≥0.35.5. Result: 23 advisories (4 critical)
+  down to 2 (0 critical).
+- Remaining: deepmerge-ts in the Prisma 6 CLI (goes away with the Prisma upgrade in D-001) and
+  esbuild 0.18 in drizzle-kit (dev-server CORS only, a server we never run). Remove the overrides once
+  upstream versions include the fixes.
+
 ## D-013 — Money and encrypted fields
 
 Money is `Decimal(12,2)` (per-page prices `Decimal(12,4)`). Encrypted PHI fields (`Case.patientName`,

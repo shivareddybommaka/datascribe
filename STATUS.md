@@ -41,9 +41,6 @@ agent: storefront D-030+, ledger D-040+, pipeline D-050+.
 
 - Telegram control: create a Telegram group with the bot (bot as admin or privacy off), send a
   message, send the group id (forward to @RawDataBot). Then the binding is proposed via OpenClaw.
-- Payload CMS pulls in next 16.3.3 / dompurify / sharp with critical+high advisories (CMS runs on
-  127.0.0.1 only for now). Proposed fix: pnpm overrides to patched versions (next ≥16.4.1,
-  dompurify ≥3.4.17, sharp ≥0.35.5) or a Payload upgrade: needs Shiva's OK.
 - Lighthouse install (M3 performance/SEO check): yes / later.
 - Free openFDA API key before production (D-052). Should QA reviewers use medical lookups (D-056)?
 - Stripe test key for the manual M8 test-card demo. CMS email adapter choice (editor password reset).
@@ -62,6 +59,11 @@ M8, M9. Open:
   L12 pin images/actions.
 
 ## Known follow-ups
+
+- Dependency advisories (pnpm audit --prod, 2026-10-24): 0 critical. Left: deepmerge-ts (high, via
+  the Prisma 6 CLI config loader; fixed by the planned Prisma upgrade) and esbuild 0.18 (moderate, dev
+  server CORS, via drizzle-kit migrations tooling; not served). CMS on next 16.4.3, sharp 0.35.5;
+  overrides for dompurify/postcss/sharp in root package.json (D-020).
 
 - Upgrade pass (D-001): Prisma, Vitest, ESLint, TypeScript, otplib.
 - Usage stats and rate limits are in-memory; move to Redis (M10). E2E in CI (M10).
