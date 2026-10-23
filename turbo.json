@@ -12,6 +12,9 @@
     "typecheck": {
       "dependsOn": ["^generate"]
     },
+    "@datascribe/web#typecheck": {
+      "dependsOn": ["^generate", "@datascribe/web#build"]
+    },
     "lint": {},
     "test": {
       "dependsOn": ["^generate"],

@@ -4,8 +4,8 @@
 import apiSetup from '../../api/test/global-setup';
 
 export default async function globalSetup() {
-  if (!process.env.TEST_DATABASE_URL?.endsWith('/datascribe_e2e')) {
-    throw new Error('E2E must run against datascribe_e2e');
+  if (!/\/datascribe(_[a-z0-9]+)?_e2e$/.test(process.env.TEST_DATABASE_URL ?? '')) {
+    throw new Error('E2E must run against a datascribe*_e2e database');
   }
   await apiSetup();
 }
