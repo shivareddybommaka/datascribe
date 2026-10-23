@@ -32,6 +32,43 @@ without a restart (API test and Playwright e2e).
   refresh token on every section change when it already has an access token.
 - Tests: API +36 (198 total), shared +3, billing +3, Playwright +2 (`e2e/admin.spec.ts`; 15/15).
 
+## M4 — Client portal: cases and uploads (2026-10-24, branch `portal/m4`)
+
+DoD: a client uploads a 300-page synthetic PDF with a resumable upload (API test and Playwright).
+Design notes: D-070 to D-077.
+
+- **Portal** `/portal`: sign-in at `/portal/login` (same `/auth` endpoints, MFA when enrolled or
+  enforced by the firm, staff sent to `/console`), 30-minute idle sign-out, portal shell.
+- **Dashboard**: open cases by status, recent deliverables, usage this period vs plan limit,
+  outstanding invoices (billing parts for client_admin only).
+- **Cases**: create (matter, reference, patient/plaintiff name, incident date, type, requested
+  deliverables, priority, due date, notes), list with filters, search and pages, detail with a status
+  timeline, edit while draft, submit, sharing with colleagues in the same firm, message thread with
+  Datascribe staff (staff-only internal notes are never shown to clients). Sequential numbers
+  `DS-YYYY-NNNNNN`.
+- **Uploads**: drag and drop or pick several PDF/PNG/JPEG/TIFF files up to 500 MB, per-file progress
+  bar, pause/resume, S3 multipart straight from the browser with presigned part URLs, resume after an
+  interruption or reload (only missing parts are sent). After upload: magic-byte type check, exact size
+  check, SHA-256, page count, virus scan (ClamAV via clamd, or the mock scanner in dev/CI). Infected
+  files are quarantined; downloads are 5-minute signed URLs for clean files only.
+- **Storage**: private document/deliverable buckets created at startup, CORS limited to the app
+  origin, SSE (AES256 or KMS; required in production), object keys without file names.
+- **Audit (§4.4)**: document create, upload complete, scan, view, list, download, rename, delete and
+  rejection; case create/view/edit/submit/list/share/unshare; messages.
+- **Encryption (audit L5)**: case notes and message bodies are now encrypted; DB CHECK constraints
+  refuse plaintext in `Case.patientName`, `Case.notes` and `Message.body`; legacy rows are encrypted at
+  API startup.
+- **Billing in the portal** (client_admin): subscription with usage meter, change plan, cancel /
+  resume at period end, invoices, invoice detail with receipts, PDF and pay by card (existing
+  `/invoices/:id/pay`; Fake gateway in dev).
+- **Firm** (client_admin): firm profile, require-MFA policy, users (suspend / reactivate), invites
+  and pending invites.
+- New env: `S3_SSE`, `S3_SSE_KMS_KEY_ID`, `UPLOAD_PART_SIZE_MB`, `CLAMAV_HOST`, `CLAMAV_PORT`,
+  `RATE_LIMIT_AUTH`, `RATE_LIMIT_PUBLIC`. Packages: `@aws-sdk/client-s3`,
+  `@aws-sdk/s3-request-presigner`, `pdf-lib` in the API.
+- Tests: api 211 (was 162; new `uploads.test.ts`, `portal-cases.test.ts`, scanner/file-type unit
+  tests, document routes in `rbac.test.ts` isolation lists), Playwright 16 (new `portal.spec.ts` ×3).
+
 ## M5a medical data adapters (2026-10-24, branch `pipeline/m5-adapters`)
 
 Adapter layer of M5 (§8). The processing pipeline (M5b) waits for M4 uploads.

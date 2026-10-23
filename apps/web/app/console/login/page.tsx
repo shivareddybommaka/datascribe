@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 import { Logo } from '@/components/logo';
-import { LoginForm } from './login-form';
+import { LoginForm } from '@/components/login-form';
 
 export const metadata = { title: 'Sign in — Datascribe console', robots: { index: false } };
 

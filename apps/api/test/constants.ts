@@ -1,6 +1,8 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+export { TEST_S3 } from './s3';
+
 /**
  * Test DB per checkout, so parallel git worktrees (subagents) never reset each other's database:
  * the main repo uses `datascribe_test`; a worktree at `.worktrees/ledger` uses `datascribe_ledger_test`.

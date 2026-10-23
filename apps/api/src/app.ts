@@ -21,6 +21,8 @@ import { plansRouter } from './routes/billing/plans';
 import { subscriptionsRouter } from './routes/billing/subscriptions';
 import { casesRouter } from './routes/cases';
 import { accountsRouter } from './routes/crm/accounts';
+import { documentsRouter } from './routes/documents';
+import { portalRouter } from './routes/portal';
 import { activitiesRouter } from './routes/crm/activities';
 import { contactsRouter } from './routes/crm/contacts';
 import { leadsRouter } from './routes/crm/leads';
@@ -85,6 +87,8 @@ export function createApp(deps: Deps): Express {
   v1.use(auditRouter(deps));
   v1.use(impersonationRouter(deps));
   v1.use(casesRouter(deps));
+  v1.use(documentsRouter(deps));
+  v1.use(portalRouter(deps));
   v1.use(leadsRouter(deps));
   v1.use(contactsRouter(deps));
   v1.use(activitiesRouter(deps));

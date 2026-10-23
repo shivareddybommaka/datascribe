@@ -99,6 +99,8 @@ test('M8 DoD (console side): usage over the limit → monthly run bills plan fee
 
   await nav('Invoices').click();
   await page.getByLabel('Kind').selectOption('subscription');
+  // the list keeps the previous rows while the filtered query loads
+  await expect(page.getByRole('row').filter({ hasText: 'One-off' })).toHaveCount(0);
   // +40 days can close one or two periods (one invoice each, newest first); the usage is in the
   // oldest one.
   await page.getByRole('row').filter({ hasText: ACME }).last().getByRole('link').first().click();

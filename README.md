@@ -47,7 +47,10 @@ pnpm test
 pnpm build
 ```
 
-API tests use a throwaway `datascribe_test` database on the same Postgres. Browser E2E (needs
+API tests use a throwaway `datascribe_test` database on the same Postgres and `ds-test-*` buckets on
+the local S3 (`pnpm infra:up`). Local SeaweedFS has no server-side encryption, so set `S3_SSE=none`
+in `.env`; production requires `AES256` or `aws:kms`. Uploads are scanned by a mock scanner unless
+`CLAMAV_HOST` is set (`docker compose --profile scan up -d`). Browser E2E (needs
 `pnpm infra:up` for Mailpit; uses the installed Google Chrome and a `datascribe_e2e` database):
 
 ```
@@ -58,6 +61,8 @@ pnpm --filter @datascribe/web e2e
 
 - Staff console: http://localhost:3010/console (CRM at `/console/crm`, finance at
   `/console/finance`, admin at `/console/admin`: users, roles, organizations, settings, audit log)
+- Client portal: http://localhost:3010/portal (cases, uploads, billing, firm)
+- Staff console: http://localhost:3010/console (CRM at `/console/crm`)
 - Website contact / demo form: http://localhost:3010/contact
 - API: http://localhost:4000/api/v1 (also proxied at http://localhost:3010/api/v1)
 - Mailpit (all dev email): http://localhost:8025

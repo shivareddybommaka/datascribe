@@ -13,8 +13,10 @@ import {
   prisma,
   uniqueEmail,
 } from './helpers';
+import { syntheticRecordPdf } from './synthetic-pdf';
+import { complete, putParts, startUpload } from './upload-helpers';
 
-const { app, mailer } = buildApp();
+const { app, mailer, storageReady } = buildApp();
 const get = (path: string, token: string) => request(app).get(path).set(bearer(token));
 
 let acmeCase1: string; // Acme, created by acme client_user, draft
@@ -52,7 +54,90 @@ const CLIENT_DATA_ROUTES: { name: string; path: (caseId: string) => string }[] =
   { name: 'case detail', path: (id) => `/api/v1/cases/${id}` },
   { name: 'case documents', path: (id) => `/api/v1/cases/${id}/documents` },
   { name: 'case deliverables', path: (id) => `/api/v1/cases/${id}/deliverables` },
+  { name: 'case messages', path: (id) => `/api/v1/cases/${id}/messages` },
 ];
+
+/**
+ * Client-data routes keyed by a document id (M4). Same rules as above; the misconfigured
+ * all-scope role from the case tests holds only view grants, so `view` says what it may reach.
+ */
+const DOCUMENT_ROUTES: { name: string; path: (docId: string) => string; view: boolean }[] = [
+  { name: 'document detail', path: (id) => `/api/v1/documents/${id}`, view: true },
+  {
+    name: 'document download URL',
+    path: (id) => `/api/v1/documents/${id}/download-url`,
+    view: true,
+  },
+  { name: 'upload state', path: (id) => `/api/v1/uploads/${id}`, view: false },
+];
+
+describe('§4.4 rule 1 for documents: other firms’ records are 404, staff without PHI rights 403', () => {
+  let acmeDoc: string;
+  let harborDoc: string;
+
+  beforeAll(async () => {
+    await storageReady;
+    const make = async (caseId: string, email: string) => {
+      const pdf = await syntheticRecordPdf({ pages: 1 });
+      const upload = await startUpload(app, tokens[email]!, caseId, pdf.bytes);
+      await putParts(app, tokens[email]!, upload, pdf.bytes, [1]);
+      expect((await complete(app, tokens[email]!, upload.id)).status).toBe(200);
+      return upload.id;
+    };
+    acmeDoc = await make(acmeCase1, SEED.acmeUser);
+    harborDoc = await make(harborCase, SEED.harborAdmin);
+  });
+
+  for (const route of DOCUMENT_ROUTES) {
+    it(`${route.name}: firms get 404 for each other’s documents, 200 for their own`, async () => {
+      for (const email of [SEED.acmeAdmin, SEED.acmeUser]) {
+        expect((await get(route.path(harborDoc), tokens[email]!)).status, email).toBe(404);
+        expect((await get(route.path(acmeDoc), tokens[email]!)).status, email).toBe(200);
+      }
+      expect((await get(route.path(acmeDoc), tokens[SEED.harborAdmin]!)).status).toBe(404);
+    });
+
+    it(`${route.name}: sales and finance are refused`, async () => {
+      for (const role of ['sales', 'finance'] as const) {
+        const res = await get(route.path(acmeDoc), tokens[SEED.internal(role)]!);
+        expect(res.status, role).toBe(403);
+      }
+    });
+  }
+
+  it('a client-org custom role with all-scope document grants still cannot cross firms', async () => {
+    const perms = await prisma.permission.findMany({
+      where: { module: { in: ['cases', 'documents'] }, action: 'view', scope: 'all' },
+    });
+    const role = await prisma.role.create({
+      data: {
+        key: `custom_docs_wide_${Date.now()}`,
+        name: 'Misconfigured documents role',
+        permissions: { create: perms.map((p) => ({ permissionId: p.id })) },
+      },
+    });
+    const email = uniqueEmail('docswide');
+    await prisma.user.create({
+      data: {
+        email,
+        name: 'Wide Docs User',
+        organizationId: await orgId('acme'),
+        passwordHash: await hashPassword(TEST_PASSWORD),
+        emailVerifiedAt: new Date(),
+        roles: { create: { roleId: role.id } },
+      },
+    });
+    const { token } = await login(app, email);
+    for (const route of DOCUMENT_ROUTES) {
+      expect((await get(route.path(harborDoc), token)).status, route.name).toBe(
+        route.view ? 404 : 403,
+      );
+      expect((await get(route.path(acmeDoc), token)).status, route.name).toBe(
+        route.view ? 200 : 403,
+      );
+    }
+  });
+});
 
 describe('§4.4 rule 1: a client user can never read another organisation’s data', () => {
   for (const route of CLIENT_DATA_ROUTES) {

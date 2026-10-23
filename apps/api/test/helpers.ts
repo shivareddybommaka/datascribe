@@ -10,7 +10,15 @@ import { loadEnv } from '../src/config/env';
 import type { Deps, RateLimits } from '../src/context';
 import { createLogger } from '../src/lib/logger';
 import { MemoryMailer } from '../src/lib/mailer';
-import { TEST_DATABASE_URL, TEST_PASSWORD, TEST_TOTP_SECRET, testPhiKey } from './constants';
+import { MockVirusScanner, type VirusScanner } from '../src/lib/scanner';
+import { S3DocumentStorage } from '../src/lib/storage';
+import {
+  TEST_DATABASE_URL,
+  TEST_PASSWORD,
+  TEST_S3,
+  TEST_TOTP_SECRET,
+  testPhiKey,
+} from './constants';
 
 export const prisma = new PrismaClient({ datasourceUrl: TEST_DATABASE_URL });
 
@@ -25,9 +33,18 @@ export function testEnv(overrides: Record<string, string> = {}) {
     JWT_REFRESH_SECRET: 'test-refresh-secret-'.padEnd(48, 'b'),
     PHI_ENCRYPTION_KEY: testPhiKey.toString('base64'),
     LOG_LEVEL: 'silent',
+    ...TEST_S3,
     ...overrides,
   });
 }
+
+/** Test buckets are created once per run (global-setup creates nothing in S3). */
+let bucketsReady: Promise<void> | null = null;
+export const testStorage = () => {
+  const storage = new S3DocumentStorage(testEnv(), [APP_URL]);
+  bucketsReady ??= storage.ensureBuckets();
+  return { storage, ready: bucketsReady };
+};
 
 const GENEROUS: RateLimits = { windowMs: 60_000, authPerWindow: 10_000, publicPerWindow: 10_000 };
 
@@ -36,9 +53,11 @@ export function buildApp(
     rateLimits?: RateLimits;
     medical?: Deps['medical'];
     envOverrides?: Record<string, string>;
+    scanner?: VirusScanner;
   } = {},
 ) {
   const mailer = new MemoryMailer();
+  const { storage, ready } = testStorage();
   const gateway = new FakeGateway({
     secret: 'test-fake-gateway-secret',
     checkoutBaseUrl: `${APP_URL}/api/v1/payments/fake-checkout`,
@@ -54,8 +73,11 @@ export function buildApp(
     gateway,
     store,
     medical: opts.medical,
+    storage,
+    scanner: opts.scanner ?? new MockVirusScanner(),
+    verifyUploads: 'inline',
   });
-  return { app, mailer, gateway, store };
+  return { app, mailer, gateway, store, storage, storageReady: ready };
 }
 
 export const CSRF = { 'x-datascribe-csrf': '1' };

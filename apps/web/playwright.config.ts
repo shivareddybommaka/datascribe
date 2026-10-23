@@ -1,4 +1,6 @@
 import { defineConfig } from '@playwright/test';
+// not ../api/test/constants: that would fix TEST_DATABASE_URL before it is set below
+import { TEST_S3 } from '../api/test/s3';
 
 /**
  * E2E (§13). Runs its own API (:4100) and web (:3100) against the `datascribe_e2e` database on the
@@ -38,6 +40,8 @@ export default defineConfig({
       command: 'pnpm --filter @datascribe/api exec tsx src/server.ts',
       url: `http://localhost:${E2E.apiPort}/api/v1/health`,
       reuseExistingServer: false,
+      // API warnings/errors in the test output (pino logs carry no bodies or PHI)
+      stdout: 'pipe',
       timeout: 60_000,
       env: {
         NODE_ENV: 'test',
@@ -50,6 +54,12 @@ export default defineConfig({
         SMTP_HOST: 'localhost',
         SMTP_PORT: '1025',
         LOG_LEVEL: 'warn',
+        // every spec signs in from the same IP; production keeps the 30 / 15 min default
+        RATE_LIMIT_AUTH: '300',
+        // local SeaweedFS with buckets of its own (created at API startup), 5 MiB parts
+        ...TEST_S3,
+        S3_BUCKET_DOCUMENTS: `ds-e2e-${E2E.apiPort}-documents`,
+        S3_BUCKET_DELIVERABLES: `ds-e2e-${E2E.apiPort}-deliverables`,
       },
     },
     {
