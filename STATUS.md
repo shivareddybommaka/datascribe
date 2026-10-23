@@ -44,6 +44,20 @@ Only the master runs e2e and pushes.
 - CI result on GitHub Actions for the latest push (agent can't read Actions with the deploy key).
   CI runs lint/typecheck/unit+API tests/build; e2e is local only until M10.
 
+## Security review (datascribe-auditor, 2026-10-24)
+
+No critical findings; §4.4 PHI rules verified. Fixed on main: H1, M1, M3, M8, M9 (compose binding
+applies after the next `docker-compose up -d`, once subagents finish). Open:
+
+- M2 lockout bypass with concurrent guesses: atomic attempt reservation (with M2 milestone).
+- M4 invites must not grant more than the inviter holds (with M2 custom roles).
+- M5 absolute session lifetime; re-check MFA policy and status on refresh.
+- M6 trust-proxy and per-account limits; M7 nodemailer 6 → 10 major upgrade (needs Shiva's OK).
+- Low: L1 revoke reason vs reuse alerts, L2 kill other reset tokens, L3 unverified-account
+  squatting, L4 audit case list, L5 encrypt Case.notes / Message.body, L6 PHI notice on lead form,
+  L7 Prisma error logging, L8 single-use MFA token, L9 timing, L10 conversion email domain,
+  L11 non-owner DB role, L12 pin images/actions.
+
 ## Known follow-ups
 
 - Upgrade pass (D-001): Prisma 6→newer, Vitest, ESLint, TypeScript, otplib (deprecated sub-packages).
