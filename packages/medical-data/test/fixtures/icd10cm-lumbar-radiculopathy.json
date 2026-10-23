@@ -1,0 +1,20 @@
+{
+  "recordedAt": "2026-10-23T14:27:29.720Z",
+  "request": {
+    "url": "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search?sf=code%2Cname&df=code%2Cname&terms=lumbar+radiculopathy&maxList=5"
+  },
+  "response": {
+    "status": 200,
+    "body": [
+      4,
+      ["M54.16", "M47.26", "M47.816", "M51.16"],
+      null,
+      [
+        ["M54.16", "Radiculopathy, lumbar region"],
+        ["M47.26", "Other spondylosis with radiculopathy, lumbar region"],
+        ["M47.816", "Spondylosis without myelopathy or radiculopathy, lumbar region"],
+        ["M51.16", "Intervertebral disc disorders with radiculopathy, lumbar region"]
+      ]
+    ]
+  }
+}

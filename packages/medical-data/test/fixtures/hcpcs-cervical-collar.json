@@ -1,0 +1,21 @@
+{
+  "recordedAt": "2026-10-23T14:27:30.426Z",
+  "request": {
+    "url": "https://clinicaltables.nlm.nih.gov/api/hcpcs/v3/search?sf=code%2Cshort_desc%2Clong_desc&df=code%2Cdisplay&terms=cervical+collar&maxList=5"
+  },
+  "response": {
+    "status": 200,
+    "body": [
+      11,
+      ["L0140", "L0170", "L0130", "L0180", "L0200"],
+      null,
+      [
+        ["L0140", "Cervical semi-rigid adjustab"],
+        ["L0170", "Cervical collar molded to pt"],
+        ["L0130", "Flex thermoplastic collar mo"],
+        ["L0180", "Cer post col occ/man sup adj"],
+        ["L0200", "Cerv col supp adj bar & thor"]
+      ]
+    ]
+  }
+}

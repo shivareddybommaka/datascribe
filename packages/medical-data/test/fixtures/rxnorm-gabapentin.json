@@ -1,0 +1,140 @@
+{
+  "recordedAt": "2026-10-23T14:27:31.724Z",
+  "request": {
+    "url": "https://rxnav.nlm.nih.gov/REST/approximateTerm.json?term=gabapentin&maxEntries=20&option=1"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "approximateGroup": {
+        "inputTerm": null,
+        "candidate": [
+          {
+            "rxcui": "25480",
+            "rxaui": "10282073",
+            "score": "11.969207763671875",
+            "rank": "1",
+            "name": "Gabapentin",
+            "source": "USP"
+          },
+          {
+            "rxcui": "25480",
+            "rxaui": "10324082",
+            "score": "11.969207763671875",
+            "rank": "1",
+            "source": "GS"
+          },
+          {
+            "rxcui": "25480",
+            "rxaui": "12799208",
+            "score": "11.969207763671875",
+            "rank": "1",
+            "name": "gabapentin",
+            "source": "ATC"
+          },
+          {
+            "rxcui": "25480",
+            "rxaui": "2071056",
+            "score": "11.969207763671875",
+            "rank": "1",
+            "name": "GABAPENTIN",
+            "source": "VANDF"
+          },
+          {
+            "rxcui": "25480",
+            "rxaui": "2366864",
+            "score": "11.969207763671875",
+            "rank": "1",
+            "source": "MMSL"
+          },
+          {
+            "rxcui": "25480",
+            "rxaui": "3619813",
+            "score": "11.969207763671875",
+            "rank": "1",
+            "source": "NDDF"
+          },
+          {
+            "rxcui": "25480",
+            "rxaui": "417388",
+            "score": "11.969207763671875",
+            "rank": "1",
+            "source": "MMSL"
+          },
+          {
+            "rxcui": "25480",
+            "rxaui": "417389",
+            "score": "11.969207763671875",
+            "rank": "1",
+            "name": "gabapentin",
+            "source": "RXNORM"
+          },
+          {
+            "rxcui": "25480",
+            "rxaui": "8384864",
+            "score": "11.969207763671875",
+            "rank": "1",
+            "name": "Gabapentin",
+            "source": "DRUGBANK"
+          },
+          {
+            "rxcui": "1156682",
+            "rxaui": "3826277",
+            "score": "11.592173883438111",
+            "rank": "10",
+            "name": "gabapentin Pill",
+            "source": "RXNORM"
+          },
+          {
+            "rxcui": "378100",
+            "rxaui": "1939433",
+            "score": "11.269591434681178",
+            "rank": "11",
+            "name": "gabapentin Oral Capsule",
+            "source": "RXNORM"
+          },
+          {
+            "rxcui": "378101",
+            "rxaui": "1939434",
+            "score": "11.269591434681178",
+            "rank": "11",
+            "name": "gabapentin Oral Solution",
+            "source": "RXNORM"
+          },
+          {
+            "rxcui": "378099",
+            "rxaui": "2061757",
+            "score": "11.269591434681178",
+            "rank": "11",
+            "name": "gabapentin Oral Tablet",
+            "source": "RXNORM"
+          },
+          {
+            "rxcui": "1156681",
+            "rxaui": "3826276",
+            "score": "11.269591434681178",
+            "rank": "11",
+            "name": "gabapentin Oral Product",
+            "source": "RXNORM"
+          },
+          {
+            "rxcui": "1156680",
+            "rxaui": "3826275",
+            "score": "10.990359647946892",
+            "rank": "15",
+            "name": "gabapentin Oral Liquid Product",
+            "source": "RXNORM"
+          },
+          {
+            "rxcui": "1087974",
+            "rxaui": "6352965",
+            "score": "10.74620378353054",
+            "rank": "16",
+            "name": "gabapentin Extended Release Oral Tablet",
+            "source": "RXNORM"
+          }
+        ]
+      }
+    }
+  }
+}
