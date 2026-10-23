@@ -250,6 +250,9 @@ importers:
       '@datascribe/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@datascribe/medical-data':
+        specifier: workspace:*
+        version: link:../../packages/medical-data
       '@datascribe/shared':
         specifier: workspace:*
         version: link:../../packages/shared
