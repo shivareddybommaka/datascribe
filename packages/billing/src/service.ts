@@ -71,7 +71,10 @@ export async function getBillingSettings(prisma: Db): Promise<BillingSettings> {
   if (v.taxByCurrency && typeof v.taxByCurrency === 'object') {
     for (const [cur, rule] of Object.entries(v.taxByCurrency as Record<string, unknown>)) {
       const r = (rule ?? {}) as Record<string, unknown>;
-      byCurrency[cur.toUpperCase()] = { label: str(r.label, 'Tax'), ratePercent: rate(r.ratePercent) };
+      byCurrency[cur.toUpperCase()] = {
+        label: str(r.label, 'Tax'),
+        ratePercent: rate(r.ratePercent),
+      };
     }
   }
   const terms = Number(v.paymentTermsDays);
@@ -84,7 +87,9 @@ export async function getBillingSettings(prisma: Db): Promise<BillingSettings> {
     },
     tax: { label: str(v.taxLabel, 'Tax'), ratePercent: rate(v.taxRatePercent) },
     taxByCurrency: byCurrency,
-    invoicePrefix: /^[A-Z0-9]{1,10}$/.test(str(v.invoicePrefix, '')) ? str(v.invoicePrefix, '') : 'INV',
+    invoicePrefix: /^[A-Z0-9]{1,10}$/.test(str(v.invoicePrefix, ''))
+      ? str(v.invoicePrefix, '')
+      : 'INV',
     paymentTermsDays: Number.isInteger(terms) && terms >= 0 && terms <= 120 ? terms : 14,
   };
 }
@@ -302,7 +307,11 @@ export async function createOneOffInvoice(
   const settings = await getBillingSettings(prisma);
   try {
     return await prisma.$transaction((tx) =>
-      createInvoiceTx(tx, settings, { ...input, kind: 'one_off', currency: input.currency ?? org.currency }),
+      createInvoiceTx(tx, settings, {
+        ...input,
+        kind: 'one_off',
+        currency: input.currency ?? org.currency,
+      }),
     );
   } catch (err) {
     if (err instanceof RangeError) throw new BillingError(400, 'invalid_invoice', err.message);
@@ -345,7 +354,8 @@ export async function invoicePdf(prisma: PrismaClient, store: ObjectStore, invoi
     notes: inv.notes,
   });
   await store.put(key, bytes, 'application/pdf');
-  if (!inv.pdfS3Key) await prisma.invoice.update({ where: { id: inv.id }, data: { pdfS3Key: key } });
+  if (!inv.pdfS3Key)
+    await prisma.invoice.update({ where: { id: inv.id }, data: { pdfS3Key: key } });
   return { key, bytes, number: inv.number };
 }
 
@@ -496,7 +506,7 @@ export async function applyGatewayEvent(
     return await prisma.$transaction(async (tx) => {
       const key = { gateway_gatewayRef: { gateway, gatewayRef: event.gatewayRef } };
       const existing = await tx.payment.findUnique({ where: key });
-      if (existing && (existing.status !== 'pending' && existing.status !== 'failed')) {
+      if (existing && existing.status !== 'pending' && existing.status !== 'failed') {
         return { outcome: 'duplicate' as const, paymentId: existing.id, ...ids };
       }
       if (existing && event.kind === 'payment_failed') {

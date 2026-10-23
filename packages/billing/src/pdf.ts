@@ -122,7 +122,10 @@ export async function renderInvoicePdf(inv: InvoicePdfInput): Promise<Uint8Array
     ['Status', inv.status],
   ];
   if (inv.periodStart && inv.periodEnd) {
-    meta.push(['Period', `${day(inv.periodStart)} to ${day(new Date(inv.periodEnd.getTime() - 1))}`]);
+    meta.push([
+      'Period',
+      `${day(inv.periodStart)} to ${day(new Date(inv.periodEnd.getTime() - 1))}`,
+    ]);
   }
   const metaTop = y;
   text('Bill to', MARGIN, { f: bold });
@@ -209,7 +212,9 @@ export async function renderInvoicePdf(inv: InvoicePdfInput): Promise<Uint8Array
   // Footer on every page
   const pages = doc.getPages();
   pages.forEach((p, i) => {
-    const footer = pdfSafe(`${inv.company.name} - Invoice ${inv.number} - page ${i + 1} of ${pages.length}`);
+    const footer = pdfSafe(
+      `${inv.company.name} - Invoice ${inv.number} - page ${i + 1} of ${pages.length}`,
+    );
     p.drawText(footer, { x: MARGIN, y: MARGIN - 20, size: 8, font, color: MUTED });
   });
 

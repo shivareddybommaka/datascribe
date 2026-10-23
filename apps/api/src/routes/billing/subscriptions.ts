@@ -47,7 +47,9 @@ export function subscriptionsRouter(deps: Deps): Router {
   r.get('/subscriptions', requirePermission('subscriptions', 'view'), async (req, res) => {
     const auth = requireAuth(req);
     const q = parse(
-      Pagination.extend({ status: z.enum(['trialing', 'active', 'past_due', 'canceled']).optional() }),
+      Pagination.extend({
+        status: z.enum(['trialing', 'active', 'past_due', 'canceled']).optional(),
+      }),
       req.query,
     );
     const where = {
@@ -76,47 +78,55 @@ export function subscriptionsRouter(deps: Deps): Router {
     });
   });
 
-  r.post('/subscriptions/change', requirePermission('subscriptions', 'manage'), async (req, res) => {
-    const auth = requireAuth(req);
-    const body = parse(z.object({ organizationId: Id.optional(), planId: Id }), req.body);
-    const orgId = targetOrg(auth, 'subscriptions', 'manage', body.organizationId);
-    const { subscription, previousPlanId } = await changePlan(prisma, {
-      organizationId: orgId,
-      planId: body.planId,
-    });
-    await req.audit({
-      action: 'subscription.change_plan',
-      entity: 'Subscription',
-      entityId: subscription.id,
-      organizationId: orgId,
-      metadata: { fromPlanId: previousPlanId, toPlanId: body.planId },
-    });
-    res.json({
-      subscription: serializeSubscription(subscription),
-      usage: await usageSummary(prisma, subscription),
-    });
-  });
+  r.post(
+    '/subscriptions/change',
+    requirePermission('subscriptions', 'manage'),
+    async (req, res) => {
+      const auth = requireAuth(req);
+      const body = parse(z.object({ organizationId: Id.optional(), planId: Id }), req.body);
+      const orgId = targetOrg(auth, 'subscriptions', 'manage', body.organizationId);
+      const { subscription, previousPlanId } = await changePlan(prisma, {
+        organizationId: orgId,
+        planId: body.planId,
+      });
+      await req.audit({
+        action: 'subscription.change_plan',
+        entity: 'Subscription',
+        entityId: subscription.id,
+        organizationId: orgId,
+        metadata: { fromPlanId: previousPlanId, toPlanId: body.planId },
+      });
+      res.json({
+        subscription: serializeSubscription(subscription),
+        usage: await usageSummary(prisma, subscription),
+      });
+    },
+  );
 
-  r.post('/subscriptions/cancel', requirePermission('subscriptions', 'manage'), async (req, res) => {
-    const auth = requireAuth(req);
-    const body = parse(
-      z.object({ organizationId: Id.optional(), cancelAtPeriodEnd: z.boolean().default(true) }),
-      req.body,
-    );
-    const orgId = targetOrg(auth, 'subscriptions', 'manage', body.organizationId);
-    const sub = await setCancelAtPeriodEnd(prisma, {
-      organizationId: orgId,
-      cancel: body.cancelAtPeriodEnd,
-    });
-    await req.audit({
-      action: body.cancelAtPeriodEnd ? 'subscription.cancel' : 'subscription.resume',
-      entity: 'Subscription',
-      entityId: sub.id,
-      organizationId: orgId,
-      metadata: { cancelAtPeriodEnd: body.cancelAtPeriodEnd, periodEnd: sub.currentPeriodEnd },
-    });
-    res.json({ subscription: serializeSubscription(sub) });
-  });
+  r.post(
+    '/subscriptions/cancel',
+    requirePermission('subscriptions', 'manage'),
+    async (req, res) => {
+      const auth = requireAuth(req);
+      const body = parse(
+        z.object({ organizationId: Id.optional(), cancelAtPeriodEnd: z.boolean().default(true) }),
+        req.body,
+      );
+      const orgId = targetOrg(auth, 'subscriptions', 'manage', body.organizationId);
+      const sub = await setCancelAtPeriodEnd(prisma, {
+        organizationId: orgId,
+        cancel: body.cancelAtPeriodEnd,
+      });
+      await req.audit({
+        action: body.cancelAtPeriodEnd ? 'subscription.cancel' : 'subscription.resume',
+        entity: 'Subscription',
+        entityId: sub.id,
+        organizationId: orgId,
+        metadata: { cancelAtPeriodEnd: body.cancelAtPeriodEnd, periodEnd: sub.currentPeriodEnd },
+      });
+      res.json({ subscription: serializeSubscription(sub) });
+    },
+  );
 
   /**
    * Manual usage entry (corrections, or pages processed outside the pipeline). Case deliveries

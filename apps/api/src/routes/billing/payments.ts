@@ -12,8 +12,7 @@ import { badRequest, notFound } from '../../lib/errors';
 import { parse } from '../../lib/validate';
 import { Money, billingOrgWhere, requireStaffAll, serializePayment } from './common';
 
-const escapeHtml = (s: string) =>
-  s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 /**
  * §5.6 payments: gateway webhook (signature-verified, idempotent), refunds (finance:

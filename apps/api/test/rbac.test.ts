@@ -123,12 +123,15 @@ describe('§4.4 rule 1: a client user can never read another organisation’s da
 });
 
 /** Billing records owned by a firm (M8). Same rule: other firms' ids are 404, lists stay in-firm. */
-const BILLING_ROUTES: { name: string; method: 'get' | 'post'; path: (invoiceId: string) => string }[] =
-  [
-    { name: 'invoice detail', method: 'get', path: (id) => `/api/v1/invoices/${id}` },
-    { name: 'invoice PDF', method: 'get', path: (id) => `/api/v1/invoices/${id}/pdf` },
-    { name: 'invoice pay', method: 'post', path: (id) => `/api/v1/invoices/${id}/pay` },
-  ];
+const BILLING_ROUTES: {
+  name: string;
+  method: 'get' | 'post';
+  path: (invoiceId: string) => string;
+}[] = [
+  { name: 'invoice detail', method: 'get', path: (id) => `/api/v1/invoices/${id}` },
+  { name: 'invoice PDF', method: 'get', path: (id) => `/api/v1/invoices/${id}/pdf` },
+  { name: 'invoice pay', method: 'post', path: (id) => `/api/v1/invoices/${id}/pay` },
+];
 
 describe('§4.4 rule 1 for billing: firms never see each other’s invoices or subscriptions', () => {
   let acmeInvoice: string;
@@ -136,7 +139,9 @@ describe('§4.4 rule 1 for billing: firms never see each other’s invoices or s
   const line = [{ description: 'Isolation test', quantity: 1, unitPrice: '10' }];
 
   beforeAll(async () => {
-    acmeInvoice = (await createOneOffInvoice(prisma, { organizationId: await orgId('acme'), lines: line })).id;
+    acmeInvoice = (
+      await createOneOffInvoice(prisma, { organizationId: await orgId('acme'), lines: line })
+    ).id;
     harborInvoice = (
       await createOneOffInvoice(prisma, { organizationId: await orgId('harbor'), lines: line })
     ).id;
@@ -147,27 +152,29 @@ describe('§4.4 rule 1 for billing: firms never see each other’s invoices or s
 
   for (const route of BILLING_ROUTES) {
     it(`Acme admin gets 404 for Harbor's ${route.name}, and the reverse`, async () => {
-      expect((await call(route.method, route.path(harborInvoice), tokens[SEED.acmeAdmin]!)).status).toBe(
-        404,
-      );
-      expect((await call(route.method, route.path(acmeInvoice), tokens[SEED.harborAdmin]!)).status).toBe(
-        404,
-      );
+      expect(
+        (await call(route.method, route.path(harborInvoice), tokens[SEED.acmeAdmin]!)).status,
+      ).toBe(404);
+      expect(
+        (await call(route.method, route.path(acmeInvoice), tokens[SEED.harborAdmin]!)).status,
+      ).toBe(404);
     });
   }
 
   it('own-firm access works, and lists and subscriptions never cross firms', async () => {
-    expect((await get(`/api/v1/invoices/${acmeInvoice}`, tokens[SEED.acmeAdmin]!)).status).toBe(200);
+    expect((await get(`/api/v1/invoices/${acmeInvoice}`, tokens[SEED.acmeAdmin]!)).status).toBe(
+      200,
+    );
     const acme = await orgId('acme');
     const harbor = await orgId('harbor');
     const list = await get('/api/v1/invoices?limit=500', tokens[SEED.acmeAdmin]!);
-    expect(list.body.items.every((i: { organizationId: string }) => i.organizationId === acme)).toBe(
-      true,
-    );
+    expect(
+      list.body.items.every((i: { organizationId: string }) => i.organizationId === acme),
+    ).toBe(true);
     const subs = await get('/api/v1/subscriptions', tokens[SEED.harborAdmin]!);
-    expect(subs.body.items.every((s: { organizationId: string }) => s.organizationId === harbor)).toBe(
-      true,
-    );
+    expect(
+      subs.body.items.every((s: { organizationId: string }) => s.organizationId === harbor),
+    ).toBe(true);
     expect(
       (await get(`/api/v1/subscriptions/current?organizationId=${acme}`, tokens[SEED.harborAdmin]!))
         .status,
@@ -202,15 +209,19 @@ describe('§4.4 rule 1 for billing: firms never see each other’s invoices or s
     });
     const { token } = await login(app, email);
     for (const route of BILLING_ROUTES) {
-      expect((await call(route.method, route.path(harborInvoice), token)).status, route.name).toBe(404);
+      expect((await call(route.method, route.path(harborInvoice), token)).status, route.name).toBe(
+        404,
+      );
     }
     const list = await get('/api/v1/invoices?limit=500', token);
     const acme = await orgId('acme');
-    expect(list.body.items.every((i: { organizationId: string }) => i.organizationId === acme)).toBe(
-      true,
-    );
+    expect(
+      list.body.items.every((i: { organizationId: string }) => i.organizationId === acme),
+    ).toBe(true);
     // all-scope staff-only actions stay closed to client orgs
-    expect((await request(app).post('/api/v1/invoices').set(bearer(token)).send({})).status).toBe(403);
+    expect((await request(app).post('/api/v1/invoices').set(bearer(token)).send({})).status).toBe(
+      403,
+    );
   });
 });
 

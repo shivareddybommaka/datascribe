@@ -78,7 +78,9 @@ export function plansRouter(deps: Deps): Router {
         entityId: id,
         metadata: {
           fields: Object.keys(body),
-          ...(body.priceMonthly ? { from: before.priceMonthly.toFixed(2), to: body.priceMonthly } : {}),
+          ...(body.priceMonthly
+            ? { from: before.priceMonthly.toFixed(2), to: body.priceMonthly }
+            : {}),
         },
       });
       res.json(serializePlan(plan));

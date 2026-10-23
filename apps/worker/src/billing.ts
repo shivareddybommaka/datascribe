@@ -28,7 +28,11 @@ export async function processBillingJob(
   switch (name) {
     case 'monthly-invoicing': {
       const r = await deps.runMonthlyInvoicing(now);
-      return { invoices: r.invoiceIds.length, periodsClosed: r.periodsClosed, canceled: r.canceled };
+      return {
+        invoices: r.invoiceIds.length,
+        periodsClosed: r.periodsClosed,
+        canceled: r.canceled,
+      };
     }
     case 'dunning':
       return { ...(await deps.runDunning(now)) };

@@ -1,9 +1,4 @@
-import {
-  LocalObjectStore,
-  repoPath,
-  runDunning,
-  runMonthlyInvoicing,
-} from '@datascribe/billing';
+import { LocalObjectStore, repoPath, runDunning, runMonthlyInvoicing } from '@datascribe/billing';
 import { prisma } from '@datascribe/db';
 import { Queue, Worker } from 'bullmq';
 import nodemailer from 'nodemailer';
@@ -37,7 +32,10 @@ const transport = nodemailer.createTransport({
 });
 const mailer = {
   async send(mail: { to: string; subject: string; text: string }) {
-    await transport.sendMail({ from: process.env.MAIL_FROM ?? 'no-reply@datascribe.example', ...mail });
+    await transport.sendMail({
+      from: process.env.MAIL_FROM ?? 'no-reply@datascribe.example',
+      ...mail,
+    });
   },
 };
 const store = new LocalObjectStore(repoPath(process.env.INVOICE_STORAGE_DIR ?? '.data/invoices'));

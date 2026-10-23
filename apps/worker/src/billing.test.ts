@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from 'vitest';
 import { BILLING_SCHEDULES, processBillingJob } from './billing';
 
 const deps = () => ({
-  runMonthlyInvoicing: vi.fn(async () => ({ invoiceIds: ['a', 'b'], periodsClosed: 2, canceled: 1 })),
+  runMonthlyInvoicing: vi.fn(async () => ({
+    invoiceIds: ['a', 'b'],
+    periodsClosed: 2,
+    canceled: 1,
+  })),
   runDunning: vi.fn(async () => ({ remindersSent: 3, emails: 4, markedOverdue: 1 })),
 });
 
@@ -34,6 +38,7 @@ describe('billing jobs', () => {
 
   it('has a daily schedule for each job', () => {
     expect(Object.keys(BILLING_SCHEDULES).sort()).toEqual(['dunning', 'monthly-invoicing']);
-    for (const s of Object.values(BILLING_SCHEDULES)) expect(s.pattern).toMatch(/^\d+ \d+ \* \* \*$/);
+    for (const s of Object.values(BILLING_SCHEDULES))
+      expect(s.pattern).toMatch(/^\d+ \d+ \* \* \*$/);
   });
 });

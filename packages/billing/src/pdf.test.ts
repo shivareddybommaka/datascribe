@@ -14,7 +14,12 @@ import {
 } from './storage';
 
 const input = (lines = 2): InvoicePdfInput => ({
-  company: { name: 'Datascribe', address: '1 Example St, Sydney NSW', email: 'billing@datascribe.example', taxId: 'ABN 00 000 000 000' },
+  company: {
+    name: 'Datascribe',
+    address: '1 Example St, Sydney NSW',
+    email: 'billing@datascribe.example',
+    taxId: 'ABN 00 000 000 000',
+  },
   billTo: { name: 'Acme Injury Law (synthetic)' },
   number: 'INV-2026-00001',
   status: 'issued',

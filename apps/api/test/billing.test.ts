@@ -103,8 +103,21 @@ describe('plans (§5.6: managed by finance / super_admin)', () => {
       features: ['Index only'],
     });
     expect(created.status, JSON.stringify(created.body)).toBe(201);
-    expect(created.body).toMatchObject({ currency: 'USD', priceMonthly: '250.00', overagePerPage: '1.1000' });
-    expect((await post('/api/v1/plans', tok.super_admin!, { ...created.body, id: undefined, createdAt: undefined, updatedAt: undefined })).status).toBe(409);
+    expect(created.body).toMatchObject({
+      currency: 'USD',
+      priceMonthly: '250.00',
+      overagePerPage: '1.1000',
+    });
+    expect(
+      (
+        await post('/api/v1/plans', tok.super_admin!, {
+          ...created.body,
+          id: undefined,
+          createdAt: undefined,
+          updatedAt: undefined,
+        })
+      ).status,
+    ).toBe(409);
 
     const off = await patch(`/api/v1/plans/${created.body.id}`, tok.finance!, { active: false });
     expect(off.status).toBe(200);
@@ -159,7 +172,12 @@ describe('subscriptions (§5.3, §5.6)', () => {
     const starter = await plan('Starter');
     for (const t of ['sales', 'ops_manager']) {
       expect(
-        (await post('/api/v1/subscriptions/change', tok[t]!, { organizationId: harbor, planId: starter.id })).status,
+        (
+          await post('/api/v1/subscriptions/change', tok[t]!, {
+            organizationId: harbor,
+            planId: starter.id,
+          })
+        ).status,
       ).toBe(403);
     }
     expect((await get('/api/v1/subscriptions/current', tok.case_manager!)).status).toBe(403);
@@ -175,7 +193,9 @@ describe('subscriptions (§5.3, §5.6)', () => {
     expect(first.body.subscription.plan.name).toBe('Starter');
     const up = await post('/api/v1/subscriptions/change', token, { planId: pro.id });
     expect(up.body.subscription.id).toBe(first.body.subscription.id);
-    expect((await prisma.organization.findUniqueOrThrow({ where: { id: org.id } })).planId).toBe(pro.id);
+    expect((await prisma.organization.findUniqueOrThrow({ where: { id: org.id } })).planId).toBe(
+      pro.id,
+    );
 
     const cancel = await post('/api/v1/subscriptions/cancel', token, {});
     expect(cancel.body.subscription.cancelAtPeriodEnd).toBe(true);
@@ -185,7 +205,12 @@ describe('subscriptions (§5.3, §5.6)', () => {
     // another firm: 404 for the client admin, fine for finance
     const harbor = await orgId('harbor');
     expect(
-      (await post('/api/v1/subscriptions/change', token, { organizationId: harbor, planId: pro.id })).status,
+      (
+        await post('/api/v1/subscriptions/change', token, {
+          organizationId: harbor,
+          planId: pro.id,
+        })
+      ).status,
     ).toBe(404);
     const byFinance = await post('/api/v1/subscriptions/change', tok.finance!, {
       organizationId: org.id,
@@ -198,7 +223,11 @@ describe('subscriptions (§5.3, §5.6)', () => {
       select: { action: true },
     });
     expect(actions.map((a) => a.action)).toEqual(
-      expect.arrayContaining(['subscription.change_plan', 'subscription.cancel', 'subscription.resume']),
+      expect.arrayContaining([
+        'subscription.change_plan',
+        'subscription.cancel',
+        'subscription.resume',
+      ]),
     );
   });
 
@@ -209,11 +238,18 @@ describe('subscriptions (§5.3, §5.6)', () => {
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('currency_mismatch');
     const hidden = await prisma.subscriptionPlan.create({
-      data: { name: `Hidden ${Date.now()}`, priceMonthly: '1', currency: 'INR', includedPages: 1, overagePerPage: '1', active: false },
+      data: {
+        name: `Hidden ${Date.now()}`,
+        priceMonthly: '1',
+        currency: 'INR',
+        includedPages: 1,
+        overagePerPage: '1',
+        active: false,
+      },
     });
-    expect((await post('/api/v1/subscriptions/change', token, { planId: hidden.id })).body.error.code).toBe(
-      'invalid_plan',
-    );
+    expect(
+      (await post('/api/v1/subscriptions/change', token, { planId: hidden.id })).body.error.code,
+    ).toBe('invalid_plan');
     expect((await post('/api/v1/subscriptions/cancel', token, {})).status).toBe(404);
   });
 });
@@ -244,7 +280,9 @@ describe('usage (§5.6: recorded per case on delivery)', () => {
     const body = { organizationId: await orgId('acme'), pages: 1 };
     expect((await post('/api/v1/usage', tok.acmeAdmin!, body)).status).toBe(403);
     expect((await post('/api/v1/usage', tok.sales!, body)).status).toBe(403);
-    expect((await post('/api/v1/usage', tok.finance!, { ...body, organizationId: 'nope' })).status).toBe(404);
+    expect(
+      (await post('/api/v1/usage', tok.finance!, { ...body, organizationId: 'nope' })).status,
+    ).toBe(404);
   });
 });
 
@@ -270,7 +308,10 @@ describe('M8 DoD: monthly invoice with overage, paid through the gateway', () =>
       pages: 1500,
       at: new Date('2026-05-10T00:00:00Z'),
     });
-    const manual = await post('/api/v1/usage', tok.finance!, { organizationId: firm.org.id, pages: 847 });
+    const manual = await post('/api/v1/usage', tok.finance!, {
+      organizationId: firm.org.id,
+      pages: 847,
+    });
     expect(manual.status).toBe(201);
     // the manual entry is "now" (outside May); file it under May for this scenario
     await prisma.usageRecord.update({
@@ -291,8 +332,15 @@ describe('M8 DoD: monthly invoice with overage, paid through the gateway', () =>
     invoiceId = inv.id;
     expect(run.body.invoiceIds).toContain(inv.id);
     expect(inv.number).toMatch(/^INV-2026-\d{5}$/);
-    expect(inv).toMatchObject({ kind: 'subscription', status: 'issued', currency: 'USD', taxLabel: 'GST' });
-    expect(inv.lines.map((l) => [l.quantity.toFixed(2), l.unitPrice.toFixed(4), l.amount.toFixed(2)])).toEqual([
+    expect(inv).toMatchObject({
+      kind: 'subscription',
+      status: 'issued',
+      currency: 'USD',
+      taxLabel: 'GST',
+    });
+    expect(
+      inv.lines.map((l) => [l.quantity.toFixed(2), l.unitPrice.toFixed(4), l.amount.toFixed(2)]),
+    ).toEqual([
       ['1.00', '1499.0000', '1499.00'],
       ['347.00', '0.7500', '260.25'],
     ]);
@@ -326,9 +374,18 @@ describe('M8 DoD: monthly invoice with overage, paid through the gateway', () =>
     expect(pay.status, JSON.stringify(pay.body)).toBe(201);
     expect(pay.body).toMatchObject({ gateway: 'fake' });
     expect(pay.body.url).toContain('/api/v1/payments/fake-checkout/fcs_');
-    expect(gateway.checkouts.at(-1)).toMatchObject({ invoiceId, amount: '1935.18', currency: 'USD' });
+    expect(gateway.checkouts.at(-1)).toMatchObject({
+      invoiceId,
+      amount: '1935.18',
+      currency: 'USD',
+    });
 
-    const hook = gateway.webhook({ invoiceId, amount: '1935.18', currency: 'USD', paymentRef: 'fpi_dod' });
+    const hook = gateway.webhook({
+      invoiceId,
+      amount: '1935.18',
+      currency: 'USD',
+      paymentRef: 'fpi_dod',
+    });
     const send = () =>
       request(app).post('/api/v1/payments/webhook/stripe').set(hook.headers).send(hook.body);
     const first = await send();
@@ -337,12 +394,21 @@ describe('M8 DoD: monthly invoice with overage, paid through the gateway', () =>
     const second = await send();
     expect(second.body.outcome).toBe('duplicate');
 
-    const inv = await prisma.invoice.findUniqueOrThrow({ where: { id: invoiceId }, include: { payments: true } });
+    const inv = await prisma.invoice.findUniqueOrThrow({
+      where: { id: invoiceId },
+      include: { payments: true },
+    });
     expect(inv.status).toBe('paid');
     expect(inv.paidAt).toBeTruthy();
     expect(inv.payments).toHaveLength(1);
-    expect(inv.payments[0]).toMatchObject({ gateway: 'fake', gatewayRef: 'fpi_dod', status: 'succeeded' });
-    const audit = await prisma.auditLog.count({ where: { action: 'payment.succeeded', entityId: inv.payments[0]!.id } });
+    expect(inv.payments[0]).toMatchObject({
+      gateway: 'fake',
+      gatewayRef: 'fpi_dod',
+      status: 'succeeded',
+    });
+    const audit = await prisma.auditLog.count({
+      where: { action: 'payment.succeeded', entityId: inv.payments[0]!.id },
+    });
     expect(audit).toBe(1);
 
     expect((await post(`/api/v1/invoices/${invoiceId}/pay`, firm.token)).status).toBe(409);
@@ -351,7 +417,9 @@ describe('M8 DoD: monthly invoice with overage, paid through the gateway', () =>
   it('rejects unsigned, forged and tampered webhooks', async () => {
     const hook = gateway.webhook({ invoiceId, amount: '1.00', currency: 'USD' });
     const url = '/api/v1/payments/webhook/stripe';
-    expect((await request(app).post(url).set('content-type', 'application/json').send(hook.body)).status).toBe(400);
+    expect(
+      (await request(app).post(url).set('content-type', 'application/json').send(hook.body)).status,
+    ).toBe(400);
     const tampered = hook.body.replace('"1.00"', '"9.00"');
     const res = await request(app).post(url).set(hook.headers).send(tampered);
     expect(res.status).toBe(400);
@@ -374,16 +442,18 @@ describe('M8 DoD: monthly invoice with overage, paid through the gateway', () =>
     expect((await post(url, tok.sales!, { reason: 'x' })).status).toBe(403);
     expect((await post(url, firm.token, { reason: 'x' })).status).toBe(403);
     expect((await post(url, tok.finance!, {})).status).toBe(400); // reason required
-    expect((await post(url, tok.finance!, { amount: '5000', reason: 'too much' })).body.error.code).toBe(
-      'invalid_amount',
-    );
+    expect(
+      (await post(url, tok.finance!, { amount: '5000', reason: 'too much' })).body.error.code,
+    ).toBe('invalid_amount');
 
     gateway.failNextRefund = true;
     const declined = await post(url, tok.finance!, { amount: '10', reason: 'goodwill' });
     expect(declined.status).toBe(502);
-    expect((await prisma.payment.findUniqueOrThrow({ where: { id: payment.id } })).refundedAmount.toFixed(2)).toBe(
-      '0.00',
-    );
+    expect(
+      (
+        await prisma.payment.findUniqueOrThrow({ where: { id: payment.id } })
+      ).refundedAmount.toFixed(2),
+    ).toBe('0.00');
 
     const part = await post(url, tok.finance!, { amount: '100', reason: 'goodwill' });
     expect(part.status, JSON.stringify(part.body)).toBe(200);
@@ -395,7 +465,9 @@ describe('M8 DoD: monthly invoice with overage, paid through the gateway', () =>
     expect(rest.body.invoiceStatus).toBe('refunded');
     expect(gateway.refunds.slice(-2).map((r) => r.amount)).toEqual(['100.00', '1835.18']);
     expect((await post(url, tok.finance!, { reason: 'again' })).status).toBe(409);
-    expect(await prisma.auditLog.count({ where: { action: 'payment.refund', entityId: payment.id } })).toBe(2);
+    expect(
+      await prisma.auditLog.count({ where: { action: 'payment.refund', entityId: payment.id } }),
+    ).toBe(2);
   });
 
   it('the simulated checkout page pays through the same webhook path', async () => {
@@ -428,12 +500,19 @@ describe('one-off invoices, PDF, void (§5.6)', () => {
     };
     const a = await post('/api/v1/invoices', tok.finance!, body);
     expect(a.status, JSON.stringify(a.body)).toBe(201);
-    expect(a.body).toMatchObject({ kind: 'one_off', subtotal: '312.50', tax: '31.25', total: '343.75' });
+    expect(a.body).toMatchObject({
+      kind: 'one_off',
+      subtotal: '312.50',
+      tax: '31.25',
+      total: '343.75',
+    });
     expect(a.body.lines).toHaveLength(2);
     const b = await post('/api/v1/invoices', tok.super_admin!, body);
     const n = (s: string) => Number(s.split('-').at(-1));
     expect(n(b.body.number)).toBe(n(a.body.number) + 1);
-    expect(await prisma.auditLog.count({ where: { action: 'invoice.create', entityId: a.body.id } })).toBe(1);
+    expect(
+      await prisma.auditLog.count({ where: { action: 'invoice.create', entityId: a.body.id } }),
+    ).toBe(1);
   });
 
   it('numbers stay unique and gap-free under concurrency', async () => {
@@ -459,7 +538,12 @@ describe('one-off invoices, PDF, void (§5.6)', () => {
     }
     expect((await post('/api/v1/invoices', tok.finance!, { ...body, lines: [] })).status).toBe(400);
     expect(
-      (await post('/api/v1/invoices', tok.finance!, { ...body, organizationId: await orgId('internal') })).status,
+      (
+        await post('/api/v1/invoices', tok.finance!, {
+          ...body,
+          organizationId: await orgId('internal'),
+        })
+      ).status,
     ).toBe(404);
   });
 
@@ -487,11 +571,15 @@ describe('one-off invoices, PDF, void (§5.6)', () => {
       lines: [{ description: 'Mistake', quantity: 1, unitPrice: '10' }],
     });
     expect((await post(`/api/v1/invoices/${inv.id}/void`, tok.finance!, {})).status).toBe(400);
-    expect((await post(`/api/v1/invoices/${inv.id}/void`, tok.acmeAdmin!, { reason: 'x' })).status).toBe(403);
+    expect(
+      (await post(`/api/v1/invoices/${inv.id}/void`, tok.acmeAdmin!, { reason: 'x' })).status,
+    ).toBe(403);
     const v = await post(`/api/v1/invoices/${inv.id}/void`, tok.finance!, { reason: 'duplicate' });
     expect(v.body.status).toBe('void');
     expect((await post(`/api/v1/invoices/${inv.id}/pay`, tok.acmeAdmin!)).status).toBe(409);
-    expect((await post(`/api/v1/invoices/${inv.id}/void`, tok.finance!, { reason: 'again' })).status).toBe(409);
+    expect(
+      (await post(`/api/v1/invoices/${inv.id}/void`, tok.finance!, { reason: 'again' })).status,
+    ).toBe(409);
   });
 });
 
@@ -501,15 +589,22 @@ describe('invoice visibility (§4.3: finance F, client_admin firm, sales/ops vie
     const a = await get('/api/v1/invoices?limit=500', tok.acmeAdmin!);
     expect(a.status).toBe(200);
     expect(a.body.items.length).toBeGreaterThan(0);
-    expect(a.body.items.every((i: { organizationId: string }) => i.organizationId === acme)).toBe(true);
+    expect(a.body.items.every((i: { organizationId: string }) => i.organizationId === acme)).toBe(
+      true,
+    );
     // a client asking for another firm's invoices by filter gets nothing
-    const sneaky = await get(`/api/v1/invoices?organizationId=${await orgId('harbor')}`, tok.acmeAdmin!);
+    const sneaky = await get(
+      `/api/v1/invoices?organizationId=${await orgId('harbor')}`,
+      tok.acmeAdmin!,
+    );
     expect(sneaky.body.items).toEqual([]);
 
     for (const t of ['finance', 'sales', 'ops_manager', 'super_admin']) {
       const res = await get('/api/v1/invoices?limit=500', tok[t]!);
       expect(res.status, t).toBe(200);
-      expect(new Set(res.body.items.map((i: { organizationId: string }) => i.organizationId)).size).toBeGreaterThan(1);
+      expect(
+        new Set(res.body.items.map((i: { organizationId: string }) => i.organizationId)).size,
+      ).toBeGreaterThan(1);
     }
     for (const t of ['acmeUser', 'case_manager', 'summarizer']) {
       expect((await get('/api/v1/invoices', tok[t]!)).status, t).toBe(403);
@@ -549,7 +644,9 @@ describe('dunning (§5.6: due date, +7, +14 days; Mailpit only)', () => {
     await run('2026-07-22T10:00:00Z');
     expect(mailsTo().at(-1)!.subject).toBe(`Reminder: invoice ${inv.number} is 7 days overdue`);
     expect(mailsTo().at(-1)!.text).toContain(`/portal/billing/invoices/${inv.id}`);
-    expect((await prisma.invoice.findUniqueOrThrow({ where: { id: inv.id } })).status).toBe('overdue');
+    expect((await prisma.invoice.findUniqueOrThrow({ where: { id: inv.id } })).status).toBe(
+      'overdue',
+    );
 
     await run('2026-07-29T10:00:00Z');
     await run('2026-08-30T10:00:00Z');
@@ -558,7 +655,9 @@ describe('dunning (§5.6: due date, +7, +14 days; Mailpit only)', () => {
       '7 days overdue',
       '14 days overdue',
     ]);
-    expect((await prisma.invoice.findUniqueOrThrow({ where: { id: inv.id } })).remindersSent).toBe(3);
+    expect((await prisma.invoice.findUniqueOrThrow({ where: { id: inv.id } })).remindersSent).toBe(
+      3,
+    );
   });
 
   it('paid invoices get no reminders', async () => {
@@ -568,7 +667,11 @@ describe('dunning (§5.6: due date, +7, +14 days; Mailpit only)', () => {
       lines: [{ description: 'Index', quantity: 1, unitPrice: '50' }],
       now: new Date('2026-07-01T09:00:00Z'),
     });
-    const hook = gateway.webhook({ invoiceId: inv.id, amount: inv.total.toFixed(2), currency: 'USD' });
+    const hook = gateway.webhook({
+      invoiceId: inv.id,
+      amount: inv.total.toFixed(2),
+      currency: 'USD',
+    });
     await request(app).post('/api/v1/payments/webhook/stripe').set(hook.headers).send(hook.body);
     await post('/api/v1/billing/run-dunning', tok.finance!, { asOf: '2026-07-20T10:00:00Z' });
     expect(mailer.sent.filter((m) => m.to === firm.email)).toHaveLength(0);
@@ -612,7 +715,10 @@ describe('cancel at period end', () => {
       where: { subscriptionId: sub.id },
       orderBy: { periodStart: 'asc' },
     });
-    expect(invoices.map((i) => i.periodStart?.toISOString().slice(0, 10))).toEqual(['2026-01-31', '2026-02-28']);
+    expect(invoices.map((i) => i.periodStart?.toISOString().slice(0, 10))).toEqual([
+      '2026-01-31',
+      '2026-02-28',
+    ]);
     const after = await prisma.subscription.findUniqueOrThrow({ where: { id: sub.id } });
     expect(after.currentPeriodStart.toISOString().slice(0, 10)).toBe('2026-03-28');
   });

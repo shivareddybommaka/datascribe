@@ -39,7 +39,10 @@ const OneOffBody = z.object({
         quantity: z
           .union([z.number(), z.string().trim()])
           .transform((v) => String(v))
-          .refine((v) => /^\d{1,8}(\.\d{1,2})?$/.test(v) && Number(v) > 0, 'Quantity > 0, 2 decimals'),
+          .refine(
+            (v) => /^\d{1,8}(\.\d{1,2})?$/.test(v) && Number(v) > 0,
+            'Quantity > 0, 2 decimals',
+          ),
         unitPrice: UnitPrice,
       }),
     )
@@ -223,7 +226,11 @@ export function invoicesRouter(deps: Deps): Router {
 
   r.post('/billing/run-dunning', requireStaffAll('invoices', 'edit'), async (req, res) => {
     const now = asOf(parse(RunBody, req.body ?? {}));
-    const result = await runDunning(prisma, deps.mailer, { now, appUrl: env.APP_URL, log: req.log });
+    const result = await runDunning(prisma, deps.mailer, {
+      now,
+      appUrl: env.APP_URL,
+      log: req.log,
+    });
     await req.audit({
       action: 'billing.run_dunning',
       entity: 'Invoice',

@@ -18,7 +18,10 @@ const PRO = {
 };
 const GST = { label: 'GST', ratePercent: '18' };
 const NO_TAX = { label: 'Tax', ratePercent: '0' };
-const MAY = { periodStart: new Date('2026-05-01T00:00:00Z'), periodEnd: new Date('2026-06-01T00:00:00Z') };
+const MAY = {
+  periodStart: new Date('2026-05-01T00:00:00Z'),
+  periodEnd: new Date('2026-06-01T00:00:00Z'),
+};
 
 describe('money', () => {
   it('parses and formats without floating-point drift', () => {
@@ -67,10 +70,19 @@ describe('buildSubscriptionInvoice', () => {
       currency: 'USD',
     });
     expect(inv.lines).toHaveLength(1);
-    expect(inv.lines[0]).toMatchObject({ quantity: '1.00', unitPrice: '1499.0000', amount: '1499.00' });
+    expect(inv.lines[0]).toMatchObject({
+      quantity: '1.00',
+      unitPrice: '1499.0000',
+      amount: '1499.00',
+    });
     expect(inv.lines[0]!.description).toContain('2026-05-01 to 2026-05-31');
     expect(inv.lines[0]!.description).toContain('1,200 processed');
-    expect(inv).toMatchObject({ subtotal: '1499.00', tax: '0.00', total: '1499.00', overagePages: 0 });
+    expect(inv).toMatchObject({
+      subtotal: '1499.00',
+      tax: '0.00',
+      total: '1499.00',
+      overagePages: 0,
+    });
   });
 
   it('adds an overage line for pages beyond the plan', () => {
@@ -92,12 +104,24 @@ describe('buildSubscriptionInvoice', () => {
   });
 
   it('exactly at the limit has no overage', () => {
-    const inv = buildSubscriptionInvoice({ plan: PRO, pagesUsed: 2000, ...MAY, tax: NO_TAX, currency: 'USD' });
+    const inv = buildSubscriptionInvoice({
+      plan: PRO,
+      pagesUsed: 2000,
+      ...MAY,
+      tax: NO_TAX,
+      currency: 'USD',
+    });
     expect(inv.lines).toHaveLength(1);
   });
 
   it('applies the configured tax once, on the subtotal', () => {
-    const inv = buildSubscriptionInvoice({ plan: PRO, pagesUsed: 2347, ...MAY, tax: GST, currency: 'INR' });
+    const inv = buildSubscriptionInvoice({
+      plan: PRO,
+      pagesUsed: 2347,
+      ...MAY,
+      tax: GST,
+      currency: 'INR',
+    });
     expect(inv).toMatchObject({
       currency: 'INR',
       taxLabel: 'GST',
@@ -133,12 +157,20 @@ describe('buildInvoice (one-off)', () => {
   it('needs lines and a sane tax rate', () => {
     expect(() => buildInvoice([], NO_TAX, 'USD')).toThrow(RangeError);
     expect(() =>
-      buildInvoice([{ description: 'x', quantity: 1, unitPrice: 1 }], { label: 'T', ratePercent: '101' }, 'USD'),
+      buildInvoice(
+        [{ description: 'x', quantity: 1, unitPrice: 1 }],
+        { label: 'T', ratePercent: '101' },
+        'USD',
+      ),
     ).toThrow(RangeError);
   });
 
   it('credits (negative lines) never produce negative tax', () => {
-    const inv = buildInvoice([{ description: 'Credit', quantity: 1, unitPrice: '-10' }], GST, 'USD');
+    const inv = buildInvoice(
+      [{ description: 'Credit', quantity: 1, unitPrice: '-10' }],
+      GST,
+      'USD',
+    );
     expect(inv).toMatchObject({ subtotal: '-10.00', tax: '0.00', total: '-10.00' });
     expect(buildLine({ description: 'x', quantity: 2, unitPrice: '1.005' }).amount).toBe('2.01');
   });
@@ -146,9 +178,17 @@ describe('buildInvoice (one-off)', () => {
 
 describe('addMonths', () => {
   it('keeps the day of month and clamps short months', () => {
-    expect(addMonths(new Date('2026-01-15T00:00:00Z'), 1).toISOString()).toBe('2026-02-15T00:00:00.000Z');
-    expect(addMonths(new Date('2026-01-31T00:00:00Z'), 1).toISOString()).toBe('2026-02-28T00:00:00.000Z');
-    expect(addMonths(new Date('2028-01-31T00:00:00Z'), 1).toISOString()).toBe('2028-02-29T00:00:00.000Z');
-    expect(addMonths(new Date('2026-12-01T00:00:00Z'), 1).toISOString()).toBe('2027-01-01T00:00:00.000Z');
+    expect(addMonths(new Date('2026-01-15T00:00:00Z'), 1).toISOString()).toBe(
+      '2026-02-15T00:00:00.000Z',
+    );
+    expect(addMonths(new Date('2026-01-31T00:00:00Z'), 1).toISOString()).toBe(
+      '2026-02-28T00:00:00.000Z',
+    );
+    expect(addMonths(new Date('2028-01-31T00:00:00Z'), 1).toISOString()).toBe(
+      '2028-02-29T00:00:00.000Z',
+    );
+    expect(addMonths(new Date('2026-12-01T00:00:00Z'), 1).toISOString()).toBe(
+      '2027-01-01T00:00:00.000Z',
+    );
   });
 });

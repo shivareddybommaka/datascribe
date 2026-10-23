@@ -58,7 +58,8 @@ export const EnvSchema = z
     }
     // The fake gateway marks invoices paid without money changing hands: never in production.
     const fake =
-      env.PAYMENT_GATEWAY === 'fake' || (env.PAYMENT_GATEWAY === 'stripe' && !env.STRIPE_SECRET_KEY);
+      env.PAYMENT_GATEWAY === 'fake' ||
+      (env.PAYMENT_GATEWAY === 'stripe' && !env.STRIPE_SECRET_KEY);
     if (env.NODE_ENV === 'production' && fake) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
