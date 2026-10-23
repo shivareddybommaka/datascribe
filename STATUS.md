@@ -2,69 +2,65 @@
 
 ## Current state (2026-10-24)
 
-- **Build order: M0 → M1 → M7 (CRM first)**, Shiva's decision (D-016).
-- **M0 Foundation: done.** Remote: https://github.com/shivareddybommaka/datascribe (private, deploy key,
-  host alias `github-datascribe`). Infra on Colima: Postgres 16 (:5433; :5432 is the existing CRM, never
-  touch), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025).
-- **M1 Auth + RBAC: done** (`cafeed9`).
-- **M7 CRM: done.** API (`94eaf55`) + console UI + E2E (this commit).
-  - Tests: api 95, shared 83, worker 1, Playwright e2e 3. Lint, typecheck, format and build green.
-  - Demo: `docs/demos/M7.md`.
-- **M8 Billing + subscriptions: done on branch `ledger/m8`** (worktree `.worktrees/ledger`, not yet
-  merged). Billing package, API, worker jobs, finance console. Tests: api 130, billing 36, shared 83,
-  worker 5, e2e 6. Demo: `docs/demos/M8.md`. Portal billing screens (firm pays by card) still to build.
-- Agent exec works again (pnpm runs); earlier `operator.approvals` block cleared on 2026-10-24.
+Remote: https://github.com/shivareddybommaka/datascribe (private, deploy key, host alias
+`github-datascribe`). Infra on Colima, all bound to 127.0.0.1: Postgres 16 (:5433; :5432 is Shiva's
+existing CRM, never touch), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025). CMS DB `datascribe_cms`.
 
-## Autopilot (from 2026-10-24)
+| Milestone                     | State                              | Notes                                                                                         |
+| ----------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------- |
+| M0 Foundation                 | done                               |                                                                                               |
+| M1 Auth + RBAC                | done                               | security fixes from the audit applied                                                         |
+| M2 Admin console              | **next (master)**                  | users, roles matrix, orgs, settings, audit viewer, impersonation                              |
+| M3 Website + CMS              | done (merged from `storefront/m3`) | Lighthouse ≥ 90 not measured yet (needs Lighthouse install)                                   |
+| M4 Portal cases + uploads     | not started                        |                                                                                               |
+| M5 Pipeline                   | M5a adapters done (merged)         | M5b pipeline stages need M4 uploads                                                           |
+| M6 Workspace + QA + delivery  | not started                        |                                                                                               |
+| M7 CRM                        | done                               |                                                                                               |
+| M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen comes with M4; Stripe test key needed for the manual test-card demo |
+| M9 Notifications + dashboards | not started                        |                                                                                               |
+| M10 Hardening                 | not started                        |                                                                                               |
 
-- Shiva authorised self-managed building. Rules: `docs/AUTOPILOT.md`. OpenClaw automation
-  "Datascribe autopilot" (id `a0d9299e-b264-4e09-8e61-60682d25c151`) resumes work on a paced loop
-  (1–6 h). Stop it by telling Datascribe Dev "stop autopilot".
-- **Current milestone: M2 Admin console** (spec order: M2 → M3 → M4 → M5 → M6 → M8 → M9 → M10).
+Tests on `main` after merging: lint, typecheck, unit/API tests and build green (33/33 turbo tasks);
+Playwright e2e 12/12 (CRM 3, finance 3, marketing 6).
 
-## Agent team (from 2026-10-24 01:15)
+## Autopilot
 
-Master: **datascribe-dev** (this agent, session `agent:datascribe:main`) works on M2 and merges
-everyone's branches into `main`. Subagents work in git worktrees under `.worktrees/` (git-ignored),
-each with its own `.env`, ports and databases on 5433 (`datascribe_<name>_dev` / `_test`):
+Rules: `docs/AUTOPILOT.md`. OpenClaw automation "Datascribe autopilot" (id
+`a0d9299e-b264-4e09-8e61-60682d25c151`) resumes work on a paced loop (1–6 h). "stop autopilot" removes it.
+Remaining order: M2 → M4 → M5b → M6 → M9 → M10.
 
-| Subagent              | Branch                 | Scope                                                               | Ports                        |
-| --------------------- | ---------------------- | ------------------------------------------------------------------- | ---------------------------- |
-| datascribe-storefront | `storefront/m3`        | M3 website + Payload CMS, public plans endpoint                     | web 3200, api 4200, cms 3201 |
-| datascribe-ledger     | `ledger/m8`            | M8 billing, Stripe test mode behind PaymentGateway, finance console | web 3300, api 4300           |
-| datascribe-pipeline   | `pipeline/m5-adapters` | M5 medical-data adapters, deidentifyTerm, /medical routes           | api 4400                     |
-| datascribe-auditor    | `auditor/review-m1-m7` | read-only security + PHI review of M0/M1/M7                         | —                            |
+## Agent team
 
-DECISIONS numbering per agent to avoid clashes: storefront D-030+, ledger D-040+, pipeline D-050+.
-Only the master runs e2e and pushes.
+Master **datascribe-dev** (`agent:datascribe:main`) merges into `main`; subagents work in git worktrees
+under `.worktrees/` (own `.env`, ports, `datascribe_<name>_*` DBs on 5433) and report to the master.
+Named agents: datascribe-storefront (web/CMS), datascribe-ledger (billing), datascribe-pipeline
+(processing pipeline), datascribe-auditor (read-only security/PHI review). DECISIONS numbering per
+agent: storefront D-030+, ledger D-040+, pipeline D-050+.
 
 ## Waiting on Shiva
 
-- Telegram control: create a Telegram group with the existing bot (bot as admin or privacy off), send
-  a message, send the group id (forward a message to @RawDataBot). Then the binding to the
-  `datascribe` agent is proposed via OpenClaw for approval.
+- Telegram control: create a Telegram group with the bot (bot as admin or privacy off), send a
+  message, send the group id (forward to @RawDataBot). Then the binding is proposed via OpenClaw.
+- nodemailer 6 → 10 upgrade (audit M7): yes / later.
+- Lighthouse install (M3 performance/SEO check): yes / later.
+- Free openFDA API key before production (D-052). Should QA reviewers use medical lookups (D-056)?
+- Stripe test key for the manual M8 test-card demo. CMS email adapter choice (editor password reset).
+- CI result on GitHub Actions (agent can't read Actions with the deploy key).
 
-- CI result on GitHub Actions for the latest push (agent can't read Actions with the deploy key).
-  CI runs lint/typecheck/unit+API tests/build; e2e is local only until M10.
+## Security review (datascribe-auditor)
 
-## Security review (datascribe-auditor, 2026-10-24)
+No critical findings; §4.4 PHI rules verified. Fixed: H1, M1, M3, M8, M9. Open:
 
-No critical findings; §4.4 PHI rules verified. Fixed on main: H1, M1, M3, M8, M9 (compose binding
-applies after the next `docker-compose up -d`, once subagents finish). Open:
-
-- M2 lockout bypass with concurrent guesses: atomic attempt reservation (with M2 milestone).
-- M4 invites must not grant more than the inviter holds (with M2 custom roles).
-- M5 absolute session lifetime; re-check MFA policy and status on refresh.
-- M6 trust-proxy and per-account limits; M7 nodemailer 6 → 10 major upgrade (needs Shiva's OK).
-- Low: L1 revoke reason vs reuse alerts, L2 kill other reset tokens, L3 unverified-account
-  squatting, L4 audit case list, L5 encrypt Case.notes / Message.body, L6 PHI notice on lead form,
-  L7 Prisma error logging, L8 single-use MFA token, L9 timing, L10 conversion email domain,
-  L11 non-owner DB role, L12 pin images/actions.
+- M2 lockout bypass with concurrent guesses (with M2). M4 invites ≤ inviter's permissions (with M2).
+- M5 absolute session lifetime + re-check MFA policy on refresh. M6 trust-proxy, per-account limits.
+- Low: L1 revoke reason vs reuse alerts, L2 kill other reset tokens, L3 unverified-account squatting,
+  L4 audit case list, L5 encrypt Case.notes / Message.body, L6 PHI notice on lead form, L7 Prisma error
+  logging, L8 single-use MFA token, L9 timing, L10 conversion email domain, L11 non-owner DB role,
+  L12 pin images/actions.
 
 ## Known follow-ups
 
-- Upgrade pass (D-001): Prisma 6→newer, Vitest, ESLint, TypeScript, otplib (deprecated sub-packages).
-- TOTP replay within one 30 s step not yet blocked (D-017), M10.
-- Rate limits are in-memory; move to Redis for multi-instance (M10).
-- CRM notifications (lead assigned, task due) arrive with M9.
+- Upgrade pass (D-001): Prisma, Vitest, ESLint, TypeScript, otplib.
+- Usage stats and rate limits are in-memory; move to Redis (M10). E2E in CI (M10).
+- `apps/cms/scripts/tmp-edit-home.ts` (untracked, storefront's one-off check script) can be removed.
 - Ask Datascribe for an SVG logo.
