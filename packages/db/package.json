@@ -1,0 +1,35 @@
+{
+  "name": "@datascribe/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "generate": "prisma generate",
+    "validate": "dotenv -e ../../.env -- prisma validate",
+    "migrate:dev": "dotenv -e ../../.env -- prisma migrate dev",
+    "migrate:deploy": "dotenv -e ../../.env -- prisma migrate deploy",
+    "studio": "dotenv -e ../../.env -- prisma studio",
+    "seed": "tsx prisma/seed.ts",
+    "lint": "eslint src prisma",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@datascribe/shared": "workspace:*",
+    "@prisma/client": "^6.7.0",
+    "argon2": "^0.43.0"
+  },
+  "devDependencies": {
+    "dotenv": "^16.5.0",
+    "dotenv-cli": "^8.0.0",
+    "prisma": "^6.7.0",
+    "tsx": "^4.19.4"
+  }
+}

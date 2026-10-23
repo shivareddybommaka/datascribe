@@ -1,0 +1,12 @@
+@import 'tailwindcss';
+
+/* Placeholder brand tokens (§14): neutral palette, replace with Datascribe branding later. */
+@theme {
+  --color-brand-50: #f5f7fa;
+  --color-brand-100: #e4e9f0;
+  --color-brand-500: #3b5b7d;
+  --color-brand-600: #2f4a66;
+  --color-brand-700: #243a50;
+  --color-brand-900: #121d29;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}

@@ -1,0 +1,762 @@
+// Datascribe LPO Platform — data model (REQUIREMENTS.md §6)
+//
+// Conventions
+// - Every row owned by a client firm carries organizationId; client-data queries are scoped by it.
+// - PHI fields marked "ENCRYPTED" hold AES-256-GCM envelopes produced by @datascribe/shared/crypto
+//   ("v1:iv:tag:ct"). Never store or query their plaintext.
+// - AuditLog is append-only: no update/delete anywhere in application code.
+// - Money is Decimal(12,2); currency is ISO-4217.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────────── Enums ─────────────────────────────
+
+enum OrganizationType {
+  client
+  internal
+}
+
+enum OrganizationStatus {
+  active
+  suspended
+  closed
+}
+
+enum UserStatus {
+  invited
+  active
+  suspended
+}
+
+enum LeadStage {
+  new
+  contacted
+  qualified
+  proposal
+  won
+  lost
+}
+
+enum ActivityType {
+  call
+  email
+  meeting
+  note
+  task
+}
+
+enum CaseStatus {
+  draft
+  submitted
+  processing
+  in_review
+  qa
+  changes_requested
+  approved
+  delivered
+  closed
+  on_hold
+  cancelled
+}
+
+enum CaseType {
+  personal_injury
+  med_mal
+  workers_comp
+  other
+}
+
+enum Priority {
+  low
+  normal
+  high
+  urgent
+}
+
+enum ScanStatus {
+  pending
+  clean
+  infected
+  error
+}
+
+enum ProcessingStage {
+  scan
+  extract
+  classify
+  extract_events
+  code
+  build_deliverables
+  ready_for_review
+}
+
+enum JobStatus {
+  queued
+  running
+  succeeded
+  failed
+}
+
+enum DeliverableType {
+  index
+  chronology
+  summary
+  report
+}
+
+enum DeliverableStatus {
+  draft
+  in_qa
+  changes_requested
+  approved
+  delivered
+}
+
+enum QaResult {
+  approved
+  changes_requested
+}
+
+enum SubscriptionStatus {
+  trialing
+  active
+  past_due
+  canceled
+}
+
+enum InvoiceStatus {
+  draft
+  issued
+  paid
+  void
+  overdue
+}
+
+enum PaymentStatus {
+  pending
+  succeeded
+  failed
+  refunded
+}
+
+// ─────────────────────── Identity & access ───────────────────────
+
+model Organization {
+  id        String             @id @default(cuid())
+  name      String
+  type      OrganizationType   @default(client)
+  status    OrganizationStatus @default(active)
+  planId    String?
+  currency  String             @default("USD")
+  /// e.g. { enforceMfa, retentionDays, customPricing, idleTimeoutMinutes }
+  settings  Json               @default("{}")
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  plan          SubscriptionPlan? @relation(fields: [planId], references: [id])
+  users         User[]
+  invites       Invite[]
+  contacts      Contact[]
+  activities    Activity[]
+  cases         Case[]
+  documents     Document[]
+  subscriptions Subscription[]
+  usageRecords  UsageRecord[]
+  invoices      Invoice[]
+  convertedFrom Lead[]            @relation("LeadConvertedOrg")
+  auditLogs     AuditLog[]
+
+  @@index([type, status])
+}
+
+model User {
+  id            String     @id @default(cuid())
+  organizationId String
+  name          String
+  email         String     @unique
+  passwordHash  String?
+  /// ENCRYPTED TOTP secret
+  mfaSecret     String?
+  mfaEnabled    Boolean    @default(false)
+  status        UserStatus @default(active)
+  emailVerifiedAt DateTime?
+  failedLoginCount Int     @default(0)
+  lockedUntil   DateTime?
+  mustResetPassword Boolean @default(false)
+  /// { mutedEmailTypes: string[] }
+  preferences   Json       @default("{}")
+  lastLoginAt   DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  roles        UserRole[]
+  sessions     Session[]
+
+  ownedLeads      Lead[]       @relation("LeadOwner")
+  activities      Activity[]
+  casesCreated    Case[]       @relation("CaseCreatedBy")
+  casesManaged    Case[]       @relation("CaseManager")
+  casesSummarized Case[]       @relation("CaseSummarizer")
+  casesQa         Case[]       @relation("CaseQaReviewer")
+  caseShares      CaseShare[]
+  uploads         Document[]
+  editedEvents    ClinicalEvent[]
+  qaReviews       QaReview[]
+  messages        Message[]
+  notifications   Notification[]
+  auditActions    AuditLog[]   @relation("AuditActor")
+  auditImpersonations AuditLog[] @relation("AuditImpersonator")
+
+  @@index([organizationId])
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  description String?
+  isSystem    Boolean  @default(false)
+  /// internal roles require MFA and may hold "all"-scope grants; client roles may not
+  isInternal  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  permissions RolePermission[]
+  users       UserRole[]
+  invites     Invite[]
+}
+
+model Permission {
+  id        String   @id @default(cuid())
+  module    String
+  action    String
+  scope     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  roles RolePermission[]
+
+  @@unique([module, action, scope])
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model UserRole {
+  userId    String
+  roleId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id])
+
+  @@id([userId, roleId])
+}
+
+model Session {
+  id               String    @id @default(cuid())
+  userId           String
+  refreshTokenHash String    @unique
+  /// rotation chain: reuse of a rotated token revokes the whole family
+  familyId         String
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  ip               String?
+  userAgent        String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+}
+
+model Invite {
+  id             String    @id @default(cuid())
+  organizationId String
+  email          String
+  roleId         String
+  tokenHash      String    @unique
+  invitedById    String?
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  role         Role         @relation(fields: [roleId], references: [id])
+
+  @@index([organizationId])
+  @@index([email])
+}
+
+// ───────────────────────────── CRM ─────────────────────────────
+
+model Lead {
+  id             String    @id @default(cuid())
+  /// website_contact | website_demo | manual | import | referral | ...
+  source         String
+  companyName    String
+  contactName    String
+  email          String?
+  phone          String?
+  stage          LeadStage @default(new)
+  ownerId        String?
+  value          Decimal?  @db.Decimal(12, 2)
+  currency       String    @default("USD")
+  nextFollowUpAt DateTime?
+  lostReason     String?
+  notes          String?
+  convertedOrgId String?
+  convertedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  owner        User?         @relation("LeadOwner", fields: [ownerId], references: [id])
+  convertedOrg Organization? @relation("LeadConvertedOrg", fields: [convertedOrgId], references: [id])
+  contacts     Contact[]
+  activities   Activity[]
+
+  @@index([stage])
+  @@index([ownerId])
+  @@index([nextFollowUpAt])
+}
+
+model Contact {
+  id             String   @id @default(cuid())
+  organizationId String?
+  leadId         String?
+  name           String
+  title          String?
+  email          String?
+  phone          String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization? @relation(fields: [organizationId], references: [id])
+  lead         Lead?         @relation(fields: [leadId], references: [id])
+
+  @@index([organizationId])
+  @@index([leadId])
+}
+
+model Activity {
+  id             String       @id @default(cuid())
+  type           ActivityType
+  subject        String
+  body           String?
+  dueAt          DateTime?
+  doneAt         DateTime?
+  userId         String
+  leadId         String?
+  organizationId String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id])
+  lead         Lead?         @relation(fields: [leadId], references: [id])
+  organization Organization? @relation(fields: [organizationId], references: [id])
+
+  @@index([userId, dueAt])
+  @@index([leadId])
+  @@index([organizationId])
+}
+
+// ───────────────────────────── Cases ─────────────────────────────
+
+model Case {
+  id             String     @id @default(cuid())
+  organizationId String
+  /// human-friendly sequential number, e.g. DS-2026-000123
+  number         String     @unique
+  matterName     String
+  reference      String?
+  /// ENCRYPTED
+  patientName    String
+  incidentDate   DateTime?  @db.Date
+  caseType       CaseType
+  /// e.g. ["index","chronology","summary"]
+  requested      Json
+  priority       Priority   @default(normal)
+  dueAt          DateTime?
+  status         CaseStatus @default(draft)
+  notes          String?
+  createdById    String
+  caseManagerId  String?
+  summarizerId   String?
+  qaReviewerId   String?
+  submittedAt    DateTime?
+  deliveredAt    DateTime?
+  closedAt       DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  createdBy    User         @relation("CaseCreatedBy", fields: [createdById], references: [id])
+  caseManager  User?        @relation("CaseManager", fields: [caseManagerId], references: [id])
+  summarizer   User?        @relation("CaseSummarizer", fields: [summarizerId], references: [id])
+  qaReviewer   User?        @relation("CaseQaReviewer", fields: [qaReviewerId], references: [id])
+
+  shares         CaseShare[]
+  documents      Document[]
+  processingJobs ProcessingJob[]
+  clinicalEvents ClinicalEvent[]
+  deliverables   Deliverable[]
+  messages       Message[]
+  usageRecords   UsageRecord[]
+
+  @@index([organizationId, status])
+  @@index([status, dueAt])
+  @@index([summarizerId])
+  @@index([qaReviewerId])
+  @@index([caseManagerId])
+}
+
+model CaseShare {
+  caseId    String
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([caseId, userId])
+}
+
+model Document {
+  id             String     @id @default(cuid())
+  organizationId String
+  caseId         String
+  fileName       String
+  s3Key          String     @unique
+  mimeType       String
+  sizeBytes      BigInt
+  pageCount      Int?
+  sha256         String?
+  scanStatus     ScanStatus @default(pending)
+  uploadedById   String
+  /// S3 multipart upload id while the upload is in progress
+  uploadId       String?
+  uploadedAt     DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id])
+  case         Case            @relation(fields: [caseId], references: [id])
+  uploadedBy   User            @relation(fields: [uploadedById], references: [id])
+  pages        DocumentPage[]
+  events       ClinicalEvent[]
+
+  @@index([organizationId])
+  @@index([caseId])
+}
+
+model DocumentPage {
+  id            String   @id @default(cuid())
+  documentId    String
+  pageNumber    Int
+  /// ENCRYPTED
+  text          String?
+  ocrConfidence Float?
+  /// office_visit | er | imaging | lab | operative | therapy | pharmacy | billing | other
+  recordType    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, pageNumber])
+}
+
+model ProcessingJob {
+  id         String          @id @default(cuid())
+  caseId     String
+  documentId String?
+  stage      ProcessingStage
+  status     JobStatus       @default(queued)
+  attempts   Int             @default(0)
+  /// error class/message only — never document content
+  error      String?
+  startedAt  DateTime?
+  finishedAt DateTime?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, stage])
+}
+
+model ClinicalEvent {
+  id          String    @id @default(cuid())
+  caseId      String
+  /// source citation: documentId + pageNumber are required (§5.4)
+  documentId  String
+  pageNumber  Int
+  eventDate   DateTime? @db.Date
+  provider    String?
+  facility    String?
+  eventType   String?
+  /// ENCRYPTED
+  description String
+  /// CodeMatch[] from packages/medical-data
+  codes       Json      @default("[]")
+  version     Int       @default(1)
+  editedById  String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  case     Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  document Document @relation(fields: [documentId], references: [id])
+  editedBy User?    @relation(fields: [editedById], references: [id])
+
+  @@index([caseId, eventDate])
+}
+
+model Deliverable {
+  id         String            @id @default(cuid())
+  caseId     String
+  type       DeliverableType
+  version    Int               @default(1)
+  status     DeliverableStatus @default(draft)
+  /// ENCRYPTED JSON envelope
+  content    String
+  lockedAt   DateTime?
+  pdfS3Key   String?
+  docxS3Key  String?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  case      Case       @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  qaReviews QaReview[]
+
+  @@unique([caseId, type, version])
+}
+
+model QaReview {
+  id            String   @id @default(cuid())
+  deliverableId String
+  reviewerId    String
+  result        QaResult
+  comments      String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  deliverable Deliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
+  reviewer    User        @relation(fields: [reviewerId], references: [id])
+
+  @@index([deliverableId])
+}
+
+model Message {
+  id           String   @id @default(cuid())
+  caseId       String
+  authorId     String
+  body         String
+  internalOnly Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  case   Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  author User @relation(fields: [authorId], references: [id])
+
+  @@index([caseId, createdAt])
+}
+
+// ─────────────────────── Billing ───────────────────────
+
+model SubscriptionPlan {
+  id             String   @id @default(cuid())
+  name           String   @unique
+  priceMonthly   Decimal  @db.Decimal(12, 2)
+  currency       String   @default("USD")
+  includedPages  Int
+  overagePerPage Decimal  @db.Decimal(12, 4)
+  features       Json     @default("[]")
+  active         Boolean  @default(true)
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organizations Organization[]
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id                 String             @id @default(cuid())
+  organizationId     String
+  planId             String
+  status             SubscriptionStatus @default(active)
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean            @default(false)
+  gatewayRef         String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id])
+  plan         SubscriptionPlan @relation(fields: [planId], references: [id])
+
+  @@index([organizationId, status])
+}
+
+model UsageRecord {
+  id             String   @id @default(cuid())
+  organizationId String
+  caseId         String?
+  /// pages_processed
+  metric         String
+  quantity       Int
+  periodStart    DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  case         Case?        @relation(fields: [caseId], references: [id])
+
+  @@index([organizationId, periodStart])
+}
+
+model Invoice {
+  id             String        @id @default(cuid())
+  organizationId String
+  /// sequential, e.g. INV-2026-00001
+  number         String        @unique
+  status         InvoiceStatus @default(draft)
+  subtotal       Decimal       @db.Decimal(12, 2)
+  tax            Decimal       @db.Decimal(12, 2)
+  total          Decimal       @db.Decimal(12, 2)
+  currency       String        @default("USD")
+  periodStart    DateTime?
+  periodEnd      DateTime?
+  issuedAt       DateTime?
+  dueAt          DateTime?
+  paidAt         DateTime?
+  pdfS3Key       String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id])
+  lines        InvoiceLine[]
+  payments     Payment[]
+
+  @@index([organizationId, status])
+}
+
+model InvoiceLine {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  description String
+  quantity    Decimal  @db.Decimal(12, 2)
+  unitPrice   Decimal  @db.Decimal(12, 4)
+  amount      Decimal  @db.Decimal(12, 2)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+}
+
+model Payment {
+  id         String        @id @default(cuid())
+  invoiceId  String
+  gateway    String
+  /// unique per gateway → webhook idempotency
+  gatewayRef String
+  amount     Decimal       @db.Decimal(12, 2)
+  status     PaymentStatus @default(pending)
+  receiptUrl String?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id])
+
+  @@unique([gateway, gatewayRef])
+}
+
+// ─────────────────────── Platform ───────────────────────
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  type      String
+  payload   Json      @default("{}")
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+}
+
+/// Append-only. No updatedAt by design (D-008).
+model AuditLog {
+  id             String   @id @default(cuid())
+  actorId        String?
+  impersonatorId String?
+  organizationId String?
+  action         String
+  entity         String
+  entityId       String?
+  ip             String?
+  userAgent      String?
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now())
+
+  actor        User?         @relation("AuditActor", fields: [actorId], references: [id])
+  impersonator User?         @relation("AuditImpersonator", fields: [impersonatorId], references: [id])
+  organization Organization? @relation(fields: [organizationId], references: [id])
+
+  @@index([actorId, createdAt])
+  @@index([entity, entityId])
+  @@index([organizationId, createdAt])
+  @@index([createdAt])
+}
+
+model MedicalApiCache {
+  id          String   @id @default(cuid())
+  provider    String
+  requestHash String
+  response    Json
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([provider, requestHash])
+  @@index([expiresAt])
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Gap-free sequences for case and invoice numbers (D-009).
+model Counter {
+  key       String   @id
+  value     Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
