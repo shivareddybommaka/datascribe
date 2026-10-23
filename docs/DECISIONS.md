@@ -720,3 +720,19 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
   devices keep their sessions. Before, a tab refreshing after logout or a password reset raised a
   false theft alert, which drowns the real ones.
 - Rows without a reason (from before the migration) keep the old strict rule and count as reuse.
+
+## D-104 — Unverified sign-ups don't own an address (audit L3, M10, 2026-10-24)
+
+- Before, anyone could register someone else's email. The owner was then told "you already have an
+  account" and could never sign up. Worse, if the owner verified that pending account later, it
+  went live with the squatter's password (pre-hijack).
+- Now `/auth/register` on an address whose account is unverified (a self-registered client org with
+  this one user) replaces the pending sign-up: new password, name and org name, older verify links
+  voided, a fresh link sent. The response stays the same 202, so nothing is revealed. Verified
+  accounts, invited users and multi-user orgs keep the old "sign-up attempt" mail.
+- Race: register (tokens, then user `where emailVerifiedAt is null`) and verify-email (token claim +
+  `emailVerifiedAt` in one transaction) take locks in the same order, so a verification that wins
+  makes the replacement a no-op, and a replacement that wins voids the link being verified.
+- Residual: if the owner clicks a link from a later squatter registration, they verify the
+  squatter's password. They can't sign in with their own password, so they use "Forgot password",
+  which ends the squatter's sessions (reset revokes all).

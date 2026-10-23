@@ -534,6 +534,41 @@ describe('registration and email verification (§5.2)', () => {
     expect(mailer.lastTo(SEED.acmeUser)?.subject).toMatch(/sign-up attempt/);
   });
 
+  it('an unverified sign-up cannot squat an address; the owner registers over it (audit L3)', async () => {
+    const email = uniqueEmail('owner');
+    const register = (password: string, organizationName: string) =>
+      api().post('/api/v1/auth/register').send({ organizationName, name: 'N', email, password });
+    expect((await register('Squatter-password-111!', 'Squat Firm (synthetic)')).status).toBe(202);
+    const squatterLink = tokenFromMail(mailer.lastTo(email));
+    const orgsBefore = await prisma.organization.count();
+
+    const ownerPassword = 'Owner-password-222!';
+    expect((await register(ownerPassword, 'Owner Firm (synthetic)')).status).toBe(202);
+    expect(mailer.lastTo(email)?.subject).toMatch(/Verify your/);
+    const ownerLink = tokenFromMail(mailer.lastTo(email));
+    expect(await prisma.organization.count()).toBe(orgsBefore);
+
+    // the squatter's link is void; the owner's link activates the owner's password
+    expect(
+      (await api().post('/api/v1/auth/verify-email').send({ token: squatterLink })).status,
+    ).toBe(400);
+    expect((await api().post('/api/v1/auth/verify-email').send({ token: ownerLink })).status).toBe(
+      200,
+    );
+    expect((await loginReq(email, 'Squatter-password-111!')).status).toBe(401);
+    expect((await loginReq(email, ownerPassword)).status).toBe(200);
+    const user = await prisma.user.findUniqueOrThrow({
+      where: { email },
+      include: { organization: true },
+    });
+    expect(user.organization.name).toBe('Owner Firm (synthetic)');
+
+    // once verified, registering again changes nothing
+    expect((await register('Late-password-333!', 'Late Firm (synthetic)')).status).toBe(202);
+    expect(mailer.lastTo(email)?.subject).toMatch(/sign-up attempt/);
+    expect((await loginReq(email, ownerPassword)).status).toBe(200);
+  });
+
   it('enforces the password policy', async () => {
     const res = await api()
       .post('/api/v1/auth/register')

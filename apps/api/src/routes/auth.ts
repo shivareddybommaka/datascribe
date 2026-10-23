@@ -453,6 +453,13 @@ export function authRouter(deps: Deps): Router {
     });
   });
 
+  const alreadyRegistered = (to: string) =>
+    mailer.send({
+      to,
+      subject: 'Datascribe sign-up attempt',
+      text: `Someone tried to register a Datascribe account with this email, but you already have one.\nSign in: ${env.APP_URL}/login\nForgot your password? ${env.APP_URL}/forgot-password`,
+    });
+
   // ── Self-registration (§5.2): creates Organization + first client_admin ──
   r.post('/auth/register', publicLimit, accountLimit, async (req, res) => {
     const body = parse(
@@ -464,14 +471,21 @@ export function authRouter(deps: Deps): Router {
       }),
       req.body,
     );
-    const existing = await prisma.user.findUnique({ where: { email: body.email } });
-    if (existing) {
+    const existing = await prisma.user.findUnique({
+      where: { email: body.email },
+      include: { organization: { include: { _count: { select: { users: true } } } } },
+    });
+    // An unverified sign-up proves nothing about who owns the address. Someone registering it
+    // again replaces that pending sign-up instead of being locked out (audit L3). Only the
+    // latest link works, and it activates the password chosen with it.
+    const pending =
+      existing &&
+      !existing.emailVerifiedAt &&
+      existing.organization.type === 'client' &&
+      existing.organization._count.users === 1;
+    if (existing && !pending) {
       // Same response either way, so the endpoint can't be used to discover accounts.
-      await mailer.send({
-        to: body.email,
-        subject: 'Datascribe sign-up attempt',
-        text: `Someone tried to register a Datascribe account with this email, but you already have one.\nSign in: ${env.APP_URL}/login\nForgot your password? ${env.APP_URL}/forgot-password`,
-      });
+      await alreadyRegistered(body.email);
       res.status(202).json({ status: 'check_email' });
       return;
     }
@@ -479,6 +493,32 @@ export function authRouter(deps: Deps): Router {
     const passwordHash = await hashPassword(body.password);
     const token = randomToken();
     const user = await prisma.$transaction(async (tx) => {
+      if (existing) {
+        // Tokens first, then the user, the same lock order as /auth/verify-email: a verification
+        // that lands first makes the conditional update below match nothing.
+        await tx.userToken.updateMany({
+          where: { userId: existing.id, type: 'email_verify', usedAt: null },
+          data: { usedAt: new Date() },
+        });
+        const replaced = await tx.user.updateMany({
+          where: { id: existing.id, emailVerifiedAt: null },
+          data: { name: body.name, passwordHash, failedLoginCount: 0, lockedUntil: null },
+        });
+        if (replaced.count !== 1) return null;
+        await tx.organization.update({
+          where: { id: existing.organizationId },
+          data: { name: body.organizationName },
+        });
+        await tx.userToken.create({
+          data: {
+            userId: existing.id,
+            type: 'email_verify',
+            tokenHash: sha256(token),
+            expiresAt: new Date(Date.now() + VERIFY_TTL_MS),
+          },
+        });
+        return existing;
+      }
       const org = await tx.organization.create({
         data: { name: body.organizationName, type: 'client' },
       });
@@ -502,8 +542,14 @@ export function authRouter(deps: Deps): Router {
       });
       return created;
     });
+    if (!user) {
+      // verified meanwhile: from now on it's an existing account
+      await alreadyRegistered(body.email);
+      res.status(202).json({ status: 'check_email' });
+      return;
+    }
     await req.audit({
-      action: 'auth.register',
+      action: existing ? 'auth.register.replaced_unverified' : 'auth.register',
       entity: 'Organization',
       entityId: user.organizationId,
       actorId: user.id,
@@ -517,13 +563,17 @@ export function authRouter(deps: Deps): Router {
     res.status(202).json({ status: 'check_email' });
   });
 
-  async function consumeToken(type: 'email_verify' | 'password_reset', token: string) {
-    const row = await prisma.userToken.findUnique({ where: { tokenHash: sha256(token) } });
+  async function consumeToken(
+    type: 'email_verify' | 'password_reset',
+    token: string,
+    db: Pick<typeof prisma, 'userToken'> = prisma,
+  ) {
+    const row = await db.userToken.findUnique({ where: { tokenHash: sha256(token) } });
     if (!row || row.type !== type || row.usedAt || row.expiresAt < new Date()) {
       throw badRequest('token_invalid', 'This link is invalid or has expired');
     }
     // Conditional update keeps the token single-use under concurrent requests.
-    const claimed = await prisma.userToken.updateMany({
+    const claimed = await db.userToken.updateMany({
       where: { id: row.id, usedAt: null },
       data: { usedAt: new Date() },
     });
@@ -534,10 +584,11 @@ export function authRouter(deps: Deps): Router {
 
   r.post('/auth/verify-email', publicLimit, async (req, res) => {
     const { token } = parse(z.object({ token: z.string().min(10).max(200) }), req.body);
-    const row = await consumeToken('email_verify', token);
-    const user = await prisma.user.update({
-      where: { id: row.userId },
-      data: { emailVerifiedAt: new Date() },
+    // One transaction, token before user: a re-registration replacing this pending sign-up
+    // (audit L3) either voids the token first or finds the user already verified.
+    const user = await prisma.$transaction(async (tx) => {
+      const row = await consumeToken('email_verify', token, tx);
+      return tx.user.update({ where: { id: row.userId }, data: { emailVerifiedAt: new Date() } });
     });
     await req.audit({
       action: 'auth.email.verified',
