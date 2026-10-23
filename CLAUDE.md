@@ -20,6 +20,9 @@ that area).
 - `apps/web` Next 15: console under `app/console`, UI primitives in `components/ui.tsx`, API client
   `lib/api.ts` (same-origin via rewrites). Import enums from `@datascribe/shared/constants` in browser
   code, never the package root (it exports Node crypto).
+- `apps/web/app/(marketing)` public site, CMS reads in `lib/cms.ts`; `apps/cms` Payload (own DB,
+  `CMS_DATABASE_URL`, D-030); shared content types/defaults in `packages/site-content`.
+- Parallel E2E: set `E2E_API_PORT`, `E2E_WEB_PORT`, `E2E_DATABASE_URL` (5433, `datascribe_<tree>_e2e`).
 - `packages/db` Prisma schema, migrations, `prisma/seed-lib.ts`. `packages/shared` permissions, CASL, crypto.
 
 ## Rules that always apply

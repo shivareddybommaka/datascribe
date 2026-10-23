@@ -64,6 +64,25 @@ M8c `d8f36a3` (worker jobs), M8d (finance console, this commit). Design notes: D
 Not yet: portal billing screens for firms (§5.3: invoices, pay by card, subscription). The API is
 ready; checkout returns to `/portal/billing/invoices/:id`. Finance dashboard (revenue by client) is M9.
 
+## M3 — Marketing website + CMS (2026-10-24, branch `storefront/m3`)
+
+- `apps/cms`: Payload 3 (own Next app, own DB on 5433, D-030). Collections `pages`, `posts`, `media`,
+  `users`; `site` global; initial migration; idempotent seed (`-- --force` resets to defaults).
+- `packages/site-content`: shared content types, synthetic default copy, Lexical helpers.
+- `apps/web` `(marketing)` route group: Home, About Us, Services, AI Medical Summary, Pricing, Resources
+  (blog list + post) and Contact, all CMS-driven (hero, sections, CTAs, pricing cards, posts, SEO) with
+  fallback to the default copy. Shared header/nav/footer from the `site` global.
+- Per-page SEO (title, description, canonical, OG image), `sitemap.xml`, `robots.txt` (apps and API
+  disallowed).
+- Pricing reads `GET /api/v1/public/plans` (active `SubscriptionPlan` rows, never duplicated).
+- Cookie consent banner; GA4/GTM only on marketing routes and only after "Accept" (decline by default).
+- Contact / Book a demo keep posting to `POST /public/leads` (lead + sales email, honeypot, rate limit).
+- Tests: api 99 (+4 public plans), web 25 (analytics rules + boundary), cms 6, site-content 5, shared 83,
+  worker 1; Playwright e2e 9 (+6 marketing: 3 viewports, SEO tags, sitemap/robots, no analytics
+  before consent). Lint, typecheck, format and build green.
+- Verified by hand: editing the Home hero in the CMS shows on the site after revalidation; Pricing
+  shows the seeded plans from the DB.
+
 ## M7b — CRM console UI (2026-10-24) → M7 done
 
 - Staff console sign-in: password → TOTP, or first-time MFA enrolment with a QR code. Session kept in

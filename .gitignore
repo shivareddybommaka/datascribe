@@ -15,3 +15,5 @@ packages/db/generated/
 .worktrees/
 # local invoice PDF store (INVOICE_STORAGE_DIR)
 .data/
+# Payload uploads in local dev
+apps/cms/media/

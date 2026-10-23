@@ -69,5 +69,37 @@ export function publicRouter(deps: Deps): Router {
     res.status(202).json({ status: 'received' });
   });
 
+  /**
+   * §5.1: the Pricing page reads plans from SubscriptionPlan so prices live in one place.
+   * Public and read-only: active plans only, and only the fields a marketing page needs.
+   */
+  r.get('/public/plans', async (_req, res) => {
+    const plans = await prisma.subscriptionPlan.findMany({
+      where: { active: true },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+      select: {
+        id: true,
+        name: true,
+        priceMonthly: true,
+        currency: true,
+        includedPages: true,
+        overagePerPage: true,
+        features: true,
+      },
+    });
+    res.setHeader('cache-control', 'public, max-age=60, stale-while-revalidate=300');
+    res.json({
+      plans: plans.map((p) => ({
+        ...p,
+        // Decimals as fixed strings: no float rounding on money
+        priceMonthly: p.priceMonthly.toFixed(2),
+        overagePerPage: p.overagePerPage.toFixed(4),
+        features: Array.isArray(p.features)
+          ? p.features.filter((f): f is string => typeof f === 'string')
+          : [],
+      })),
+    });
+  });
+
   return r;
 }

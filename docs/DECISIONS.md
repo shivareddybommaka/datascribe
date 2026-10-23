@@ -356,6 +356,34 @@ invoices overdue. Finance can trigger both runs from the console; `asOf` is refu
   portal billing screens are not built yet; checkout's return URLs already point at
   `/portal/billing/invoices/:id`.
 
+## D-030 — M3 marketing website + CMS choices (2026-10-24)
+
+- **Payload in its own Next app (`apps/cms`) with its own database** (`CMS_DATABASE_URL`, 5433), not a
+  schema in the platform DB. CMS editors are Payload users, separate from platform users, and marketing
+  content never sits next to PHI. Migrations only (`push: false`). GraphQL off; CORS/CSRF limited to
+  `APP_URL`. Payload 3.92 needs Next 16, so `apps/cms` is on Next 16 while `apps/web` stays on 15.
+- **The web app reads the CMS over REST, server-side, with ISR (60 s).** Browsers never call the CMS
+  for content. If the CMS is down (or during `next build`), the page renders the default copy from
+  `packages/site-content` and retries on the next revalidation, so the site never goes blank.
+- **`packages/site-content`** holds the content types shared by both apps and the synthetic default copy.
+  The CMS seed writes the same defaults, so seed and fallback can't drift.
+- **Page model:** one `pages` collection with a fixed slug per route (7 slugs), a hero group, a blocks
+  field for sections (feature grid, numbered steps, rich text, FAQ, call to action), Pricing card copy,
+  Contact form copy and an SEO group (title, description, OG image). `posts` for Resources. A `site`
+  global for nav, header CTA, footer and cookie banner text. Drafts are never served to anonymous reads.
+- **Pricing from the DB.** `GET /api/v1/public/plans` returns active `SubscriptionPlan` rows (money as
+  decimal strings). The CMS only holds card copy (taglines, labels, highlighted plan). If the API is
+  down the page shows the CMS "unavailable" message instead of stale prices.
+- **Analytics:** GA4/GTM only from the `(marketing)` layout, plus a path guard for `/console`, `/portal`,
+  `/invite`, `/api`. No choice = declined; IDs must match `G-…` / `GTM-…`. No banner when no IDs are set.
+- **Lighthouse** isn't installed (needs approval), so the ≥ 90 AC is not yet measured. Playwright checks
+  the 7 pages at 375 / 768 / 1280 px (no horizontal scroll), per-page title/description/canonical,
+  sitemap/robots and "no analytics requests before consent".
+- **E2E ports/DB are overridable** (`E2E_API_PORT`, `E2E_WEB_PORT`, `E2E_DATABASE_URL`, 5433 and
+  `datascribe*_e2e` only) so parallel worktrees don't reset each other's E2E database.
+- **`@datascribe/web#typecheck` runs after `@datascribe/web#build`** (turbo.json). Both use
+  `.next/types`; in parallel, `next build` deleted files tsc had already globbed (TS6053).
+
 ## D-013 — Money and encrypted fields
 
 Money is `Decimal(12,2)` (per-page prices `Decimal(12,4)`). Encrypted PHI fields (`Case.patientName`,

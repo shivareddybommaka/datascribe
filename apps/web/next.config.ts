@@ -1,9 +1,15 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import type { NextConfig } from 'next';
+
+// One .env at the monorepo root (Next only reads apps/web/.env*). Variables already set win.
+const rootEnv = path.resolve(process.cwd(), '../../.env');
+if (fs.existsSync(rootEnv)) process.loadEnvFile(rootEnv);
 
 const apiUrl = process.env.API_URL ?? 'http://localhost:4000';
 
 const nextConfig: NextConfig = {
-  transpilePackages: ['@datascribe/shared', '@datascribe/ui'],
+  transpilePackages: ['@datascribe/shared', '@datascribe/ui', '@datascribe/site-content'],
   poweredByHeader: false,
   // Baseline security headers (audit finding M8). A full script CSP comes with M10 hardening.
   async headers() {
