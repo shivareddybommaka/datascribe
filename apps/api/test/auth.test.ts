@@ -4,7 +4,7 @@ import request from 'supertest';
 import { afterAll, describe, expect, it } from 'vitest';
 import { tokenFromMail } from '../src/lib/mailer';
 import { hashPassword } from '../src/lib/password';
-import { TEST_PASSWORD, testPhiKey } from './constants';
+import { TEST_PASSWORD, TEST_TOTP_SECRET, testPhiKey } from './constants';
 import {
   CSRF,
   SEED,
@@ -14,6 +14,7 @@ import {
   orgId,
   prisma,
   testEnv,
+  totpNow,
   uniqueEmail,
 } from './helpers';
 
@@ -240,6 +241,31 @@ describe('MFA (§5.2)', () => {
     });
     await prisma.user.update({ where: { email }, data: { organizationId: org.id } });
     expect((await loginReq(email)).body.mfaSetupRequired).toBe(true);
+  });
+
+  it('an MFA step token gives one session only, even when replayed or raced (audit L8)', async () => {
+    const email = await makeClientUser({ mfaSecret: TEST_TOTP_SECRET });
+    const first = await loginReq(email);
+    const verify = () =>
+      api()
+        .post('/api/v1/auth/mfa/verify')
+        .send({ mfaToken: first.body.mfaToken, code: totpNow() });
+    const raced = await Promise.all([verify(), verify()]);
+    expect(raced.filter((r) => r.status === 200)).toHaveLength(1);
+
+    const replay = await verify();
+    expect(replay.status).toBe(401);
+    expect(replay.body.error.code).toBe('invalid_token');
+    expect(await prisma.session.count({ where: { user: { email } } })).toBe(1);
+    // a fresh password step still works
+    const again = await loginReq(email);
+    expect(
+      (
+        await api()
+          .post('/api/v1/auth/mfa/verify')
+          .send({ mfaToken: again.body.mfaToken, code: totpNow() })
+      ).status,
+    ).toBe(200);
   });
 
   it('rejects a forged MFA token', async () => {
@@ -530,6 +556,26 @@ describe('forgot / reset password (§5.2)', () => {
     expect((await loginReq(email)).status).toBe(401);
     expect((await loginReq(email, newPassword)).status).toBe(200);
     expect(mailer.lastTo(email)?.subject).toMatch(/password was changed/);
+  });
+
+  it('a reset voids every other reset link for the account (audit L2)', async () => {
+    const email = await makeClientUser();
+    await api().post('/api/v1/auth/forgot').send({ email });
+    const older = tokenFromMail(mailer.lastTo(email));
+    await api().post('/api/v1/auth/forgot').send({ email });
+    const newer = tokenFromMail(mailer.lastTo(email));
+    expect(newer).not.toBe(older);
+
+    const first = 'First-new-password-789!';
+    expect(
+      (await api().post('/api/v1/auth/reset').send({ token: newer, password: first })).status,
+    ).toBe(200);
+    const stale = await api()
+      .post('/api/v1/auth/reset')
+      .send({ token: older, password: 'Attacker-password-000!' });
+    expect(stale.status).toBe(400);
+    expect(stale.body.error.code).toBe('token_invalid');
+    expect((await loginReq(email, first)).status).toBe(200);
   });
 
   it('rejects an unknown reset token', async () => {

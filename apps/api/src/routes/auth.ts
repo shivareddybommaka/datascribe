@@ -196,31 +196,56 @@ export function authRouter(deps: Deps): Router {
 
     if (mfaRequired(user)) {
       const setup = !user.mfaEnabled;
-      const mfaToken = signMfaToken({ sub: user.id, setup }, env.JWT_REFRESH_SECRET);
+      const mfaToken = signMfaToken(
+        { sub: user.id, setup, at: Date.now() },
+        env.JWT_REFRESH_SECRET,
+      );
       res.json(setup ? { mfaSetupRequired: true, mfaToken } : { mfaRequired: true, mfaToken });
       return;
     }
     res.json(await completeLogin(req, res, user.id));
   });
 
+  const mfaStepExpired = () => unauthorized('invalid_token', 'MFA step expired, sign in again');
+
   /** MFA subject: an mfaToken from /auth/login, or a signed-in user enrolling voluntarily. */
   async function mfaSubject(
     req: Request,
-  ): Promise<{ userId: string; viaLogin: boolean; setup: boolean }> {
+  ): Promise<{ userId: string; viaLogin: boolean; setup: boolean; issuedAt: Date }> {
     const token = (req.body as { mfaToken?: unknown } | undefined)?.mfaToken;
     if (typeof token === 'string') {
       const claims = verifyToken<MfaClaims>(token, env.JWT_REFRESH_SECRET, 'mfa');
-      if (!claims) throw unauthorized('invalid_token', 'MFA step expired, sign in again');
-      return { userId: claims.sub, viaLogin: true, setup: claims.setup };
+      if (!claims || typeof claims.at !== 'number') throw mfaStepExpired();
+      return {
+        userId: claims.sub,
+        viaLogin: true,
+        setup: claims.setup,
+        issuedAt: new Date(claims.at),
+      };
     }
     const ctx = await resolveAuth(deps, req);
     req.auth = ctx;
-    return { userId: ctx.user.id, viaLogin: false, setup: true };
+    return { userId: ctx.user.id, viaLogin: false, setup: true, issuedAt: new Date() };
+  }
+
+  /**
+   * Spend an MFA step token (audit L8): only the first sign-in completed after it was issued wins.
+   * Atomic, so a replayed token, or two verifies racing with one token, get one session at most.
+   */
+  async function claimMfaStep(userId: string, issuedAt: Date) {
+    const claimed = await prisma.user.updateMany({
+      where: { id: userId, OR: [{ lastLoginAt: null }, { lastLoginAt: { lt: issuedAt } }] },
+      data: { lastLoginAt: new Date() },
+    });
+    if (claimed.count !== 1) throw mfaStepExpired();
   }
 
   r.post('/auth/mfa/setup', authLimit, accountLimit, async (req, res) => {
     const subject = await mfaSubject(req);
     const user = await prisma.user.findUniqueOrThrow({ where: { id: subject.userId } });
+    if (subject.viaLogin && user.lastLoginAt && user.lastLoginAt >= subject.issuedAt) {
+      throw mfaStepExpired();
+    }
     if (user.mfaEnabled) throw conflict('mfa_already_enabled', 'MFA is already enabled');
     if (!subject.setup) throw badRequest('mfa_setup_not_allowed', 'MFA setup is not pending');
     const secret = newTotpSecret();
@@ -239,6 +264,9 @@ export function authRouter(deps: Deps): Router {
       req.body,
     );
     const user = await prisma.user.findUniqueOrThrow({ where: { id: subject.userId } });
+    if (subject.viaLogin && user.lastLoginAt && user.lastLoginAt >= subject.issuedAt) {
+      throw mfaStepExpired();
+    }
     if (!user.mfaSecret) throw badRequest('mfa_not_set_up', 'Set up MFA first');
     const attempt = await reserveAttempt(user.id);
     if (!verifyTotp(code, decrypt(user.mfaSecret, deps.phiKey))) {
@@ -246,6 +274,7 @@ export function authRouter(deps: Deps): Router {
       throw unauthorized('invalid_mfa_code', 'That code is not valid');
     }
     await releaseAttempt(user.id, attempt);
+    if (subject.viaLogin) await claimMfaStep(user.id, subject.issuedAt);
     if (!user.mfaEnabled) {
       await prisma.user.update({ where: { id: user.id }, data: { mfaEnabled: true } });
       await req.audit({
@@ -553,6 +582,11 @@ export function authRouter(deps: Deps): Router {
     await prisma.session.updateMany({
       where: { userId: user.id, revokedAt: null },
       data: { revokedAt: new Date() },
+    });
+    // Any other reset link still in an inbox would undo this reset (audit L2).
+    await prisma.userToken.updateMany({
+      where: { userId: user.id, type: 'password_reset', usedAt: null },
+      data: { usedAt: new Date() },
     });
     await req.audit({
       action: 'auth.password.reset',

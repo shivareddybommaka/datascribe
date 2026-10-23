@@ -695,3 +695,16 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
   forgot and register, keyed by SHA-256 of the normalised email (or the MFA step's user id). It counts
   every request, so it also caps reset and "sign-up attempt" mails to one inbox. Lockout (5 wrong
   secrets) still applies on top. Keys never hold an email in clear, ready for the Redis store.
+
+## D-102 — One-time reset links and MFA step tokens (audit L2, L8, M10, 2026-10-24)
+
+- **L2.** A successful `/auth/reset` marks every other unused `password_reset` token of the user as
+  used, so an older link still in an inbox can't undo the reset. (The admin "force reset" already did
+  this when issuing. There is no signed-in "change password" route yet; when one is added it must do
+  the same.)
+- **L8.** The MFA step token carries `at` (issue time, ms). `/auth/mfa/verify` spends it with one
+  conditional update, `lastLoginAt < at` → `lastLoginAt = now`, so a replayed or raced token gives
+  at most one session. No schema change. Side effect: completing a sign-in on device B voids a
+  password step pending on device A (it re-enters the password). TOTP code replay within the same
+  30 s step is still open (D-017 item, needs a `mfaLastStep` column); not done here, to keep this
+  run free of schema changes.
