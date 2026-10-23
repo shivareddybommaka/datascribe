@@ -16,3 +16,5 @@ apps/cms/src/payload-types.ts
 apps/cms/src/app/(payload)/admin/importMap.js
 apps/cms/src/migrations
 apps/cms/media
+# rewritten by next dev / next build (quote style and paths change with the dist dir)
+**/next-env.d.ts
