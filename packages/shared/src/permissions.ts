@@ -46,6 +46,50 @@ export const ALL_PERMISSIONS: PermissionDef[] = MODULES.flatMap((module) =>
   ACTIONS.flatMap((action) => SCOPES.map((scope) => ({ module, action, scope }))),
 );
 
+/** "module:action:scope" → PermissionDef, or null for anything not in the catalogue. */
+export function parsePermissionKey(key: string): PermissionDef | null {
+  const [module, action, scope, ...rest] = key.split(':');
+  if (
+    rest.length ||
+    !(MODULES as readonly string[]).includes(module ?? '') ||
+    !(ACTIONS as readonly string[]).includes(action ?? '') ||
+    !(SCOPES as readonly string[]).includes(scope ?? '')
+  ) {
+    return null;
+  }
+  return { module, action, scope } as PermissionDef;
+}
+
+/**
+ * Modules a client-organisation role may use (D-060). Everything else (CRM, CMS, QA, staff
+ * dashboards, audit log, system settings) is Datascribe-internal.
+ */
+export const CLIENT_MODULES: readonly Module[] = [
+  'cases',
+  'documents',
+  'deliverables',
+  'invoices',
+  'payments',
+  'subscriptions',
+  'users',
+  'dashboard_client',
+];
+
+/** Only the built-in super_admin role holds these; custom roles can't (D-060). */
+export const RESERVED_MODULES: readonly Module[] = ['system_settings'];
+
+/**
+ * Does `held` cover `wanted`? Same module and action, at the same or a broader scope
+ * (SCOPES is ordered broadest first). Used for "you can only grant what you hold" (audit M4).
+ */
+export function holdsPermission(held: readonly PermissionDef[], wanted: PermissionDef): boolean {
+  const need = SCOPES.indexOf(wanted.scope);
+  return held.some(
+    (p) =>
+      p.module === wanted.module && p.action === wanted.action && SCOPES.indexOf(p.scope) <= need,
+  );
+}
+
 export const ROLE_KEYS = [
   'super_admin',
   'ops_manager',

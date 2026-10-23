@@ -3,13 +3,16 @@ import { CLIENT_ROLES, broadestScope, type Action } from '@datascribe/shared';
 import { Router, type Request } from 'express';
 import { z } from 'zod';
 import type { AuthContext } from '../../auth/context';
+import { assertCanGrant, isSuperAdmin, rolePermissions } from '../../auth/grants';
 import { authenticate, requireAuth, requirePermission } from '../../auth/middleware';
 import type { Deps } from '../../context';
 import { badRequest, forbidden, notFound } from '../../lib/errors';
+import { renderEmail } from '../../lib/templates';
 import { randomToken, sha256 } from '../../lib/tokens';
 import { parse } from '../../lib/validate';
-import { RESET_TTL_MS } from '../auth';
+import { Email, RESET_TTL_MS } from '../auth';
 import { Pagination } from '../crm/common';
+import { createInvite } from '../invites';
 
 const userInclude = {
   organization: { select: { id: true, name: true, type: true, status: true } },
@@ -83,7 +86,7 @@ async function revokeSessions(deps: Deps, userId: string) {
   return count;
 }
 
-/** §5.7 Users: list, view, suspend, reactivate, reset MFA, force password reset. Invite = POST /invites. */
+/** §5.7 Users: list, view, create (= invite), roles, suspend, reactivate, reset MFA, force password reset. */
 export function adminUsersRouter(deps: Deps): Router {
   const { prisma, mailer, env } = deps;
   const r = Router();
@@ -127,6 +130,77 @@ export function adminUsersRouter(deps: Deps): Router {
       prisma.user.count({ where }),
     ]);
     res.json({ total, items: users.map(serializeAdminUser) });
+  });
+
+  // §5.7 "create user": admins never set someone else's password, so creating = inviting (D-022).
+  r.post('/admin/users', requirePermission('users', 'create'), async (req, res) => {
+    const auth = requireAuth(req);
+    const body = parse(
+      z.object({
+        organizationId: z.string().min(1).max(64),
+        email: Email,
+        roleKey: z.string().min(1).max(64),
+      }),
+      req.body,
+    );
+    res.status(201).json(await createInvite(deps, req, auth, body));
+  });
+
+  /**
+   * Replace a user's roles. Same target rules as the other actions, plus: each role must suit
+   * the user's organisation type, client admins assign client roles only, only super_admin
+   * grants super_admin, and every role's permissions must be held by the caller (audit M4).
+   */
+  r.put('/admin/users/:id/roles', requirePermission('users', 'edit'), async (req, res) => {
+    const auth = requireAuth(req);
+    const body = parse(
+      z.object({ roleKeys: z.array(z.string().min(1).max(64)).min(1).max(10) }),
+      req.body,
+    );
+    const user = await loadTarget(deps, auth, String(req.params.id), 'edit');
+    const keys = [...new Set(body.roleKeys)];
+    const roles = await prisma.role.findMany({ where: { key: { in: keys } } });
+    if (roles.length !== keys.length) throw badRequest('unknown_role', 'Unknown role');
+
+    const orgType = user.organization.type;
+    const before = user.roles.map((r) => r.role.key);
+    for (const role of roles) {
+      if (role.isInternal !== (orgType === 'internal')) {
+        throw forbidden('That role cannot be used in this organisation');
+      }
+      if (before.includes(role.key)) continue; // keeping a role grants nothing new
+      if (role.key === 'super_admin' && !isSuperAdmin(auth)) {
+        throw forbidden('Only a super admin can grant super admin');
+      }
+      assertCanGrant(auth, await rolePermissions(prisma, role.id, orgType));
+    }
+    const after = roles.map((r) => r.key).sort();
+    if (before.includes('super_admin') && !after.includes('super_admin')) {
+      const others = await prisma.user.count({
+        where: {
+          id: { not: user.id },
+          status: 'active',
+          roles: { some: { role: { key: 'super_admin' } } },
+        },
+      });
+      if (others === 0) throw badRequest('last_super_admin', 'Keep at least one super admin');
+    }
+    await prisma.$transaction([
+      prisma.userRole.deleteMany({ where: { userId: user.id } }),
+      prisma.userRole.createMany({ data: roles.map((r) => ({ userId: user.id, roleId: r.id })) }),
+    ]);
+    await req.audit({
+      action: 'admin.user.roles_changed',
+      entity: 'User',
+      entityId: user.id,
+      organizationId: user.organizationId,
+      metadata: { before: [...before].sort(), after },
+    });
+    const fresh = await prisma.user.findUniqueOrThrow({
+      where: { id: user.id },
+      include: userInclude,
+    });
+    res.json(serializeAdminUser(fresh));
   });
 
   r.get('/admin/users/:id', requirePermission('users', 'view'), async (req, res) => {
@@ -185,8 +259,7 @@ export function adminUsersRouter(deps: Deps): Router {
     const sessionsRevoked = await revokeSessions(deps, user.id);
     await mailer.send({
       to: user.email,
-      subject: 'Your Datascribe two-factor authentication was reset',
-      text: `An administrator reset two-factor authentication on your account and signed out all sessions. You will set it up again at your next sign-in. If you didn't expect this, contact Datascribe support.`,
+      ...(await renderEmail(prisma, 'mfa_reset', { name: user.name })),
     });
     return { sessionsRevoked };
   });

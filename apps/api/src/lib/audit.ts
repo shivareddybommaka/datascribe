@@ -8,6 +8,8 @@ export interface AuditEntry {
   organizationId?: string | null;
   /** defaults to the authenticated user */
   actorId?: string | null;
+  /** defaults to the request's impersonator (set explicitly when impersonation starts) */
+  impersonatorId?: string | null;
   /** ids, counts and reasons only. Never PHI, document text or passwords. */
   metadata?: Record<string, unknown>;
 }
@@ -17,7 +19,7 @@ export async function writeAudit(prisma: PrismaClient, req: Request, entry: Audi
   await prisma.auditLog.create({
     data: {
       actorId: entry.actorId ?? req.auth?.user.id ?? null,
-      impersonatorId: req.auth?.impersonatorId ?? null,
+      impersonatorId: entry.impersonatorId ?? req.auth?.impersonatorId ?? null,
       organizationId: entry.organizationId ?? null,
       action: entry.action,
       entity: entry.entity,

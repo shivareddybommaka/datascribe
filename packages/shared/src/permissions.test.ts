@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { broadestScope, can, defineAbilityFor, type ScopedResource } from './ability';
 import {
   ALL_PERMISSIONS,
+  CLIENT_MODULES,
   DEFAULT_ROLE_PERMISSIONS,
   MODULES,
   ROLE_KEYS,
+  holdsPermission,
+  parsePermissionKey,
   permissionKey,
   type Action,
   type Module,
@@ -186,6 +189,39 @@ describe('catalogue', () => {
     const keys = new Set(ALL_PERMISSIONS.map(permissionKey));
     for (const role of ROLE_KEYS) {
       for (const p of DEFAULT_ROLE_PERMISSIONS[role]) expect(keys.has(permissionKey(p))).toBe(true);
+    }
+  });
+
+  it('parsePermissionKey accepts catalogue keys only', () => {
+    expect(parsePermissionKey('cases:view:firm')).toEqual({
+      module: 'cases',
+      action: 'view',
+      scope: 'firm',
+    });
+    for (const bad of ['cases:view', 'cases:view:firm:x', 'nope:view:all', 'cases:fly:all', '']) {
+      expect(parsePermissionKey(bad)).toBeNull();
+    }
+  });
+
+  it('holdsPermission: same module+action at the same or a broader scope', () => {
+    const held = DEFAULT_ROLE_PERMISSIONS.client_admin;
+    expect(holdsPermission(held, { module: 'cases', action: 'edit', scope: 'own' })).toBe(true);
+    expect(holdsPermission(held, { module: 'cases', action: 'edit', scope: 'firm' })).toBe(true);
+    expect(holdsPermission(held, { module: 'cases', action: 'edit', scope: 'all' })).toBe(false);
+    expect(holdsPermission(held, { module: 'crm', action: 'view', scope: 'own' })).toBe(false);
+    // ops_manager can't hand out document edits it doesn't have
+    expect(
+      holdsPermission(DEFAULT_ROLE_PERMISSIONS.ops_manager, {
+        module: 'documents',
+        action: 'edit',
+        scope: 'firm',
+      }),
+    ).toBe(false);
+  });
+
+  it('default client roles stay inside CLIENT_MODULES', () => {
+    for (const role of ['client_admin', 'client_user'] as const) {
+      for (const p of DEFAULT_ROLE_PERMISSIONS[role]) expect(CLIENT_MODULES).toContain(p.module);
     }
   });
 

@@ -377,6 +377,40 @@ export async function voidInvoice(prisma: PrismaClient, invoiceId: string, now =
 
 // ─────────────────────────── Monthly job ───────────────────────────
 
+export interface PlanPricing {
+  name: string;
+  priceMonthly: string;
+  includedPages: number;
+  overagePerPage: string;
+}
+
+/**
+ * A firm's custom pricing (Organization.settings.customPricing, set in the M2 admin console,
+ * D-062) replaces the plan's fee, included pages and overage price. Malformed values are ignored.
+ */
+export function effectivePlanPricing(plan: PlanPricing, orgSettings: unknown): PlanPricing {
+  const cp = (orgSettings as { customPricing?: Record<string, unknown> | null } | null)
+    ?.customPricing;
+  if (!cp) return plan;
+  const price = String(cp.priceMonthly ?? '');
+  const overage = String(cp.overagePerPage ?? '');
+  const pages = cp.includedPages;
+  if (
+    !/^\d{1,10}(\.\d{1,2})?$/.test(price) ||
+    !/^\d{1,10}(\.\d{1,4})?$/.test(overage) ||
+    !Number.isInteger(pages) ||
+    (pages as number) < 0
+  ) {
+    return plan;
+  }
+  return {
+    name: `${plan.name} (custom pricing)`,
+    priceMonthly: Number(price).toFixed(2),
+    includedPages: pages as number,
+    overagePerPage: Number(overage).toFixed(4),
+  };
+}
+
 export interface InvoicingResult {
   invoiceIds: string[];
   periodsClosed: number;
@@ -412,12 +446,15 @@ export async function runMonthlyInvoicing(
       const { currentPeriodStart: start, currentPeriodEnd: end } = sub;
       const pages = await pagesInPeriod(prisma, sub.organizationId, start, end);
       const built = buildSubscriptionInvoice({
-        plan: {
-          name: sub.plan.name,
-          priceMonthly: sub.plan.priceMonthly.toFixed(2),
-          includedPages: sub.plan.includedPages,
-          overagePerPage: sub.plan.overagePerPage.toFixed(4),
-        },
+        plan: effectivePlanPricing(
+          {
+            name: sub.plan.name,
+            priceMonthly: sub.plan.priceMonthly.toFixed(2),
+            includedPages: sub.plan.includedPages,
+            overagePerPage: sub.plan.overagePerPage.toFixed(4),
+          },
+          sub.organization.settings,
+        ),
         pagesUsed: pages,
         periodStart: start,
         periodEnd: end,

@@ -1,7 +1,7 @@
 import { broadestScope, type Action, type Module } from '@datascribe/shared';
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import type { Deps } from '../context';
-import { forbidden, unauthorized } from '../lib/errors';
+import { HttpError, forbidden, unauthorized } from '../lib/errors';
 import { verifyToken, type AccessClaims } from '../lib/tokens';
 import { loadAuthContext, type AuthContext } from './context';
 import { isIdle } from './session';
@@ -28,13 +28,54 @@ export async function resolveAuth(deps: Deps, req: Request): Promise<AuthContext
     await deps.prisma.session.update({ where: { id: session.id }, data: { revokedAt: now } });
     throw unauthorized('session_idle', 'Signed out after inactivity');
   }
+  // The token's impersonator must match the session's, both ways (D-061).
+  if ((claims.imp ?? null) !== session.impersonatorId) {
+    throw unauthorized('invalid_token', 'Invalid or expired token');
+  }
+  if (session.impersonatorId) {
+    await assertImpersonatorActive(deps, session.impersonatorId);
+    if (!READ_METHODS.has(req.method) && req.originalUrl.split('?')[0] !== IMPERSONATE_STOP_PATH) {
+      throw new HttpError(
+        403,
+        'impersonation_read_only',
+        'Read-only while viewing as another user. Stop impersonating to make changes.',
+      );
+    }
+  }
   if (now.getTime() - session.lastUsedAt.getTime() > TOUCH_INTERVAL_MS) {
     await deps.prisma.session.update({ where: { id: session.id }, data: { lastUsedAt: now } });
   }
 
-  const ctx = await loadAuthContext(deps.prisma, claims.sub, session.id, claims.imp);
+  const ctx = await loadAuthContext(
+    deps.prisma,
+    claims.sub,
+    session.id,
+    session.impersonatorId ?? undefined,
+  );
   if (!ctx) throw unauthorized('account_inactive', 'Account is not active');
   return ctx;
+}
+
+/** §4.4 impersonation is read-only: only these methods (and "stop") pass while impersonating. */
+const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+export const IMPERSONATE_STOP_PATH = '/api/v1/admin/impersonate/stop';
+
+/** An impersonation ends at once if the super admin behind it is suspended or loses the role. */
+async function assertImpersonatorActive(deps: Deps, impersonatorId: string) {
+  const imp = await deps.prisma.user.findUnique({
+    where: { id: impersonatorId },
+    select: {
+      status: true,
+      organization: { select: { status: true, type: true } },
+      roles: { select: { role: { select: { key: true } } } },
+    },
+  });
+  const ok =
+    imp?.status === 'active' &&
+    imp.organization.status === 'active' &&
+    imp.organization.type === 'internal' &&
+    imp.roles.some((r) => r.role.key === 'super_admin');
+  if (!ok) throw unauthorized('session_revoked', 'Session has ended, please sign in again');
 }
 
 export function authenticate(deps: Deps): RequestHandler {
