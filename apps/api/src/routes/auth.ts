@@ -242,7 +242,9 @@ export function authRouter(deps: Deps): Router {
     if (!token) throw unauthorized('no_refresh_token', 'Not signed in');
     const session = await prisma.session.findUnique({
       where: { refreshTokenHash: sha256(token) },
-      include: { user: { include: { organization: true } } },
+      include: {
+        user: { include: { organization: true, roles: { include: { role: true } } } },
+      },
     });
     const now = new Date();
     if (!session) {
@@ -266,10 +268,32 @@ export function authRouter(deps: Deps): Router {
       return unauthorized('refresh_token_reused', 'Session ended for security, sign in again');
     };
     if (session.revokedAt) throw await reuseDetected();
-    if (session.expiresAt < now || isIdle(session, now) || session.user.status !== 'active') {
+    if (
+      session.expiresAt < now ||
+      isIdle(session, now) ||
+      session.user.status !== 'active' ||
+      session.user.organization.status !== 'active'
+    ) {
       await prisma.session.update({ where: { id: session.id }, data: { revokedAt: now } });
       clearRefreshCookie(deps, res);
       throw unauthorized('session_expired', 'Session has ended, sign in again');
+    }
+    // MFA policy may have changed since sign-in (internal role granted, org enforces MFA): a user
+    // who now needs MFA but hasn't enrolled must sign in again and enrol (audit M5).
+    if (mfaRequired(session.user) && !session.user.mfaEnabled) {
+      await prisma.session.updateMany({
+        where: { familyId: session.familyId, revokedAt: null },
+        data: { revokedAt: now },
+      });
+      await req.audit({
+        action: 'auth.refresh.mfa_required',
+        entity: 'Session',
+        entityId: session.id,
+        actorId: session.userId,
+        organizationId: session.user.organizationId,
+      });
+      clearRefreshCookie(deps, res);
+      throw unauthorized('mfa_required', 'Your organization now requires MFA, sign in again');
     }
     // Claim the token atomically: of two concurrent refreshes with the same token, only one wins;
     // the loser is treated as reuse (audit finding M1).
@@ -283,7 +307,7 @@ export function authRouter(deps: Deps): Router {
       req,
       res,
       { id: session.userId, orgType: session.user.organization.type },
-      session.familyId,
+      { id: session.familyId, expiresAt: session.expiresAt },
     );
     res.json({ accessToken });
   });

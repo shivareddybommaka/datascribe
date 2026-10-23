@@ -21,18 +21,18 @@ export function isIdle(session: { surface: string; lastUsedAt: Date }, now = new
   return now.getTime() - session.lastUsedAt.getTime() > limit;
 }
 
-function cookieOptions(deps: Deps): CookieOptions {
+function cookieOptions(deps: Deps, maxAge = REFRESH_TOKEN_TTL_MS): CookieOptions {
   return {
     httpOnly: true,
     secure: deps.env.NODE_ENV === 'production',
     sameSite: 'strict',
     path: '/api/v1/auth',
-    maxAge: REFRESH_TOKEN_TTL_MS,
+    maxAge,
   };
 }
 
-export function setRefreshCookie(deps: Deps, res: Response, token: string) {
-  res.cookie(REFRESH_COOKIE, token, cookieOptions(deps));
+export function setRefreshCookie(deps: Deps, res: Response, token: string, maxAge?: number) {
+  res.cookie(REFRESH_COOKIE, token, cookieOptions(deps, maxAge));
 }
 
 export function clearRefreshCookie(deps: Deps, res: Response) {
@@ -43,29 +43,33 @@ export function clearRefreshCookie(deps: Deps, res: Response) {
 
 /**
  * Create a session (or the next link in a rotation family), set the refresh cookie and return
- * a fresh access token.
+ * a fresh access token. A rotated link keeps its family's expiry, so a session family lives at
+ * most REFRESH_TOKEN_TTL_MS from the sign-in, however often it refreshes (audit M5, D-100).
  */
 export async function issueSession(
   deps: Deps,
   req: Request,
   res: Response,
   user: { id: string; orgType: 'client' | 'internal' },
-  familyId: string = randomUUID(),
+  family: { id: string; expiresAt: Date } = {
+    id: randomUUID(),
+    expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
+  },
 ): Promise<{ accessToken: string; sessionId: string }> {
   const refreshToken = randomToken();
   const session = await deps.prisma.session.create({
     data: {
       userId: user.id,
       refreshTokenHash: sha256(refreshToken),
-      familyId,
+      familyId: family.id,
       surface: surfaceFor(user.orgType),
       lastUsedAt: new Date(),
-      expiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
+      expiresAt: family.expiresAt,
       ip: req.ip ?? null,
       userAgent: req.get('user-agent')?.slice(0, 255) ?? null,
     },
   });
-  setRefreshCookie(deps, res, refreshToken);
+  setRefreshCookie(deps, res, refreshToken, Math.max(family.expiresAt.getTime() - Date.now(), 0));
   const accessToken = signAccessToken(
     { sub: user.id, sid: session.id },
     deps.env.JWT_ACCESS_SECRET,

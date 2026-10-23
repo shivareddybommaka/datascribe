@@ -245,6 +245,50 @@ describe('sessions', () => {
     expect(await reuseCount()).toBe(2);
   });
 
+  it('rotation keeps the sign-in expiry: a family cannot outlive 7 days (audit M5)', async () => {
+    const email = await makeClientUser();
+    const { agent } = await login(app, email);
+    const first = await prisma.session.findFirstOrThrow({ where: { user: { email } } });
+    // pretend the sign-in was 6 days 23 h ago: one hour of family lifetime is left
+    const expiresAt = new Date(Date.now() + 60 * 60_000);
+    await prisma.session.update({ where: { id: first.id }, data: { expiresAt } });
+
+    const refreshed = await agent.post('/api/v1/auth/refresh').set(CSRF);
+    expect(refreshed.status).toBe(200);
+    const next = await prisma.session.findFirstOrThrow({
+      where: { user: { email }, revokedAt: null },
+    });
+    expect(next.expiresAt.getTime()).toBe(expiresAt.getTime());
+    const maxAge = Number(/Max-Age=(\d+)/i.exec(String(refreshed.headers['set-cookie']))?.[1]);
+    expect(maxAge).toBeLessThanOrEqual(3600);
+
+    await prisma.session.update({
+      where: { id: next.id },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+    const expired = await agent.post('/api/v1/auth/refresh').set(CSRF);
+    expect(expired.status).toBe(401);
+    expect(expired.body.error.code).toBe('session_expired');
+  });
+
+  it('refresh re-checks MFA policy: an org that starts enforcing MFA ends unenrolled sessions (audit M5)', async () => {
+    const email = await makeClientUser();
+    const org = await prisma.organization.create({ data: { name: 'Late MFA Firm (synthetic)' } });
+    await prisma.user.update({ where: { email }, data: { organizationId: org.id } });
+    const { agent } = await login(app, email);
+    expect((await agent.post('/api/v1/auth/refresh').set(CSRF)).status).toBe(200);
+
+    await prisma.organization.update({
+      where: { id: org.id },
+      data: { settings: { enforceMfa: true } },
+    });
+    const res = await agent.post('/api/v1/auth/refresh').set(CSRF);
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('mfa_required');
+    expect(await prisma.session.count({ where: { user: { email }, revokedAt: null } })).toBe(0);
+    expect((await loginReq(email)).body.mfaSetupRequired).toBe(true);
+  });
+
   it('two concurrent refreshes with one token cannot both succeed (audit M1)', async () => {
     const email = await makeClientUser();
     const cookie = cookieOf(await loginReq(email));

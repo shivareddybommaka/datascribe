@@ -674,3 +674,13 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
   so scanned pages are visible rather than silently empty. Mock pipeline tests inject a renderer.
 - PNG / JPEG / TIFF uploads are one page, OCR'd from the file bytes (Textract accepts multi-page
   TIFF as one file).
+
+## D-100 — Absolute session lifetime and MFA re-check on refresh (audit M5, M10, 2026-10-24)
+
+- Replaces D-017's "7 days sliding". A rotated session copies its family's `expiresAt`, so a sign-in
+  lasts at most 7 days (§2 refresh TTL) however often it refreshes. The cookie `Max-Age` is the time
+  left. No schema change: the first link's `expiresAt` already is the family deadline.
+- `/auth/refresh` reloads roles and org settings. If MFA is now required (internal role granted, org
+  turned on `enforceMfa`) and the user has not enrolled, the whole family is revoked (401
+  `mfa_required`, audit `auth.refresh.mfa_required`). The next sign-in goes through enrolment. A
+  suspended org also ends the session at refresh, as it already did per request.
