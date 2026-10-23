@@ -516,6 +516,19 @@ describe('CSV import / export (§5.5)', () => {
   });
 });
 
+describe('staff picker', () => {
+  it('lists active internal users only, to CRM users only', async () => {
+    const res = await as(SALES).get('/api/v1/crm/staff');
+    expect(res.status).toBe(200);
+    const emails = res.body.items.map((u: { email: string }) => u.email);
+    expect(emails).toContain(SALES);
+    expect(emails).not.toContain(SEED.acmeAdmin);
+    expect(Object.keys(res.body.items[0]).sort()).toEqual(['email', 'id', 'name']);
+    expect((await as(SUMM).get('/api/v1/crm/staff')).status).toBe(403);
+    expect((await as(SEED.acmeAdmin).get('/api/v1/crm/staff')).status).toBe(403);
+  });
+});
+
 describe('accounts', () => {
   it('lists client organisations only', async () => {
     const res = await as(SALES).get('/api/v1/accounts?limit=500');

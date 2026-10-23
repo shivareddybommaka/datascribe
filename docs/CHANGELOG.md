@@ -1,6 +1,27 @@
 # Changelog
 
-## M7a — CRM API (2026-10-24, written; checks pending)
+## M7b — CRM console UI (2026-10-24) → M7 done
+
+- Staff console sign-in: password → TOTP, or first-time MFA enrolment with a QR code. Session kept in
+  memory and restored from the httpOnly refresh cookie. Client-org users are turned away.
+- `/console/crm`: overview (open leads, pipeline value, win rate, pipeline by stage) + "My tasks today".
+- `/console/crm/leads`: kanban board (drag between stages; Lost asks for a reason, Won opens
+  conversion) and table view; filters (search, stage, owner = mine, source) kept in the URL;
+  new lead; CSV import (row-level errors) and export.
+- Lead detail: edit (React Hook Form + Zod), convert-to-client dialog (org name, admin email → invite),
+  activity timeline with log call / email / meeting / note / task and done toggle, contacts.
+- Accounts list + detail (portal users, originating lead, contacts, activity); contacts list with
+  CSV import/export.
+- Interim public `/contact` page (demo / contact form → `POST /public/leads`, honeypot) and
+  `/invite/accept`. M3 makes the marketing copy CMS-driven.
+- API: `GET /crm/staff` (owner / assignee picker). `@datascribe/shared/constants` entry keeps Node
+  crypto out of browser bundles. Next.js rewrites `/api/v1/*` to the API (same-origin cookies).
+- Playwright E2E (`apps/web/e2e`, system Chrome, `datascribe_e2e` DB, Mailpit): website demo form →
+  sales login with TOTP → board drag → table → task → convert → invite email → admin accepts; lost needs
+  a reason; client users can't use the console. 3/3 passing.
+- Tests: api 95, shared 83, worker 1, e2e 3. Lint, typecheck, format and build green.
+
+## M7a — CRM API (2026-10-24, commit `94eaf55`)
 
 Built (build order M0 → M1 → M7, D-016; design notes D-018):
 

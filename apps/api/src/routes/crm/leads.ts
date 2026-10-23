@@ -104,7 +104,17 @@ function leadWhere(req: Request, q: z.infer<typeof ListQuery>): Prisma.LeadWhere
 export function leadsRouter(deps: Deps): Router {
   const { prisma } = deps;
   const r = Router();
-  r.use(['/leads', '/pipeline'], authenticate(deps), requireInternal);
+  r.use(['/leads', '/pipeline', '/crm'], authenticate(deps), requireInternal);
+
+  /** Staff who can own leads / be assigned tasks (pickers in the CRM UI). Names and emails only. */
+  r.get('/crm/staff', requirePermission('crm', 'view'), async (_req, res) => {
+    const items = await prisma.user.findMany({
+      where: { status: 'active', organization: { type: 'internal' } },
+      select: { id: true, name: true, email: true },
+      orderBy: { name: 'asc' },
+    });
+    res.json({ items });
+  });
 
   /** Stage changes and conversions are kept as note activities, so the lead history survives. */
   const historyNote = (

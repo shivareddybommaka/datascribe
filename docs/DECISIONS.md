@@ -165,6 +165,28 @@ Shiva's decision on 2026-10-23, departing from §0 rule 2. M7 runs before M2–M
   server-side timezone guessing. Overdue tasks are included and flagged.
 - **Notifications** for "lead assigned" / "task due" arrive with M9.
 
+## D-019 — M7b console UI choices (2026-10-24)
+
+- **Same-origin API via Next rewrites.** `/api/v1/*` on the web origin is proxied to `API_URL`. The
+  refresh cookie (`Path=/api/v1/auth`, SameSite=Strict) and the CSRF Origin check (`APP_URL`) then work
+  unchanged. `API_URL` is read when `next build` / `next dev` starts.
+- **Access token in memory only** (never localStorage). A reload calls `/auth/refresh`. A 401 refreshes
+  once and retries. UI permission checks (`useCan`) only hide buttons; the API enforces everything.
+- **shadcn/ui-style primitives without the CLI.** `apps/web/components/ui.tsx` uses the same building
+  blocks as shadcn (class-variance-authority + clsx + tailwind-merge) with the brand tokens, plus the
+  native `<dialog>` for modals (focus trap, Esc and backdrop come from the browser). This avoids pulling
+  in Radix for four components. Moves to `packages/ui` when a second app needs them.
+- **Kanban with native HTML5 drag-and-drop** (no dnd library). Dropping on Lost asks for the required
+  reason; dropping on Won opens the conversion dialog. Keyboard users change stage from the lead page.
+  Board and table load up to 500 matching leads and say so when there are more.
+- **Browser-safe shared entry.** `@datascribe/shared/constants` holds enums only. The package root also
+  exports the Node crypto helpers, so browser code must not import it.
+- **Interim `/contact` and `/invite/accept` pages** let the M7 journey run end to end before M3/M4.
+  The portal sign-in itself is M4.
+- **Playwright now, not in M10.** §13 asks for a lead-capture → convert journey, so it was added here,
+  using the installed Google Chrome (`channel: 'chrome'`) so no browser download is needed. It runs locally
+  against `datascribe_e2e` (5433) + Mailpit. CI e2e (browser + Mailpit services) is planned for M10.
+
 ## D-013 — Money and encrypted fields
 
 Money is `Decimal(12,2)` (per-page prices `Decimal(12,4)`). Encrypted PHI fields (`Case.patientName`,

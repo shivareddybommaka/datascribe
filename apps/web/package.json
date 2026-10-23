@@ -7,20 +7,30 @@
     "dev": "next dev --port 3000",
     "build": "next build",
     "start": "next start --port 3000",
-    "lint": "eslint app components",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "lint": "eslint app components lib e2e",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "@datascribe/shared": "workspace:*",
     "@datascribe/ui": "workspace:*",
+    "@hookform/resolvers": "^5.0.1",
+    "@tanstack/react-query": "^5.74.4",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "next": "^15.3.1",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "react-hook-form": "^7.56.1",
+    "tailwind-merge": "^3.2.0",
+    "zod": "^3.24.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.52.0",
     "@tailwindcss/postcss": "^4.1.4",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
+    "otplib": "^12.0.1",
     "tailwindcss": "^4.1.4"
   }
 }

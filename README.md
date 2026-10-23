@@ -47,6 +47,20 @@ pnpm test
 pnpm build
 ```
 
+API tests use a throwaway `datascribe_test` database on the same Postgres. Browser E2E (needs
+`pnpm infra:up` for Mailpit; uses the installed Google Chrome and a `datascribe_e2e` database):
+
+```
+pnpm --filter @datascribe/web e2e
+```
+
+## Where things are
+
+- Staff console: http://localhost:3000/console (CRM at `/console/crm`)
+- Website contact / demo form: http://localhost:3000/contact
+- API: http://localhost:4000/api/v1 (also proxied at http://localhost:3000/api/v1)
+- Mailpit (all dev email): http://localhost:8025
+
 ## Rules that matter
 
 - Only synthetic data (Synthea-style) in dev, tests and seeds. Never log or send PHI anywhere.

@@ -16,8 +16,8 @@ const dbDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../
 export default async function setup() {
   const url = new URL(TEST_DATABASE_URL);
   const dbName = url.pathname.slice(1);
-  if (!dbName.endsWith('_test')) {
-    throw new Error(`Refusing to reset "${dbName}": test database name must end with _test`);
+  if (!/_(test|e2e)$/.test(dbName)) {
+    throw new Error(`Refusing to reset "${dbName}": database name must end with _test or _e2e`);
   }
 
   // Create the test DB if missing (via the maintenance DB on the same server).
