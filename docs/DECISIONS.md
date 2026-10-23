@@ -642,3 +642,35 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
 - `RATE_LIMIT_AUTH` / `RATE_LIMIT_PUBLIC` (defaults 30 / 10 per 15 min, as before) are now env
   settings; the E2E API uses 300 because every spec signs in from the same IP. The E2E API's stdout
   (warn level) is shown in test output.
+
+## D-078 — Pipeline stages 3–6 as pure modules (M5b, 2026-10-24)
+
+- `apps/worker/src/pipeline/`: `classify.ts` (stage 3), `extract-events.ts` (4), `code-events.ts`
+  (5), `deliverables.ts` (6). Stages 3, 4 and 6 are pure functions; the DB/queue runner wraps them,
+  so the rules are unit-tested without Postgres or Redis.
+- **Classification** is weighted keyword rules per record type (header phrases 3, body words 1);
+  below a score of 2 a page is `other`. Ties go to the more specific type (rule order).
+- **Events**: at most one event per page (the page is the citation unit, §5.4). Service date =
+  a labelled date first ("Date of service", "DOS", "Collected"…), else the first non-birth-date on
+  the page; US `MM/DD/YYYY`, ISO and long-form dates. Billing pages and pages with neither a date nor
+  a clinical term give no event (they still appear in the index). Undated events sort last.
+- **Coding** (`CaseCoder`): every term is de-identified with the case's known identifiers (patient
+  name, case number, matter, reference) before the adapters, which de-identify again. Lookups are
+  memoised per case run. A failed or empty lookup leaves that term uncoded instead of failing the
+  case, so one provider outage doesn't put every case on hold; the summarizer codes it by hand in M6.
+  Counts (coded / uncoded / refused / failed) go on the job record, never the terms.
+  `ClinicalEvent.codes` holds the CodeMatch + optional MedlinePlus definition / openFDA label, never
+  the raw term (that column isn't encrypted).
+- **Index** rows are runs of consecutive pages of one record type per document, with the providers
+  and date range of their events. Chronology entries carry `{ documentId, fileName, pageNumber }`.
+
+## D-079 — Text extraction with pdf.js (M5b, 2026-10-24)
+
+- `pdfjs-dist` 5 (named in §7) via its Node `legacy` build, fonts not loaded (text only). A page
+  with < 20 visible characters goes to the `OcrProvider`.
+- OCR needs a page image, and rendering a PDF page in Node needs a canvas package. Rendering is an
+  injected `renderPage` hook, added together with the tesseract/textract provider. Until then a
+  low-text page keeps its text layer, `ocrConfidence` null, and is counted in `needsOcr` on the job,
+  so scanned pages are visible rather than silently empty. Mock pipeline tests inject a renderer.
+- PNG / JPEG / TIFF uploads are one page, OCR'd from the file bytes (Textract accepts multi-page
+  TIFF as one file).

@@ -6,38 +6,40 @@ Remote: https://github.com/shivareddybommaka/datascribe (private, deploy key, ho
 `github-datascribe`). Infra on Colima, all bound to 127.0.0.1: Postgres 16 (:5433; :5432 is Shiva's
 existing CRM, never touch), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025). CMS DB `datascribe_cms`.
 
-| Milestone                     | State                              | Notes                                                                                            |
-| ----------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------ |
-| M0 Foundation                 | done                               |                                                                                                  |
-| M1 Auth + RBAC                | done                               | security fixes from the audit applied                                                            |
-| M2 Admin console              | **in progress (master)**           | done: users API (D-022). Next: roles matrix API, orgs, settings, audit viewer, impersonation, UI |
-| M3 Website + CMS              | done (merged from `storefront/m3`) | Lighthouse ≥ 90 not measured yet (needs Lighthouse install)                                      |
-| M4 Portal cases + uploads     | done on `portal/m4` (to merge)     | DoD test green (300-page PDF, interrupted + resumed); D-070..D-077                               |
-| M5 Pipeline                   | M5a adapters done (merged)         | M5b: take over the scan stage from the API (`verifyDocument`, D-072)                             |
-| M6 Workspace + QA + delivery  | not started                        |                                                                                                  |
-| M7 CRM                        | done                               |                                                                                                  |
-| M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen built in M4; Stripe test key needed for the manual test-card demo      |
-| M9 Notifications + dashboards | not started                        |                                                                                                  |
-| M10 Hardening                 | not started                        |                                                                                                  |
+| Milestone                     | State                              | Notes                                                                                       |
+| ----------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------- |
+| M0 Foundation                 | done                               |                                                                                             |
+| M1 Auth + RBAC                | done                               | security fixes from the audit applied                                                       |
+| M2 Admin console              | done (merged from `admin/m2`)      | custom role takes effect without restart; audit M2 + M4 fixed; D-060..D-064                 |
+| M3 Website + CMS              | done (merged from `storefront/m3`) | Lighthouse ≥ 90 not measured yet (needs Lighthouse install)                                 |
+| M4 Portal cases + uploads     | done (merged from `portal/m4`)     | DoD test green (300-page PDF, interrupted + resumed); D-070..D-077                          |
+| M5 Pipeline                   | **M5b in progress (master)**       | M5a adapters done. M5b stages 2–6 built as modules (D-078, D-079); next: DB/queue runner    |
+| M6 Workspace + QA + delivery  | not started                        |                                                                                             |
+| M7 CRM                        | done                               |                                                                                             |
+| M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen built in M4; Stripe test key needed for the manual test-card demo |
+| M9 Notifications + dashboards | not started                        |                                                                                             |
+| M10 Hardening                 | not started                        |                                                                                             |
 
-Tests on `main`: lint, typecheck, unit/API tests and build green (33/33 turbo tasks; API 162 tests
-incl. 13 admin-users); Playwright e2e 12/12 (CRM 3, finance 3, marketing 6) as of the M8 merge.
-On `portal/m4`: 33/33 turbo tasks, API 211 tests, Playwright 16/16 (+ portal 3).
+Tests on `main` (2026-10-24, after the M2 + M4 merges and M5b steps 1–2): lint, typecheck,
+unit/API tests and build green (33/33 turbo tasks; worker 34 tests); Playwright e2e 18/18.
 
 M4 merge notes: main's `.env` needs `S3_SSE=none` (local SeaweedFS has no SSE, D-070) or the API's
 uploads fail; the API creates the buckets at startup and encrypts legacy case notes / messages
 (L5 backfill). Real ClamAV: `docker compose --profile scan up -d` + `CLAMAV_HOST=localhost`.
 
-M2 plan (in order): 1 users API ✅ · 2 roles API (list/create custom/edit matrix, system roles
-undeletable, user role assignment ≤ caller's grants = audit M4) · 3 orgs API (edit plan, custom pricing,
-suspend) · 4 settings API · 5 audit viewer + CSV · 6 read-only impersonation + banner · 7 console UI +
-e2e (custom role takes effect without restart) · 8 audit M2 lockout race.
+M5b plan (in order): 1 stages 3–6 pure modules (classify, events, coding, index/chronology) ✅ ·
+2 stage 2 text extraction with pdf.js + OCR hook ✅ · 3 stage runner: BullMQ processors per stage,
+`ProcessingJob` rows, encrypted `DocumentPage` / `ClinicalEvent` / `Deliverable` writes, retries →
+case `on_hold` · 4 scan stage moves from the API to the worker (D-072), submit enqueues the pipeline ·
+5 stage 7 `in_review` + notify summarizer · 6 pipeline test (Synthea-style PDF → deliverables, every
+chronology entry cited) = M5 DoD · 7 tesseract OCR provider + page renderer (or Waiting on Shiva if it
+needs a system install).
 
 ## Autopilot
 
 Rules: `docs/AUTOPILOT.md`. OpenClaw automation "Datascribe autopilot" (id
 `a0d9299e-b264-4e09-8e61-60682d25c151`) resumes work on a paced loop (1–6 h). "stop autopilot" removes it.
-Remaining order: M2 → M4 → M5b → M6 → M9 → M10.
+Remaining order: M5b → M6 → M9 → M10.
 
 ## Agent team
 
