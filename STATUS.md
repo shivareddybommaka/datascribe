@@ -41,7 +41,9 @@ agent: storefront D-030+, ledger D-040+, pipeline D-050+.
 
 - Telegram control: create a Telegram group with the bot (bot as admin or privacy off), send a
   message, send the group id (forward to @RawDataBot). Then the binding is proposed via OpenClaw.
-- nodemailer 6 → 10 upgrade (audit M7): yes / later.
+- Payload CMS pulls in next 16.3.3 / dompurify / sharp with critical+high advisories (CMS runs on
+  127.0.0.1 only for now). Proposed fix: pnpm overrides to patched versions (next ≥16.4.1,
+  dompurify ≥3.4.17, sharp ≥0.35.5) or a Payload upgrade: needs Shiva's OK.
 - Lighthouse install (M3 performance/SEO check): yes / later.
 - Free openFDA API key before production (D-052). Should QA reviewers use medical lookups (D-056)?
 - Stripe test key for the manual M8 test-card demo. CMS email adapter choice (editor password reset).
@@ -49,7 +51,8 @@ agent: storefront D-030+, ledger D-040+, pipeline D-050+.
 
 ## Security review (datascribe-auditor)
 
-No critical findings; §4.4 PHI rules verified. Fixed: H1, M1, M3, M8, M9. Open:
+No critical findings; §4.4 PHI rules verified. Fixed: H1, M1, M3, M7 (nodemailer 10, 2026-10-24),
+M8, M9. Open:
 
 - M2 lockout bypass with concurrent guesses (with M2). M4 invites ≤ inviter's permissions (with M2).
 - M5 absolute session lifetime + re-check MFA policy on refresh. M6 trust-proxy, per-account limits.
