@@ -18,6 +18,8 @@ let accessToken: string | null = null;
 let refreshing: Promise<string | null> | null = null;
 const listeners = new Set<(signedIn: boolean) => void>();
 
+export const hasAccessToken = () => accessToken !== null;
+
 export const setAccessToken = (token: string | null) => {
   accessToken = token;
   listeners.forEach((l) => l(!!token));

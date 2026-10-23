@@ -11,6 +11,12 @@ export interface Me {
   };
   roles: string[];
   permissions: string[];
+  /** set while a super admin views the console as this (client) user, read-only (§4.4) */
+  impersonation: {
+    by: UserRef;
+    organization: { id: string; name: string };
+    expiresAt: string;
+  } | null;
 }
 
 export interface UserRef {
@@ -110,6 +116,91 @@ export interface PipelineSummary {
 export interface Paged<T> {
   items: T[];
   total: number;
+}
+
+// ── Admin (M2) ──
+
+export interface AdminUser {
+  id: string;
+  name: string;
+  email: string;
+  status: 'invited' | 'active' | 'suspended';
+  organization: { id: string; name: string; type: 'client' | 'internal'; status: string };
+  roles: { key: string; name: string }[];
+  mfaEnabled: boolean;
+  emailVerified: boolean;
+  mustResetPassword: boolean;
+  locked: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+}
+
+export interface RoleRow {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  isSystem: boolean;
+  group: 'internal' | 'client';
+  locked: boolean;
+  userCount: number;
+  permissions: string[];
+}
+
+export interface OrgRow {
+  id: string;
+  name: string;
+  type: 'client' | 'internal';
+  status: 'active' | 'suspended' | 'closed';
+  currency: string;
+  plan: { id: string; name: string; priceMonthly: string } | null;
+  userCount: number;
+  enforceMfa: boolean;
+  retentionDays: number;
+  customPricing: { priceMonthly: string; includedPages: number; overagePerPage: string } | null;
+  createdAt: string;
+}
+
+export interface AuditEntry {
+  id: string;
+  action: string;
+  entity: string;
+  entityId: string | null;
+  ip: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  actor: UserRef | null;
+  impersonator: UserRef | null;
+  organization: { id: string; name: string } | null;
+}
+
+export interface EmailTemplate {
+  key: string;
+  label: string;
+  description: string;
+  variables: string[];
+  required: string[];
+  subject: string;
+  body: string;
+  customized: boolean;
+  updatedAt: string | null;
+}
+
+export interface ProviderUsage {
+  provider: string;
+  calls: number;
+  errors: number;
+  errorRate: number;
+  cacheHits: number;
+  skipped: number;
+  avgLatencyMs: number | null;
+}
+
+export interface MedicalStatus {
+  provider: string;
+  openFdaApiKeyConfigured: boolean;
+  enabled: Record<string, boolean>;
+  usage24h: ProviderUsage[];
 }
 
 // ── Billing (M8) ──

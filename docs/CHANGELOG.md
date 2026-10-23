@@ -1,5 +1,37 @@
 # Changelog
 
+## M2 — Admin console (2026-10-24, branch `admin/m2`)
+
+§5.7 admin console on top of the users API from `719552e`. Design notes: D-060 to D-064.
+Definition of done met: a custom role built in the matrix takes effect on its holder's next request,
+without a restart (API test and Playwright e2e).
+
+- **Users**: create (= invite, reusing `createInvite`), replace roles, plus the existing suspend /
+  reactivate / reset MFA / force password reset. ops_manager can't touch super_admin; client admins stay
+  in their firm and client roles.
+- **Roles**: list, create custom roles, edit with a module × action × scope checkbox matrix, delete
+  unused custom roles. Built-in roles can't be deleted; Super Admin is locked. Client roles never get
+  `all` scope or internal modules; `system_settings` stays with Super Admin.
+- **Audit finding M4 fixed**: roles, invites and role assignments can only grant permissions the actor
+  holds (super_admin exempt).
+- **Organizations**: list, view, edit name / status / plan / currency / MFA policy / retention days /
+  custom pricing; suspend (signs everyone out) and reactivate. Custom pricing is applied by the monthly
+  invoicing run.
+- **Settings** (super admin only): company and invoice settings (feed invoice PDFs and tax), SLA
+  defaults, notification rules per event, medical data sources on/off with last-24h usage, and editable
+  plain-text email templates with validated `{{variables}}` (invite, password reset, MFA reset now use
+  them).
+- **Audit log viewer**: filter by user, action, entity, date range; paginate; CSV export (audited).
+- **Impersonation** (§4.4): super admin views as a client user, read-only (every non-GET refused),
+  start/stop audited with `impersonatorId`, amber banner with Stop. Migration
+  `20261024120000_admin_impersonation` adds `Session.impersonatorId`.
+- **Audit finding M2 fixed**: login and MFA attempts are reserved atomically before the secret is
+  checked, so concurrent guesses can't get past the 5-attempt lockout.
+- **Console**: Admin section (`/console/admin`: users, roles, organizations, settings, audit log)
+  shown to holders of users / system_settings / audit_log view. The console no longer rotates the
+  refresh token on every section change when it already has an access token.
+- Tests: API +36 (198 total), shared +3, billing +3, Playwright +2 (`e2e/admin.spec.ts`; 15/15).
+
 ## M5a medical data adapters (2026-10-24, branch `pipeline/m5-adapters`)
 
 Adapter layer of M5 (§8). The processing pipeline (M5b) waits for M4 uploads.

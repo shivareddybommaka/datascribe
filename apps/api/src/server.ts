@@ -18,8 +18,12 @@ const gateway = createGateway({
 if (gateway.name === 'fake') {
   logger.warn('payments use the Fake gateway (no STRIPE_SECRET_KEY): checkout is simulated');
 }
+// Not awaited: boot must not depend on the DB being ready; until it loads, every source is on
+// and the first adapter call retries the load.
 const medicalSwitches = new MedicalSwitches(prisma);
-await medicalSwitches.load();
+medicalSwitches.load().catch((err: Error) => {
+  logger.warn({ err: { name: err.name } }, 'medical switches not loaded yet');
+});
 const app = createApp({
   env,
   logger,
