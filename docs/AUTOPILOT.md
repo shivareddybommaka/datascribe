@@ -16,7 +16,10 @@ Finish each milestone's Definition of Done (REQUIREMENTS.md §12) before startin
    lint + typecheck + tests pass.
 4. Before ending the run: format, run the gates, commit, push to `origin main`, update `STATUS.md`
    (and CHANGELOG / DECISIONS / `docs/demos/M<n>.md` when a milestone finishes).
-5. Send Shiva a short Telegram report (channel telegram, target 1394929787): what changed, commits,
+5. Refresh the pinned dashboard report: `show_widget` with name `datascribe-status`, `pin: true`,
+   `size: lg` (metrics, a milestone % bar chart, a milestone table and a "Waiting on Shiva" table),
+   built from STATUS.md.
+6. Send Shiva a short Telegram report (channel telegram, target 1394929787): what changed, commits,
    test counts, anything blocked. Only send a report when something changed or something is blocked.
 
 ## Pre-approved (inside `~/projects/datascribe` only)
