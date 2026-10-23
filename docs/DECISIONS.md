@@ -403,6 +403,19 @@ Datascribe's web dev server also used 3000, which blocked StaySpot's app. If the
 would also have published the Datascribe dev site on that hostname. Web dev now runs on 3010, bound to
 127.0.0.1. Port 3000 is reserved for StaySpot (CLAUDE.md, AUTOPILOT.md).
 
+## D-022 — M2 admin users API (2026-10-24)
+
+- **Create = invite.** §5.7 lists "create" and "invite"; admins never set another person's password,
+  so "create user" sends an invite (`POST /invites`) and the account exists once accepted.
+- **Scoping.** `users:<action>` at `all` (internal) sees every org; at `firm` only the caller's org
+  (client_admin). Other orgs' users are 404, not 403. Nobody can suspend/reset themselves; only
+  super_admin can change a super_admin; client admins can only change holders of client roles.
+- **Suspend** revokes every session at once (the access-token check reads the session row). **Reset MFA**
+  clears the secret, revokes sessions and emails the user; internal users must enrol again at next
+  sign-in. **Force password reset** sets `mustResetPassword`, revokes sessions, voids older reset
+  links and emails a new one; `/auth/login` refuses sign-in with `password_reset_required` until it
+  is used (or "Forgot password"). Each action writes an `admin.user.*` audit row.
+
 ## D-013 — Money and encrypted fields
 
 Money is `Decimal(12,2)` (per-page prices `Decimal(12,4)`). Encrypted PHI fields (`Case.patientName`,

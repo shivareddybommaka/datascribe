@@ -6,22 +6,27 @@ Remote: https://github.com/shivareddybommaka/datascribe (private, deploy key, ho
 `github-datascribe`). Infra on Colima, all bound to 127.0.0.1: Postgres 16 (:5433; :5432 is Shiva's
 existing CRM, never touch), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025). CMS DB `datascribe_cms`.
 
-| Milestone                     | State                              | Notes                                                                                         |
-| ----------------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------- |
-| M0 Foundation                 | done                               |                                                                                               |
-| M1 Auth + RBAC                | done                               | security fixes from the audit applied                                                         |
-| M2 Admin console              | **next (master)**                  | users, roles matrix, orgs, settings, audit viewer, impersonation                              |
-| M3 Website + CMS              | done (merged from `storefront/m3`) | Lighthouse ≥ 90 not measured yet (needs Lighthouse install)                                   |
-| M4 Portal cases + uploads     | not started                        |                                                                                               |
-| M5 Pipeline                   | M5a adapters done (merged)         | M5b pipeline stages need M4 uploads                                                           |
-| M6 Workspace + QA + delivery  | not started                        |                                                                                               |
-| M7 CRM                        | done                               |                                                                                               |
-| M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen comes with M4; Stripe test key needed for the manual test-card demo |
-| M9 Notifications + dashboards | not started                        |                                                                                               |
-| M10 Hardening                 | not started                        |                                                                                               |
+| Milestone                     | State                              | Notes                                                                                            |
+| ----------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------ |
+| M0 Foundation                 | done                               |                                                                                                  |
+| M1 Auth + RBAC                | done                               | security fixes from the audit applied                                                            |
+| M2 Admin console              | **in progress (master)**           | done: users API (D-022). Next: roles matrix API, orgs, settings, audit viewer, impersonation, UI |
+| M3 Website + CMS              | done (merged from `storefront/m3`) | Lighthouse ≥ 90 not measured yet (needs Lighthouse install)                                      |
+| M4 Portal cases + uploads     | not started                        |                                                                                                  |
+| M5 Pipeline                   | M5a adapters done (merged)         | M5b pipeline stages need M4 uploads                                                              |
+| M6 Workspace + QA + delivery  | not started                        |                                                                                                  |
+| M7 CRM                        | done                               |                                                                                                  |
+| M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen comes with M4; Stripe test key needed for the manual test-card demo    |
+| M9 Notifications + dashboards | not started                        |                                                                                                  |
+| M10 Hardening                 | not started                        |                                                                                                  |
 
-Tests on `main` after merging: lint, typecheck, unit/API tests and build green (33/33 turbo tasks);
-Playwright e2e 12/12 (CRM 3, finance 3, marketing 6).
+Tests on `main`: lint, typecheck, unit/API tests and build green (33/33 turbo tasks; API 162 tests
+incl. 13 admin-users); Playwright e2e 12/12 (CRM 3, finance 3, marketing 6) as of the M8 merge.
+
+M2 plan (in order): 1 users API ✅ · 2 roles API (list/create custom/edit matrix, system roles
+undeletable, user role assignment ≤ caller's grants = audit M4) · 3 orgs API (edit plan, custom pricing,
+suspend) · 4 settings API · 5 audit viewer + CSV · 6 read-only impersonation + banner · 7 console UI +
+e2e (custom role takes effect without restart) · 8 audit M2 lockout race.
 
 ## Autopilot
 

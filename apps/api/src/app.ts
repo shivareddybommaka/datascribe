@@ -8,6 +8,7 @@ import { pinoHttp } from 'pino-http';
 import type { Deps } from './context';
 import { writeAudit } from './lib/audit';
 import { HttpError } from './lib/errors';
+import { adminUsersRouter } from './routes/admin/users';
 import { authRouter } from './routes/auth';
 import { invoicesRouter } from './routes/billing/invoices';
 import { paymentsRouter } from './routes/billing/payments';
@@ -72,6 +73,7 @@ export function createApp(deps: Deps): Express {
   v1.use(authRouter(deps));
   v1.use(invitesRouter(deps));
   v1.use(permissionsRouter(deps));
+  v1.use(adminUsersRouter(deps));
   v1.use(casesRouter(deps));
   v1.use(leadsRouter(deps));
   v1.use(contactsRouter(deps));

@@ -14,7 +14,7 @@ import { parse } from '../lib/validate';
 export const MAX_FAILED_LOGINS = 5;
 export const LOCKOUT_MS = 15 * 60 * 1000;
 const VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
-const RESET_TTL_MS = 60 * 60 * 1000;
+export const RESET_TTL_MS = 60 * 60 * 1000;
 
 export const Email = z.string().trim().toLowerCase().email().max(254);
 
@@ -145,6 +145,14 @@ export function authRouter(deps: Deps): Router {
     }
     if (!user.emailVerifiedAt) {
       throw new HttpError(403, 'email_not_verified', 'Verify your email address first');
+    }
+    // set by an admin (M2): no session until the emailed reset link is used
+    if (user.mustResetPassword) {
+      throw new HttpError(
+        403,
+        'password_reset_required',
+        'Set a new password using the link we emailed you, or use "Forgot password"',
+      );
     }
 
     if (mfaRequired(user)) {
