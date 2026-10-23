@@ -13,3 +13,5 @@ test-results/
 packages/db/generated/
 *.tsbuildinfo
 .worktrees/
+# Payload uploads in local dev
+apps/cms/media/

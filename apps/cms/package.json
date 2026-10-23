@@ -1,0 +1,37 @@
+{
+  "name": "@datascribe/cms",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/next.mjs dev",
+    "build": "next build",
+    "start": "node scripts/next.mjs start",
+    "lint": "eslint src scripts --ignore-pattern src/migrations --ignore-pattern src/payload-types.ts --ignore-pattern \"src/app/(payload)/admin/importMap.js\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "payload": "payload",
+    "migrate": "payload migrate",
+    "migrate:create": "payload migrate:create",
+    "generate:types": "payload generate:types",
+    "generate:importmap": "payload generate:importmap",
+    "seed": "payload run scripts/seed.ts"
+  },
+  "dependencies": {
+    "@datascribe/site-content": "workspace:*",
+    "@payloadcms/db-postgres": "3.92.0",
+    "@payloadcms/next": "3.92.0",
+    "@payloadcms/richtext-lexical": "3.92.0",
+    "graphql": "^16.8.1",
+    "next": "16.3.3",
+    "payload": "3.92.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "sharp": "0.35.4"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "tsx": "^4.19.4"
+  }
+}
