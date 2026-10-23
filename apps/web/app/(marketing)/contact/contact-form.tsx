@@ -1,5 +1,6 @@
 'use client';
 
+import type { ContactFormCopy } from '@datascribe/site-content';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useSearchParams } from 'next/navigation';
 import { useState } from 'react';
@@ -19,7 +20,8 @@ const Schema = z.object({
 });
 type Values = z.infer<typeof Schema>;
 
-export function ContactForm() {
+/** Labels and messages come from the CMS (Contact page → "Contact form copy"). */
+export function ContactForm({ copy }: { copy: ContactFormCopy }) {
   const params = useSearchParams();
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -34,8 +36,8 @@ export function ContactForm() {
 
   if (sent) {
     return (
-      <p role="status" className="mt-8 rounded-md bg-brand-50 p-4 text-ink">
-        Thanks, we&apos;ve received your message and will be in touch shortly.
+      <p role="status" className="rounded-md bg-brand-50 p-4 text-ink">
+        {copy.successMessage}
       </p>
     );
   }
@@ -43,7 +45,7 @@ export function ContactForm() {
   return (
     <form
       noValidate
-      className="mt-8 space-y-4"
+      className="space-y-4"
       onSubmit={handleSubmit(async (v) => {
         setError(null);
         try {
@@ -54,16 +56,16 @@ export function ContactForm() {
         }
       })}
     >
-      <Field label="I'd like to" htmlFor="kind">
+      <Field label={copy.kindLabel} htmlFor="kind">
         <Select id="kind" {...register('kind')}>
-          <option value="demo">Book a demo</option>
-          <option value="contact">Ask a question</option>
+          <option value="demo">{copy.demoOption}</option>
+          <option value="contact">{copy.contactOption}</option>
         </Select>
       </Field>
-      <Field label="Your name" htmlFor="name" error={errors.name?.message}>
+      <Field label={copy.nameLabel} htmlFor="name" error={errors.name?.message}>
         <Input id="name" autoComplete="name" aria-invalid={!!errors.name} {...register('name')} />
       </Field>
-      <Field label="Firm" htmlFor="company" error={errors.company?.message}>
+      <Field label={copy.companyLabel} htmlFor="company" error={errors.company?.message}>
         <Input
           id="company"
           autoComplete="organization"
@@ -71,7 +73,7 @@ export function ContactForm() {
           {...register('company')}
         />
       </Field>
-      <Field label="Work email" htmlFor="email" error={errors.email?.message}>
+      <Field label={copy.emailLabel} htmlFor="email" error={errors.email?.message}>
         <Input
           id="email"
           type="email"
@@ -80,10 +82,10 @@ export function ContactForm() {
           {...register('email')}
         />
       </Field>
-      <Field label="Phone (optional)" htmlFor="phone">
+      <Field label={copy.phoneLabel} htmlFor="phone">
         <Input id="phone" type="tel" autoComplete="tel" {...register('phone')} />
       </Field>
-      <Field label="Message (optional)" htmlFor="message">
+      <Field label={copy.messageLabel} htmlFor="message">
         <Textarea id="message" rows={4} {...register('message')} />
       </Field>
       {/* honeypot: hidden from people and screen readers; bots fill it in */}
@@ -93,7 +95,7 @@ export function ContactForm() {
       </div>
       <ErrorText error={error} />
       <Button type="submit" disabled={isSubmitting}>
-        {isSubmitting ? 'Sending…' : 'Send'}
+        {isSubmitting ? copy.sendingLabel : copy.submitLabel}
       </Button>
     </form>
   );
