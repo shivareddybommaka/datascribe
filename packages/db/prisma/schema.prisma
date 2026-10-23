@@ -200,6 +200,7 @@ model User {
   organization Organization @relation(fields: [organizationId], references: [id])
   roles        UserRole[]
   sessions     Session[]
+  tokens       UserToken[]
 
   ownedLeads      Lead[]       @relation("LeadOwner")
   activities      Activity[]
@@ -278,6 +279,10 @@ model Session {
   refreshTokenHash String    @unique
   /// rotation chain: reuse of a rotated token revokes the whole family
   familyId         String
+  /// "portal" (30 min idle) or "console" (15 min idle), §5.2
+  surface          String    @default("portal")
+  /// bumped on every refresh; refresh is refused once idle longer than the surface's timeout
+  lastUsedAt       DateTime  @default(now())
   expiresAt        DateTime
   revokedAt        DateTime?
   ip               String?
@@ -289,6 +294,27 @@ model Session {
 
   @@index([userId])
   @@index([familyId])
+}
+
+enum UserTokenType {
+  email_verify
+  password_reset
+}
+
+/// Single-use emailed tokens. Only the SHA-256 of the token is stored.
+model UserToken {
+  id        String        @id @default(cuid())
+  userId    String
+  type      UserTokenType
+  tokenHash String        @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
 }
 
 model Invite {

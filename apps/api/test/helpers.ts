@@ -1,0 +1,96 @@
+import { PrismaClient } from '@datascribe/db';
+import { internalSeedEmail } from '@datascribe/db/seed';
+import type { RoleKey } from '@datascribe/shared';
+import { authenticator } from 'otplib';
+import request from 'supertest';
+import { expect } from 'vitest';
+import { createApp } from '../src/app';
+import { loadEnv } from '../src/config/env';
+import type { RateLimits } from '../src/context';
+import { createLogger } from '../src/lib/logger';
+import { MemoryMailer } from '../src/lib/mailer';
+import { TEST_DATABASE_URL, TEST_PASSWORD, TEST_TOTP_SECRET, testPhiKey } from './constants';
+
+export const prisma = new PrismaClient({ datasourceUrl: TEST_DATABASE_URL });
+
+export const APP_URL = 'http://localhost:3000';
+
+export function testEnv(overrides: Record<string, string> = {}) {
+  return loadEnv({
+    NODE_ENV: 'test',
+    APP_URL,
+    DATABASE_URL: TEST_DATABASE_URL,
+    JWT_ACCESS_SECRET: 'test-access-secret-'.padEnd(48, 'a'),
+    JWT_REFRESH_SECRET: 'test-refresh-secret-'.padEnd(48, 'b'),
+    PHI_ENCRYPTION_KEY: testPhiKey.toString('base64'),
+    LOG_LEVEL: 'silent',
+    ...overrides,
+  });
+}
+
+const GENEROUS: RateLimits = { windowMs: 60_000, authPerWindow: 10_000, publicPerWindow: 10_000 };
+
+export function buildApp(opts: { rateLimits?: RateLimits } = {}) {
+  const mailer = new MemoryMailer();
+  const app = createApp({
+    env: testEnv(),
+    prisma,
+    mailer,
+    logger: createLogger('silent'),
+    phiKey: testPhiKey,
+    rateLimits: opts.rateLimits ?? GENEROUS,
+  });
+  return { app, mailer };
+}
+
+export const CSRF = { 'x-datascribe-csrf': '1' };
+
+export const SEED = {
+  acmeAdmin: 'client.admin@acme.example',
+  acmeUser: 'client.user@acme.example',
+  harborAdmin: 'client.admin@harbor.example',
+  internal: (role: RoleKey) => internalSeedEmail(role),
+};
+
+export const totpNow = () => authenticator.generate(TEST_TOTP_SECRET);
+
+/**
+ * Sign in through the real endpoints (password, then TOTP for internal users).
+ * Returns the access token and a supertest agent holding the refresh cookie.
+ */
+export async function login(
+  app: ReturnType<typeof buildApp>['app'],
+  email: string,
+  password = TEST_PASSWORD,
+) {
+  const agent = request.agent(app);
+  const first = await agent.post('/api/v1/auth/login').send({ email, password });
+  expect(first.status, JSON.stringify(first.body)).toBe(200);
+  if (first.body.accessToken) return { token: first.body.accessToken as string, agent };
+  expect(first.body.mfaRequired).toBe(true);
+  const second = await agent
+    .post('/api/v1/auth/mfa/verify')
+    .send({ mfaToken: first.body.mfaToken, code: totpNow() });
+  expect(second.status, JSON.stringify(second.body)).toBe(200);
+  return { token: second.body.accessToken as string, agent };
+}
+
+export const bearer = (token: string) => ({ authorization: `Bearer ${token}` });
+
+export async function orgId(key: 'acme' | 'harbor' | 'internal') {
+  const names = {
+    acme: 'Acme Injury Law (synthetic)',
+    harbor: 'Harbor Legal Group (synthetic)',
+    internal: 'Datascribe',
+  };
+  return (await prisma.organization.findFirstOrThrow({ where: { name: names[key] } })).id;
+}
+
+export async function caseIdByNumber(number: string) {
+  return (await prisma.case.findUniqueOrThrow({ where: { number } })).id;
+}
+
+let counter = 0;
+/** Unique synthetic email per test run. */
+export const uniqueEmail = (prefix: string) =>
+  `${prefix}.${Date.now().toString(36)}${(counter++).toString(36)}@test.example`;

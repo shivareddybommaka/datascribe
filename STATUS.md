@@ -2,21 +2,28 @@
 
 ## Current state (2026-10-23)
 
+- **Build order: M0 → M1 → M7 (CRM first)**, Shiva's decision (D-016).
 - **M0 Foundation: done locally.** Remote: https://github.com/shivareddybommaka/datascribe (private,
-  push via deploy key, host alias `github-datascribe`). First GitHub CI run needs Shiva to confirm (green/red).
-  - lint, typecheck, test (90 passing; coverage shared 90.8%, api 96.8%) and build pass.
-  - Infra on Colima: Postgres 16 (:5433, confirmed; :5432 is the existing CRM, never touch), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025).
-  - Migration `init` applied (AuditLog append-only trigger verified). Seed is idempotent.
-  - `pnpm dev`: api :4000, worker, web :3000 all start; health check returns 200.
-- Tooling (account `nova`): pnpm at `~/.local/bin/pnpm`; `colima start` after a reboot.
-- MinIO images were withdrawn upstream, so local S3 uses SeaweedFS (D-014).
+  push via deploy key, host alias `github-datascribe`). First GitHub CI run still needs Shiva to confirm.
+  - Infra on Colima: Postgres 16 (:5433, confirmed; :5432 is the existing CRM, never touch),
+    Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025).
+- **M1 Auth + RBAC: code written, NOT yet verified or committed.**
+  - Written: register/verify-email, login + lockout, TOTP MFA (mandatory internal), refresh rotation with
+    reuse detection, logout / revoke-all, forgot/reset, idle timeouts, invites, permission + org-scoping
+    middleware, audit middleware, read-only case/document/deliverable routes, GET /permissions.
+  - Tests written: `apps/api/test/auth.test.ts`, `rbac.test.ts` (cross-org isolation over the route list,
+    sales/finance PHI refusal, scopes, audit, invites), using a `datascribe_test` DB on 5433.
+  - Migration `m1_auth` applied to the dev DB on 5433.
+  - Blocked: the OpenClaw exec tool fails with `missing scope: operator.approvals`, so typecheck,
+    tests, format and commit can't run yet.
 
 ## Waiting on Shiva
 
-- (4) Build order: strict M0→M10, or M0→M1→M7 (CRM) first.
-- Confirm the first CI run on GitHub Actions is green (agent can't read the Actions API via the deploy key).
+- Restore exec for the Datascribe agent (missing scope `operator.approvals`).
+- Confirm the first CI run on GitHub Actions is green.
 
 ## Next steps
 
-- M1 Auth + RBAC: register/login/refresh rotation/MFA, lockout, permission + org-scoping middleware,
-  audit middleware, cross-org and sales/finance PHI API tests.
+- When exec works: typecheck → fix → run tests (creates `datascribe_test`) → format → commit → push.
+- Then M7 CRM: leads/pipeline/accounts/contacts/activities, convert-to-client (reuses `createInvite`),
+  CSV import/export, public lead endpoint, console CRM UI with login.

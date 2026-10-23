@@ -15,9 +15,24 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
+    services:
+      # Throwaway DB for API integration tests (synthetic data only). Name must end in _test.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: datascribe
+          POSTGRES_PASSWORD: datascribe
+          POSTGRES_DB: datascribe_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U datascribe"
+          --health-interval 5s
+          --health-retries 10
     env:
       TURBO_TELEMETRY_DISABLED: '1'
       NEXT_TELEMETRY_DISABLED: '1'
+      TEST_DATABASE_URL: postgresql://datascribe:datascribe@localhost:5433/datascribe_test
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

@@ -5,11 +5,20 @@ const bool = z
   .default('false')
   .transform((v) => v === 'true');
 
+const secret = z.string().min(32, 'must be at least 32 characters');
+
 export const EnvSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
     API_PORT: z.coerce.number().int().positive().default(4000),
     APP_URL: z.string().url().default('http://localhost:3000'),
+    DATABASE_URL: z.string().url(),
+    JWT_ACCESS_SECRET: secret,
+    JWT_REFRESH_SECRET: secret,
+    PHI_ENCRYPTION_KEY: z.string().min(1),
+    SMTP_HOST: z.string().default('localhost'),
+    SMTP_PORT: z.coerce.number().int().positive().default(1025),
+    MAIL_FROM: z.string().default('no-reply@datascribe.example'),
     SUMMARY_PROVIDER: z.enum(['mock', 'anthropic', 'openai']).default('mock'),
     PHI_LLM_BAA_CONFIRMED: bool,
     LOG_LEVEL: z
