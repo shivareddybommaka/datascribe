@@ -66,6 +66,9 @@ export const EnvSchema = z
     /** clamd (ClamAV) host; unset = mock scanner (EICAR test string only), refused in production */
     CLAMAV_HOST: optionalString,
     CLAMAV_PORT: z.coerce.number().int().positive().default(3310),
+    /** per-IP requests per 15 min: login/MFA/refresh, and register/forgot/invite-accept (D-017) */
+    RATE_LIMIT_AUTH: z.coerce.number().int().min(1).default(30),
+    RATE_LIMIT_PUBLIC: z.coerce.number().int().min(1).default(10),
     SUMMARY_PROVIDER: z.enum(['mock', 'anthropic', 'openai']).default('mock'),
     PHI_LLM_BAA_CONFIRMED: bool,
     LOG_LEVEL: z
