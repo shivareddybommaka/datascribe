@@ -86,8 +86,13 @@ export function ContactForm({ copy }: { copy: ContactFormCopy }) {
         <Input id="phone" type="tel" autoComplete="tel" {...register('phone')} />
       </Field>
       <Field label={copy.messageLabel} htmlFor="message">
-        <Textarea id="message" rows={4} {...register('message')} />
+        <Textarea id="message" rows={4} aria-describedby="phi-notice" {...register('message')} />
       </Field>
+      {/* Audit L6: fixed text, not CMS copy, so it can't be edited away. */}
+      <p id="phi-notice" className="text-sm text-muted">
+        Please don&apos;t include medical records, patient names or other health information in this
+        form. Once your firm has an account, records are shared through the secure client portal.
+      </p>
       {/* honeypot: hidden from people and screen readers; bots fill it in */}
       <div aria-hidden="true" className="absolute -left-[9999px] h-0 w-0 overflow-hidden">
         <label htmlFor="website">Website</label>

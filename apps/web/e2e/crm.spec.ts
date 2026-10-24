@@ -50,6 +50,10 @@ test('M7: website demo request → lead on the board → converted to a client w
   await page.getByLabel('Your name').fill('Robin Synthetic');
   await page.getByLabel('Firm').fill(company);
   await page.getByLabel('Work email').fill(adminEmail);
+  // audit L6: the free-text field warns against sending health information
+  await expect(page.getByLabel('Message (optional)')).toHaveAccessibleDescription(
+    /don't include medical records, patient names or other health information/,
+  );
   await page.getByLabel('Message (optional)').fill('About 40 PI matters a month.');
   await page.getByRole('button', { name: 'Send' }).click();
   await expect(page.getByRole('status')).toContainText('Thanks');

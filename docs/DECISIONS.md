@@ -774,3 +774,12 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
 - Known limit: sales can still edit the lead's email first (the audit log records
   `crm.lead.update` with `fields: ['email']`).
   The rule stops an unnoticed one-step hand-over, not a determined insider.
+
+## D-108 — PHI notice on the public contact form (audit L6, M10, 2026-10-24)
+
+- The website contact / demo form has a free-text message that lands in the CRM and the sales
+  inbox, neither of which is meant for PHI. A fixed notice under it asks people not to send
+  medical records, patient names or other health information and points to the client portal.
+  The message field references it via `aria-describedby`, so screen readers announce it.
+- The text is in code, not CMS copy, so an editor can't remove it. No server-side PHI detection:
+  it would be guesswork and could reject real enquiries.
