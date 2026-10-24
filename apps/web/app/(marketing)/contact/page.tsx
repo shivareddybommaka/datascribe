@@ -1,5 +1,4 @@
 import { DEFAULT_PAGES } from '@datascribe/site-content';
-import { Suspense } from 'react';
 import { pageMetadata } from '@/components/marketing/marketing-page';
 import { Hero, Sections } from '@/components/marketing/sections';
 import { getPage } from '@/lib/cms';
@@ -17,9 +16,7 @@ export default async function ContactPage() {
       <Hero hero={page.hero} compact />
       <section aria-label="Contact form" className="bg-white">
         <div className="mx-auto max-w-xl px-4 py-12 sm:px-6">
-          <Suspense>
-            <ContactForm copy={copy} />
-          </Suspense>
+          <ContactForm copy={copy} />
         </div>
       </section>
       <Sections sections={page.sections} />

@@ -10,7 +10,8 @@
     "lint": "eslint app components lib e2e smoke test instrumentation.ts instrumentation-client.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "lighthouse": "node scripts/lighthouse.mjs"
   },
   "dependencies": {
     "@datascribe/shared": "workspace:*",
@@ -34,6 +35,7 @@
     "@tailwindcss/postcss": "^4.1.4",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
+    "lighthouse": "^13.5.0",
     "otplib": "^12.0.1",
     "tailwindcss": "^4.1.4"
   }
