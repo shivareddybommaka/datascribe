@@ -18,7 +18,7 @@ existing CRM, never touch), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025). CMS 
 | M7 CRM                        | done                               |                                                                                             |
 | M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen built in M4; Stripe test key needed for the manual test-card demo |
 | M9 Notifications + dashboards | in progress (`herald/m9`)          | part 1 infra + bell UI committed (`dda7e8e`); merge of main running, then dashboards        |
-| M10 Hardening                 | in progress (`sentinel/m10`)       | parts 1 + 2a merged (D-100..D-113); part 2b (load test, §10 checklist) running              |
+| M10 Hardening                 | in progress (`sentinel/m10`)       | parts 1, 2a, 2b merged; part 3a (Terraform files, D-115, not applied) on `sentinel/m10`     |
 
 Tests on `main` (2026-10-24 13:30, after M5b steps 4 + 6 and the M10 part 2a merge): lint,
 typecheck, unit/API tests and build green (36/36 turbo tasks; API 271+, worker 47, scan 6);
@@ -68,6 +68,10 @@ ledger D-040+, pipeline D-050+, herald D-090+, sentinel D-100+.
 - Stripe test key for the manual M8 test-card demo. CMS email adapter choice (editor password reset).
 - CI result on GitHub Actions (agent can't read Actions with the deploy key), now including the new
   e2e job.
+- IaC (M10 part 3a, `infra/terraform`, `docs/INFRA.md`, D-115): written, never applied. To go
+  further: approve a Terraform install (or a CI job), AWS accounts (staging, production) with a BAA,
+  state bucket, domain + ACM certificate, SES, and secret values. Staging deploy from CI also needs
+  Dockerfiles and a GitHub OIDC role. App gaps found: SES SMTP login, invoice PDFs on local disk.
 
 ## Security review (datascribe-auditor)
 
