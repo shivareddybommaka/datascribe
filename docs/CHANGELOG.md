@@ -18,6 +18,16 @@
   order, every entry citing a page of the upload. Pipeline status changes now appear on the case
   timeline (`case.status` audit rows).
 
+## M10 part 2b — Load test and security checklist (2026-10-24, branch `sentinel/m10`)
+
+Design notes: D-114.
+
+- **Load test** (`pnpm load`, D-114, `docs/LOAD-TEST.md`): autocannon against a running local API
+  (health, `/auth/me`, case list, case detail, document list at 1/10/50 connections), plus
+  sequential probes showing login, refresh and forgot answer 429 at their limits. Prints
+  p50/p95/p99, throughput and error counts only. Local laptop result: every route's p95 under
+  75 ms at 50 connections, no errors. Manual only, not in tests or CI.
+
 ## M10 part 2a — Shared state in Redis, e2e in CI (2026-10-24, branch `sentinel/m10`)
 
 Design notes: D-111 to D-113.

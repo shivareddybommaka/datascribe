@@ -11,6 +11,7 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
+    "load": "pnpm --filter @datascribe/api load",
     "format": "prettier --write . --log-level warn",
     "format:check": "prettier --check . --log-level warn",
     "db:generate": "pnpm --filter @datascribe/db generate",
