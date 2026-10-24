@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 import { logout } from '@/lib/api';
 import { useMe } from './auth';
 import { Logo } from './logo';
+import { NotificationBell } from './notifications';
 import { cn } from './ui';
 
 /** `perm` is a UI hint for who sees the link (the API enforces access). */
@@ -51,6 +52,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
             })}
           </nav>
           <div className="ml-auto flex items-center gap-3 text-sm">
+            <NotificationBell area="portal" />
             <span className="text-muted">{me.user.name}</span>
             <button onClick={() => logout()} className="text-brand-700 hover:underline">
               Sign out
