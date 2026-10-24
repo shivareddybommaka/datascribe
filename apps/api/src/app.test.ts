@@ -123,6 +123,7 @@ describe('env validation', () => {
       S3_ENDPOINT: 'http://localhost:9000',
       S3_SSE: 'none',
       PAYMENT_GATEWAY: 'fake',
+      CLAMAV_HOST: 'localhost',
     };
 
     it('resolves the profile from NODE_ENV unless set', () => {
@@ -155,18 +156,50 @@ describe('env validation', () => {
         expect(() => loadEnv({ ...p, STAGING_ALLOW_HTTP_FOR_SMOKE: '1' })).toThrow(
           /STAGING_ALLOW_HTTP_FOR_SMOKE/,
         );
+        expect(() => loadEnv({ ...p, STAGING_ALLOW_SIGNUP: 'true' })).toThrow(
+          /STAGING_ALLOW_SIGNUP/,
+        );
+        expect(() => loadEnv({ ...p, STAGING_ALLOW_MOCK_SCAN: 'true' })).toThrow(
+          /STAGING_ALLOW_MOCK_SCAN/,
+        );
+        // production may still tune its limits; only staging is pinned to the defaults
+        expect(() => loadEnv({ ...p, RATE_LIMIT_AUTH: '100' })).not.toThrow();
         // the staging-only rules don't apply to production
         expect(() => loadEnv({ ...p, SMTP_HOST: 'email-smtp.example.com' })).not.toThrow();
       }
     });
 
-    it('lets staging use local SeaweedFS without SSE, the fake gateway and the mock scanner', () => {
+    it('lets staging use local SeaweedFS without SSE and the fake gateway', () => {
       const env = loadEnv(staging);
       expect(env.S3_SSE).toBe('none');
       expect(env.PAYMENT_GATEWAY).toBe('fake');
-      expect(env.CLAMAV_HOST).toBeUndefined();
       expect(loadEnv({ ...staging, PAYMENT_GATEWAY: 'stripe' }).STRIPE_SECRET_KEY).toBeUndefined();
-      expect(loadEnv({ ...staging, CLAMAV_HOST: 'localhost' }).CLAMAV_HOST).toBe('localhost');
+    });
+
+    it('needs ClamAV in staging unless STAGING_ALLOW_MOCK_SCAN=true (D-125)', () => {
+      expect(() => loadEnv({ ...staging, CLAMAV_HOST: '' })).toThrow(/CLAMAV_HOST/);
+      const mock = loadEnv({ ...staging, CLAMAV_HOST: '', STAGING_ALLOW_MOCK_SCAN: 'true' });
+      expect(mock.CLAMAV_HOST).toBeUndefined();
+      expect(mock.STAGING_ALLOW_MOCK_SCAN).toBe(true);
+    });
+
+    it('keeps production auth limits in staging (D-125)', () => {
+      const s = loadEnv(staging);
+      const p = loadEnv(prod);
+      for (const key of [
+        'RATE_LIMIT_AUTH',
+        'RATE_LIMIT_PUBLIC',
+        'RATE_LIMIT_ACCOUNT',
+        'AUTH_RESPONSE_FLOOR_MS',
+        'TRUST_PROXY',
+      ] as const) {
+        expect(s[key], key).toBe(p[key]);
+      }
+      expect(() => loadEnv({ ...staging, RATE_LIMIT_AUTH: '100' })).toThrow(/RATE_LIMIT_AUTH/);
+      expect(() => loadEnv({ ...staging, AUTH_RESPONSE_FLOOR_MS: '0' })).toThrow(
+        /AUTH_RESPONSE_FLOOR_MS/,
+      );
+      expect(loadEnv({ ...staging, RATE_LIMIT_AUTH: '10' }).RATE_LIMIT_AUTH).toBe(10);
     });
 
     it('refuses real third parties and real databases in staging', () => {

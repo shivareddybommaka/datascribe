@@ -7,15 +7,17 @@
  *
  *   node scripts/staging-smoke.mjs [--secrets-from .env]
  *
- * Secrets (JWT, PHI key, S3 keys, seed password) come from --secrets-from (default: this checkout's
- * .env); everything else is fixed here. Nothing is printed from the env file.
+ * Secrets (JWT, PHI key, S3 keys) come from --secrets-from (default: this checkout's .env); the
+ * seed password is random per run; everything else is fixed here. Nothing is printed.
  */
 import { spawnSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import {
   ROOT,
   assertStaging,
   buildWeb,
+  portFree,
   readEnvFile,
   resetDatabase,
   stagingEnv,
@@ -40,7 +42,6 @@ const SECRETS = [
   'PHI_ENCRYPTION_KEY',
   'S3_ACCESS_KEY_ID',
   'S3_SECRET_ACCESS_KEY',
-  'SEED_USER_PASSWORD',
 ];
 
 async function main() {
@@ -49,6 +50,8 @@ async function main() {
   const env = stagingEnv(
     {
       ...secrets,
+      // a fresh seed password per run: staging never reuses dev's (D-125)
+      SEED_USER_PASSWORD: randomBytes(24).toString('base64url'),
       STAGING_ALLOW_HTTP_FOR_SMOKE: '1',
       APP_URL: `http://localhost:${WEB_PORT}`,
       WEB_PORT: String(WEB_PORT),
@@ -75,14 +78,18 @@ async function main() {
       MEDICAL_DATA_PROVIDER: 'mock',
       OCR_PROVIDER: 'mock',
       SUMMARY_PROVIDER: 'mock',
-      // the smoke signs in a few times from one IP
-      RATE_LIMIT_AUTH: '100',
+      // real ClamAV when it's running (docker-compose --profile scan up -d clamav), else the
+      // explicit opt-out; staging's auth limits stay at production's defaults (D-125)
+      ...((await portFree(3310))
+        ? { STAGING_ALLOW_MOCK_SCAN: 'true' }
+        : { CLAMAV_HOST: 'localhost', CLAMAV_PORT: '3310' }),
       LOG_LEVEL: 'warn',
     },
     // no env file for next.config to load: every value is in the process env
     { ENV_FILE: path.join(ROOT, '.data/staging-smoke/no-env-file') },
   );
   assertStaging(env, { smoke: true });
+  console.log(`[smoke] virus scanner: ${env.CLAMAV_HOST ? 'ClamAV' : 'mock (ClamAV not running)'}`);
 
   console.log(`[smoke] resetting ${dbName} (synthetic seed + demo leads)`);
   resetDatabase(env);

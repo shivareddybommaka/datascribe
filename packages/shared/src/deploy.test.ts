@@ -10,9 +10,46 @@ const staging = {
   SUMMARY_PROVIDER: 'mock',
   S3_SSE: 'none',
   S3_ENDPOINT: 'http://localhost:9000',
+  CLAMAV_HOST: 'localhost',
 };
 const paths = (env: Record<string, string | undefined>) =>
   deployProfileIssues(env).map((i) => i.path);
+
+describe('staging on the open internet (D-125)', () => {
+  it('needs ClamAV unless the mock scanner is explicitly allowed', () => {
+    expect(paths({ ...staging, CLAMAV_HOST: '' })).toEqual(['CLAMAV_HOST']);
+    expect(paths({ ...staging, CLAMAV_HOST: undefined })).toEqual(['CLAMAV_HOST']);
+    expect(paths({ ...staging, CLAMAV_HOST: '', STAGING_ALLOW_MOCK_SCAN: '1' })).toEqual([
+      'CLAMAV_HOST',
+    ]);
+    expect(paths({ ...staging, CLAMAV_HOST: '', STAGING_ALLOW_MOCK_SCAN: 'true' })).toEqual([]);
+  });
+
+  it('keeps the auth limits and response floor at least as strict as production', () => {
+    const at = {
+      RATE_LIMIT_AUTH: '30',
+      RATE_LIMIT_PUBLIC: '10',
+      RATE_LIMIT_ACCOUNT: '10',
+      AUTH_RESPONSE_FLOOR_MS: '400',
+    };
+    expect(paths({ ...staging, ...at })).toEqual([]);
+    expect(paths({ ...staging, RATE_LIMIT_AUTH: '5', AUTH_RESPONSE_FLOOR_MS: '800' })).toEqual([]);
+    expect(paths({ ...staging, RATE_LIMIT_AUTH: '31' })).toEqual(['RATE_LIMIT_AUTH']);
+    expect(paths({ ...staging, RATE_LIMIT_PUBLIC: '100' })).toEqual(['RATE_LIMIT_PUBLIC']);
+    expect(paths({ ...staging, RATE_LIMIT_ACCOUNT: '11' })).toEqual(['RATE_LIMIT_ACCOUNT']);
+    expect(paths({ ...staging, AUTH_RESPONSE_FLOOR_MS: '0' })).toEqual(['AUTH_RESPONSE_FLOOR_MS']);
+  });
+
+  it('production refuses every staging-only switch', () => {
+    for (const key of [
+      'STAGING_ALLOW_HTTP_FOR_SMOKE',
+      'STAGING_ALLOW_SIGNUP',
+      'STAGING_ALLOW_MOCK_SCAN',
+    ]) {
+      expect(paths({ NODE_ENV: 'production', [key]: 'true' })).toEqual([key]);
+    }
+  });
+});
 
 describe('deploy profile (D-120)', () => {
   it('defaults to production for production builds and local otherwise', () => {

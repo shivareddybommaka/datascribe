@@ -43,6 +43,18 @@ test('guard rails: banner, noindex, robots.txt, no analytics', async ({ page, re
   const health = await request.get('/api/v1/health');
   expect(health.status()).toBe(200);
   expect(health.headers()['x-robots-tag']).toContain('noindex');
+
+  // public firm sign-up is closed on staging (D-125)
+  const signup = await request.post('/api/v1/auth/register', {
+    data: {
+      organizationName: 'Smoke Firm',
+      name: 'Synthetic',
+      email: 'smoke@test.example',
+      password: 'Smoke-password-123!',
+    },
+  });
+  expect(signup.status()).toBe(403);
+  expect((await signup.json()).error.code).toBe('signup_disabled');
 });
 
 test('console: super admin signs in with MFA enrolment', async ({ page, context }) => {

@@ -19,6 +19,9 @@ const staging = {
   S3_ENDPOINT: 'http://localhost:9000',
   S3_SSE: 'none',
   PAYMENT_GATEWAY: 'fake',
+  CLAMAV_HOST: 'localhost',
+  // staging keeps production's timing floor (D-125); the test helper sets 0 elsewhere
+  AUTH_RESPONSE_FLOOR_MS: '400',
 };
 const tight = { windowMs: 60_000, authPerWindow: 2, publicPerWindow: 2, accountPerWindow: 1_000 };
 const nobody = { email: 'nobody@test.example', password: 'x' };
@@ -131,6 +134,42 @@ describe('staging behind the tunnel (D-121)', () => {
     await send('192.0.2.21');
     await send('192.0.2.22');
     expect((await send('192.0.2.23')).status).toBe(429);
+  });
+
+  it('closes public firm sign-up in staging unless STAGING_ALLOW_SIGNUP=true (D-125)', async () => {
+    const body = {
+      organizationName: 'Staging Signup Firm',
+      name: 'Synthetic Person',
+      email: `signup.${Date.now()}@test.example`,
+      password: TEST_PASSWORD,
+    };
+    const closed = await request(buildApp({ envOverrides: staging }).app)
+      .post('/api/v1/auth/register')
+      .send(body);
+    expect(closed.status).toBe(403);
+    expect(closed.body.error.code).toBe('signup_disabled');
+    const open = await request(
+      buildApp({ envOverrides: { ...staging, STAGING_ALLOW_SIGNUP: 'true' } }).app,
+    )
+      .post('/api/v1/auth/register')
+      .send(body);
+    expect(open.status).toBe(202);
+    // local dev is unchanged
+    const local = await request(buildApp().app)
+      .post('/api/v1/auth/register')
+      .send({ ...body, email: `signup.local.${Date.now()}@test.example` });
+    expect(local.status).toBe(202);
+  });
+
+  it('keeps staff MFA in staging: password alone gives no session (D-125)', async () => {
+    const { app } = buildApp({ envOverrides: staging });
+    const res = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: SEED.internal('sales'), password: TEST_PASSWORD });
+    expect(res.status).toBe(200);
+    expect(res.body.mfaRequired).toBe(true);
+    expect(res.body.accessToken).toBeUndefined();
+    expect(res.headers['set-cookie']).toBeUndefined();
   });
 
   it('mounts the simulated checkout in staging only, never in production', async () => {

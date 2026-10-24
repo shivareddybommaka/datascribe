@@ -66,7 +66,9 @@ export function deployEnvIssues(env: Raw): DeployIssue[] {
  * - Postgres on 5432 (Shiva's CRM) or a database whose name lacks "staging";
  * - S3_SSE=none on anything but the Mac's own SeaweedFS;
  * - an http APP_URL (the tunnel serves https), except the local smoke test's explicit
- *   STAGING_ALLOW_HTTP_FOR_SMOKE=1 with a localhost APP_URL.
+ *   STAGING_ALLOW_HTTP_FOR_SMOKE=1 with a localhost APP_URL;
+ * - the mock virus scanner unless STAGING_ALLOW_MOCK_SCAN=true, and auth rate limits or the
+ *   response floor looser than production's defaults (D-125).
  */
 export function stagingViolations(env: Raw): DeployIssue[] {
   const issues: DeployIssue[] = [];
@@ -113,8 +115,40 @@ export function stagingViolations(env: Raw): DeployIssue[] {
       add('APP_URL', 'STAGING_ALLOW_HTTP_FOR_SMOKE=1 only allows a localhost APP_URL');
     }
   }
+
+  // Staging is on the open internet (no Access gate, D-125): scan uploads for real.
+  if (!env.CLAMAV_HOST?.trim() && env.STAGING_ALLOW_MOCK_SCAN !== 'true') {
+    add('CLAMAV_HOST', 'staging needs ClamAV (or STAGING_ALLOW_MOCK_SCAN=true to opt out)');
+  }
+  // Auth limits stay as strict as production's defaults: stricter is fine, looser is refused.
+  for (const [key, max] of Object.entries(AUTH_LIMIT_DEFAULTS)) {
+    const value = env[key]?.trim();
+    if (value && Number(value) > max) add(key, `staging keeps the production limit (≤ ${max})`);
+  }
+  const floor = env.AUTH_RESPONSE_FLOOR_MS?.trim();
+  if (floor && Number(floor) < AUTH_FLOOR_DEFAULT_MS) {
+    add(
+      'AUTH_RESPONSE_FLOOR_MS',
+      `staging keeps the production floor (≥ ${AUTH_FLOOR_DEFAULT_MS})`,
+    );
+  }
   return issues;
 }
+
+/** The API's production defaults (apps/api/src/config/env.ts); staging may not loosen them. */
+export const AUTH_LIMIT_DEFAULTS = {
+  RATE_LIMIT_AUTH: 30,
+  RATE_LIMIT_PUBLIC: 10,
+  RATE_LIMIT_ACCOUNT: 10,
+} as const;
+export const AUTH_FLOOR_DEFAULT_MS = 400;
+
+/** Staging-only switches; production refuses them so they can't be left on by mistake. */
+const STAGING_ONLY = [
+  'STAGING_ALLOW_HTTP_FOR_SMOKE',
+  'STAGING_ALLOW_SIGNUP',
+  'STAGING_ALLOW_MOCK_SCAN',
+] as const;
 
 /** Every deploy-profile problem for this environment (empty = fine). */
 export function deployProfileIssues(env: Raw): DeployIssue[] {
@@ -122,10 +156,12 @@ export function deployProfileIssues(env: Raw): DeployIssue[] {
   if (issues.length) return issues;
   const profile = resolveDeployEnv(env);
   if (profile === 'staging') return stagingViolations(env);
-  if (profile === 'production' && env.STAGING_ALLOW_HTTP_FOR_SMOKE) {
-    return [
-      { path: 'STAGING_ALLOW_HTTP_FOR_SMOKE', message: 'is for the staging smoke test only' },
-    ];
+  if (profile === 'production') {
+    const on = (v: string | undefined) => v?.trim() === 'true' || v?.trim() === '1';
+    return STAGING_ONLY.filter((key) => on(env[key])).map((path) => ({
+      path,
+      message: 'is for staging only; not allowed in production',
+    }));
   }
   return [];
 }

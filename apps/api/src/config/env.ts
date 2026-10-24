@@ -24,6 +24,10 @@ export const EnvSchema = z
     DEPLOY_ENV: optionalString,
     /** smoke test of a staging build on http://localhost only (D-120); never set otherwise */
     STAGING_ALLOW_HTTP_FOR_SMOKE: optionalString,
+    /** staging only (D-125): public firm sign-up is off unless true; invites still work */
+    STAGING_ALLOW_SIGNUP: bool,
+    /** staging only (D-125): run without ClamAV (mock scanner); refused in production */
+    STAGING_ALLOW_MOCK_SCAN: bool,
     API_PORT: z.coerce.number().int().positive().default(4000),
     /** interface the API listens on; unset = all. Staging binds 127.0.0.1 (behind the tunnel) */
     API_HOST: optionalString,
@@ -142,6 +146,13 @@ export const EnvSchema = z
       STRIPE_SECRET_KEY: env.STRIPE_SECRET_KEY,
       S3_SSE: env.S3_SSE,
       S3_ENDPOINT: env.S3_ENDPOINT,
+      CLAMAV_HOST: env.CLAMAV_HOST,
+      STAGING_ALLOW_MOCK_SCAN: env.STAGING_ALLOW_MOCK_SCAN ? 'true' : undefined,
+      STAGING_ALLOW_SIGNUP: env.STAGING_ALLOW_SIGNUP ? 'true' : undefined,
+      RATE_LIMIT_AUTH: String(env.RATE_LIMIT_AUTH),
+      RATE_LIMIT_PUBLIC: String(env.RATE_LIMIT_PUBLIC),
+      RATE_LIMIT_ACCOUNT: String(env.RATE_LIMIT_ACCOUNT),
+      AUTH_RESPONSE_FLOOR_MS: String(env.AUTH_RESPONSE_FLOOR_MS),
     })) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: [issue.path], message: issue.message });
     }

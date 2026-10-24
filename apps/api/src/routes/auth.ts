@@ -492,6 +492,14 @@ export function authRouter(deps: Deps): Router {
   // ── Self-registration (§5.2): creates Organization + first client_admin ──
   r.post(
     '/auth/register',
+    // Staging is on the open internet: no new firms unless switched on (D-125). Invites and the
+    // seeded accounts are unaffected.
+    (_req, _res, next) => {
+      if (env.DEPLOY_ENV === 'staging' && !env.STAGING_ALLOW_SIGNUP) {
+        throw new HttpError(403, 'signup_disabled', 'Sign-up is closed on staging');
+      }
+      next();
+    },
     publicLimit,
     accountLimit,
     withTimingFloor(floor, async (req, res) => {
