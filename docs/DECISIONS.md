@@ -847,6 +847,39 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
   otherwise `spend: null`, so a client user never sees the firm's bills.
 - Counts and amounts only: no case numbers, matter or patient names, invoice numbers or emails.
 
+## D-096 — Reports stay visible to client users (M9 part 3, 2026-10-24)
+
+- Open question from D-095, decided conservatively: `/portal/reports` stays in the portal nav for
+  anyone with `cases:view` (so client users too). For a client user it shows counts and pages of the
+  cases they created or that are shared with them (`scope: own`), with a line saying so; `spend` is
+  `null` and the tile is hidden, as without a firm-wide `invoices:view`.
+- Nothing new is revealed: the same user can already open each of those cases. No role defaults or
+  permissions changed. Hiding it would need a `dashboard_client` grant and a role migration; Shiva
+  can still ask for that later.
+
+## D-097 — Editable notification emails; unsubscribe = preferences page (M9 part 3, 2026-10-24)
+
+- §5.7 asks for editable email templates with variables. Besides the three account emails (D-063),
+  each notification type the outbox mails gets a template `notification_<type>` (password changed is
+  sent directly by the auth route and stays fixed). They sit in the same `email_templates` setting
+  and screen, grouped as "Notification emails".
+- Variables come from the stored payload only, which holds ids and non-PHI labels (D-090), so an
+  admin can't put a patient or matter name into a subject. Each type declares its own variables
+  (case types `caseNumber`, invoice types `invoiceNumber` / `total` / `amount` …); `link` (absolute)
+  is required so the email always leads somewhere. Same rules as D-063: plain text, one pass,
+  values inserted literally, subjects without line breaks; a stored override that stops validating
+  falls back to the default.
+- The defaults render exactly the bell's title and body plus the link line (unit test for every
+  type), so the outbox's mail didn't change. The in-app text is not editable: one admin edit
+  shouldn't rewrite history in everyone's bell.
+- The worker loads the overrides once per outbox batch, so an edit applies to the next batch
+  without a restart.
+- The "Choose which emails you get" line under non-critical emails is added after the template and
+  can't be removed, so every mutable email shows how to mute it (§5.8). It links to the signed-in
+  preferences page. There is no tokenised one-click unsubscribe link: that would be a bearer token
+  in an email that changes account settings. Mailpit only, no bulk sending, so no `List-Unsubscribe`
+  header yet; add one with the SES work (D-115) if needed. No digests: §5.8 doesn't ask for them.
+
 ## D-100 — Absolute session lifetime and MFA re-check on refresh (audit M5, M10, 2026-10-24)
 
 - Replaces D-017's "7 days sliding". A rotated session copies its family's `expiresAt`, so a sign-in

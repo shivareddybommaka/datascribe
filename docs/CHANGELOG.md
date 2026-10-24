@@ -85,6 +85,28 @@ infra/staging/cloudflared.yml run --token-file .env.tunnel-token` (token file gi
   always for the caller's own firm. Client admins see the whole firm and its spend; client users
   only their own and shared cases, no spend (D-095). API tests include cross-firm isolation.
 
+## M9 part 3 — DoD check, editable notification emails, M6 hand-over (2026-10-24, branch `herald/m9`)
+
+Design notes: D-096, D-097. Demo: `docs/demos/M9.md`. No schema change.
+
+- **DoD check**: 7 of the 11 §5.8 events send email + in-app today; the other 4 (assigned to you,
+  QA changes requested, approved, delivered) need M6's assignment, QA and delivery code. Their emit
+  helpers are ready and tested; the call sites are in their doc comments (`packages/db/src/notifications.ts`).
+- **Editable notification emails** (§5.7 "email templates editable with variables", D-097): every
+  notification type the outbox mails (all but the directly sent password-changed notice) has a
+  template in Settings → Email templates ("Notification emails" group), with its own variables
+  (`{{caseNumber}}`, `{{invoiceNumber}}`, `{{link}}` …), `{{link}}` required, preview with synthetic
+  values. The worker's outbox uses the admin's version; the defaults read exactly like the bell. The
+  "choose which emails you get" line under non-critical emails is always added and can't be removed.
+  Templates, validation and rendering moved to `@datascribe/shared/email-templates` so API and
+  worker share them.
+- **Reports for client users** (D-096): stays visible with `cases:view`: counts and pages of their
+  own and shared cases, spend `null`. Now covered by e2e.
+- **Tests**: shared unit tests for the templates (defaults match the bell for every type, overrides,
+  footer, injection), API tests for `notifyAssigned` / `notifyQaDecision` / `notifyDelivered` and for
+  an edited notification email going through the outbox; e2e for the template editor and the client
+  user's Reports page.
+
 ## M5b — Processing pipeline (2026-10-24, `main`) → M5 done
 
 - Stages 3–6 as pure modules (D-078) and stage 2 text extraction with pdf.js (D-079).

@@ -6,19 +6,19 @@ Remote: https://github.com/shivareddybommaka/datascribe (private, deploy key, ho
 `github-datascribe`). Infra on Colima, all bound to 127.0.0.1: Postgres 16 (:5433; :5432 is Shiva's
 existing CRM, never touch), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025). CMS DB `datascribe_cms`.
 
-| Milestone                     | State                              | Notes                                                                                                 |
-| ----------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| M0 Foundation                 | done                               |                                                                                                       |
-| M1 Auth + RBAC                | done                               | security fixes from the audit applied                                                                 |
-| M2 Admin console              | done (merged from `admin/m2`)      | custom role takes effect without restart; audit M2 + M4 fixed; D-060..D-064                           |
-| M3 Website + CMS              | done (merged from `storefront/m3`) | Lighthouse ≥ 90 not measured yet (needs Lighthouse install)                                           |
-| M4 Portal cases + uploads     | done (merged from `portal/m4`)     | DoD test green (300-page PDF, interrupted + resumed); D-070..D-077                                    |
-| M5 Pipeline                   | done (master)                      | DoD e2e green (upload → 7 stages → in_review, all cited); notify; Tesseract OCR (D-082)               |
-| M6 Workspace + QA + delivery  | **next (master)**                  |                                                                                                       |
-| M7 CRM                        | done                               |                                                                                                       |
-| M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen built in M4; Stripe test key needed for the manual test-card demo           |
-| M9 Notifications + dashboards | in progress (`herald/m9`)          | part 1 + sales, ops, finance, client dashboards merged (D-090..D-095); §5.8 events next               |
-| M10 Hardening                 | in progress (`sentinel/m10`)       | parts 1–4a merged (D-100..D-118: Dockerfiles, KMS-only prod, axe WCAG); Sentry (approved item 3) next |
+| Milestone                     | State                              | Notes                                                                                                                                                                            |
+| ----------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M0 Foundation                 | done                               |                                                                                                                                                                                  |
+| M1 Auth + RBAC                | done                               | security fixes from the audit applied                                                                                                                                            |
+| M2 Admin console              | done (merged from `admin/m2`)      | custom role takes effect without restart; audit M2 + M4 fixed; D-060..D-064                                                                                                      |
+| M3 Website + CMS              | done (merged from `storefront/m3`) | Lighthouse ≥ 90 not measured yet (needs Lighthouse install)                                                                                                                      |
+| M4 Portal cases + uploads     | done (merged from `portal/m4`)     | DoD test green (300-page PDF, interrupted + resumed); D-070..D-077                                                                                                               |
+| M5 Pipeline                   | done (master)                      | DoD e2e green (upload → 7 stages → in_review, all cited); notify; Tesseract OCR (D-082)                                                                                          |
+| M6 Workspace + QA + delivery  | **next (master)**                  |                                                                                                                                                                                  |
+| M7 CRM                        | done                               |                                                                                                                                                                                  |
+| M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen built in M4; Stripe test key needed for the manual test-card demo                                                                                      |
+| M9 Notifications + dashboards | done except 4 events blocked on M6 | 7/11 §5.8 events + 4 dashboards; part 3 on `herald/m9` (editable notification emails, demo, D-096/D-097); assigned / QA / approved / delivered need M6 to call the ready helpers |
+| M10 Hardening                 | in progress (`sentinel/m10`)       | parts 1–4a merged (D-100..D-118: Dockerfiles, KMS-only prod, axe WCAG); Sentry (approved item 3) next                                                                            |
 
 Tests on `main` (2026-10-24 21:00, after merging M9 client dashboard + M10 parts 3b/4a): format,
 lint, typecheck, unit/API tests and build green, 36/36 turbo tasks (API 372, worker 61, shared 109,
