@@ -119,7 +119,12 @@ export async function issueInvite(
 export function invitesRouter(deps: Deps): Router {
   const { prisma } = deps;
   const r = Router();
-  const publicLimit = rateLimiter(deps.rateLimits.windowMs, deps.rateLimits.publicPerWindow);
+  const publicLimit = rateLimiter(
+    deps,
+    'invite-accept',
+    deps.rateLimits.windowMs,
+    deps.rateLimits.publicPerWindow,
+  );
 
   r.post('/invites', authenticate(deps), requirePermission('users', 'create'), async (req, res) => {
     const auth = requireAuth(req);

@@ -57,6 +57,10 @@ export default defineConfig({
         // every spec signs in from the same IP; production keeps the 30 / 15 min default
         RATE_LIMIT_AUTH: '300',
         RATE_LIMIT_ACCOUNT: '300',
+        // shared counters live in Redis (D-111): a fresh prefix per run, so back-to-back runs
+        // and the dev server don't add up; the keys expire with their window
+        REDIS_URL: process.env.E2E_REDIS_URL ?? 'redis://localhost:6379',
+        REDIS_KEY_PREFIX: `ds-e2e-${E2E.apiPort}-${Date.now()}:`,
         // local SeaweedFS with buckets of its own (created at API startup), 5 MiB parts
         ...TEST_S3,
         S3_BUCKET_DOCUMENTS: `ds-e2e-${E2E.apiPort}-documents`,

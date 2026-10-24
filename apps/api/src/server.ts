@@ -8,6 +8,7 @@ import { DEFAULT_RATE_LIMITS } from './context';
 import { createLogger } from './lib/logger';
 import { createSmtpMailer } from './lib/mailer';
 import { MedicalSwitches } from './lib/medical-switches';
+import { RedisRateLimitStore, createRedis } from './lib/redis';
 import { createScanner } from './lib/scanner';
 import { S3DocumentStorage } from './lib/storage';
 import { resumePendingVerifications } from './services/documents';
@@ -28,6 +29,19 @@ if (gateway.name === 'fake') {
 const medicalSwitches = new MedicalSwitches(prisma);
 medicalSwitches.load().catch((err: Error) => {
   logger.warn({ err: { name: err.name } }, 'medical switches not loaded yet');
+});
+// Rate-limit counters shared by every API process (D-111). While Redis is down the limited
+// routes answer 500 rather than skipping the limit.
+const redis = createRedis(env.REDIS_URL);
+let redisDown = false;
+redis.on('error', (err: Error) => {
+  if (!redisDown)
+    logger.error({ err: { name: err.name } }, 'redis unavailable; limited routes fail');
+  redisDown = true;
+});
+redis.on('ready', () => {
+  if (redisDown) logger.info('redis reconnected');
+  redisDown = false;
 });
 const storage = new S3DocumentStorage(env, [env.APP_URL, ...env.EXTRA_TRUSTED_ORIGINS]);
 const scanner = createScanner(env);
@@ -86,6 +100,7 @@ const app = createApp({
     publicPerWindow: env.RATE_LIMIT_PUBLIC,
     accountPerWindow: env.RATE_LIMIT_ACCOUNT,
   },
+  rateLimitStore: (limiter) => new RedisRateLimitStore(redis, limiter, env.REDIS_KEY_PREFIX),
   medical: createMedicalData({
     provider: env.MEDICAL_DATA_PROVIDER,
     openFdaApiKey: env.OPENFDA_API_KEY || undefined,

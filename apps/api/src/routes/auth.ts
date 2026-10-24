@@ -31,6 +31,9 @@ const invalidCredentials = () =>
   unauthorized('invalid_credentials', 'Email or password is incorrect');
 
 export function rateLimiter(
+  deps: Pick<Deps, 'rateLimitStore'>,
+  /** names the counter in the shared store; each limiter counts on its own (D-111) */
+  name: string,
   windowMs: number,
   limit: number,
   /** key requests by something other than the client IP; requests without a key are not counted */
@@ -39,6 +42,7 @@ export function rateLimiter(
   return rateLimit({
     windowMs,
     limit,
+    ...(deps.rateLimitStore ? { store: deps.rateLimitStore(name) } : {}),
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     ...(keyOf
@@ -81,11 +85,23 @@ const refreshCookie = (req: Request): string | undefined =>
 export function authRouter(deps: Deps): Router {
   const { prisma, env, mailer } = deps;
   const r = Router();
-  const authLimit = rateLimiter(deps.rateLimits.windowMs, deps.rateLimits.authPerWindow);
-  const publicLimit = rateLimiter(deps.rateLimits.windowMs, deps.rateLimits.publicPerWindow);
+  const authLimit = rateLimiter(
+    deps,
+    'auth',
+    deps.rateLimits.windowMs,
+    deps.rateLimits.authPerWindow,
+  );
+  const publicLimit = rateLimiter(
+    deps,
+    'auth-public',
+    deps.rateLimits.windowMs,
+    deps.rateLimits.publicPerWindow,
+  );
   // Per target account, so spreading guesses or reset mails over many IPs doesn't help (audit M6).
   // Email for login/forgot/register, the MFA step's user for the TOTP step.
   const accountLimit = rateLimiter(
+    deps,
+    'account',
     deps.rateLimits.windowMs,
     deps.rateLimits.accountPerWindow ?? DEFAULT_RATE_LIMITS.accountPerWindow,
     (req) => {

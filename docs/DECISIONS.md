@@ -831,3 +831,25 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
   Switching staging/production is part of the IaC work (M10 part 3) and is Shiva's call.
 - The L5 backfill's `VALIDATE CONSTRAINT` needs the owner. It only runs while a constraint is
   unvalidated, so it must have run once (as owner) before the switch. The runbook checks this.
+
+## D-111 — Auth and form rate limits in Redis (M10 part 2a, 2026-10-24)
+
+- The per-IP and per-account limiters (D-017, D-101) counted in each API process's memory, so N
+  processes allowed N times the limit and a restart reset every count. They now count in Redis
+  (`RedisRateLimitStore`, `apps/api/src/lib/redis.ts`): one fixed window per key, `INCR` +
+  `PEXPIRE` on the first hit in one Lua script, so the window can't be left without an expiry.
+  Same limits, same `429 rate_limited` body and `RateLimit` headers as before.
+- `ioredis` (already in the lockfile through BullMQ) is now a direct API dependency. No new package.
+- Each limiter has a name (`auth`, `auth-public`, `account`, `public-leads`, `invite-accept`), so
+  counts stay separate as they were with one memory store per limiter. Keys are
+  `<REDIS_KEY_PREFIX>rl:<name>:<IP or sha256 account key>`; no email in clear (D-101).
+- **Fail closed.** If Redis is unreachable the limited routes answer 500 (the client gives up
+  after one retry) and the error is logged once. Skipping the limit (`passOnStoreError`) would turn
+  a Redis outage into unlimited password guessing. Routes without a limiter keep working.
+- New env: `REDIS_URL` is now read by the API, and `REDIS_KEY_PREFIX` (default `ds:`) separates
+  checkouts and e2e runs sharing a Redis DB. E2E uses a fresh prefix per run, so back-to-back runs
+  don't add up.
+- Tests: `buildApp` keeps express-rate-limit's memory store (no Redis needed).
+  `rate-limit-redis.test.ts` runs two apps against one Redis (`TEST_REDIS_URL`, default DB 15,
+  random key prefix per run) and checks the fail-closed path. Without Redis it skips with a warning
+  locally and fails in CI (`CI` set).
