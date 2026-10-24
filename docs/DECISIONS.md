@@ -794,3 +794,15 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
 - `apps/api/test/supply-chain.test.ts` fails on any unpinned image or Action.
 - Updating: pull the tag, copy the new RepoDigest; for an Action, `git ls-remote` the tag (use the
   `^{}` commit for annotated tags). Dependabot can do this later (needs repo settings, Shiva).
+
+## D-110 — Least-privilege database roles (audit L11, M10, 2026-10-24)
+
+- Three roles: `datascribe_owner` (NOLOGIN, owns everything), `datascribe_migrator` (runs
+  migrations, logs in as the owner) and `datascribe_app` (API and worker: row access only;
+  `AuditLog` append-only; no DDL or TRUNCATE). SQL in `packages/db/sql/app-roles.sql`, runbook in
+  `docs/DB-ROLES.md`.
+- Written and checked in a throwaway container only. The shared dev Postgres and the test/e2e
+  databases keep the single owner role (roles are cluster-wide; tests recreate the schema).
+  Switching staging/production is part of the IaC work (M10 part 3) and is Shiva's call.
+- The L5 backfill's `VALIDATE CONSTRAINT` needs the owner. It only runs while a constraint is
+  unvalidated, so it must have run once (as owner) before the switch. The runbook checks this.
