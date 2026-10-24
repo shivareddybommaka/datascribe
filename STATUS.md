@@ -18,7 +18,7 @@ existing CRM, never touch), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025). CMS 
 | M7 CRM                        | done                               |                                                                                                                                                                          |
 | M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen built in M4; Stripe test key needed for the manual test-card demo                                                                              |
 | M9 Notifications + dashboards | done except 4 events blocked on M6 | 7/11 §5.8 events + 4 dashboards; part 3 merged (editable notification emails, demo, D-096/D-097); assigned / QA / approved / delivered need M6 to call the ready helpers |
-| M10 Hardening                 | in progress (`sentinel/m10`)       | parts 1–5 merged (D-100..D-127: Dockerfiles, KMS-only prod, axe WCAG, Sentry, Lighthouse); part 6 retention / hard-delete job spawned 2026-10-25 01:10                   |
+| M10 Hardening                 | in progress (`sentinel/m10`)       | parts 1–5 merged (D-100..D-127: Dockerfiles, KMS-only prod, axe WCAG, Sentry, Lighthouse); part 6 retention / hard-delete job done on the branch, to merge (D-128)       |
 
 Tests on `main` (2026-10-25 01:05, after merging M10 part 5): format, lint, typecheck, unit/API tests
 and build green, 36/36 turbo tasks; Playwright e2e 31/31 (run on `E2E_WEB_PORT=3150` /
@@ -69,8 +69,11 @@ ledger D-040+, pipeline D-050+, herald D-090+, sentinel D-100+.
 3. Add the Sentry SDKs (API, worker, web): off unless `SENTRY_DSN` is set; scrub PHI fields, request
    bodies, cookies and auth headers in `beforeSend` (sentinel). ✅ merged
    (D-119): scrubber in `@datascribe/shared/sentry`, unit-tested with synthetic PHI.
-4. Retention / hard-delete job per §4.4, audited, synthetic data only locally (sentinel part 6,
-   spawned 2026-10-25).
+4. Retention / hard-delete job per §4.4, audited, synthetic data only locally (sentinel part 6).
+   ✅ done on `sentinel/m10` (D-128), to merge: daily worker job `retention-delete`, S3 object +
+   page text purged, `Document.purgedAt` tombstone, one `document.retention_delete` audit row per
+   file, dry run + batch limit. Needs M6 to set `closedAt`; Shiva to decide the default for orgs
+   with no saved `retentionDays` (see Waiting on Shiva).
 5. QA reviewers may use the medical lookups (D-056): grant the lookup permission to `qa_reviewer`.
 6. Add Lighthouse (dev) and measure the M3 pages (target ≥ 90 performance + SEO); fix if below.
    ✅ merged (D-127): 7 public pages at performance 99–100, SEO 100
@@ -115,6 +118,11 @@ rate limits, lockout and MFA. Run mode: on demand.
 - M10 (sentinel) part 3b: OK to build images in CI for X86_64 (the Terraform default) or switch
   Fargate to ARM64 to match the build Mac? Shrink images (drop the auto-installed Prisma CLI peer,
   ~150 MB) now or later?
+- M10 (sentinel) part 6 retention (D-128): orgs with no saved `retentionDays` are never purged
+  (the console shows 180 for them). Backfill 180 into every client org, let the job treat unset as
+  180, or keep it opt-in? Should clinical events (encrypted descriptions extracted from the source,
+  kept now because deliverables cite them) also be purged? Enable on staging with
+  `RETENTION_DRY_RUN=true` first?
 - M9 finance dashboard (D-094): should MRR count trialing / past-due subscriptions (matches the
   existing finance overview now)? OK to show client firm names in "revenue by client"?
 - Next's e2e run rewrites `apps/web/next-env.d.ts` / `tsconfig.json` with the port: master fixes this

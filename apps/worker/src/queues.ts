@@ -10,7 +10,7 @@ export const PIPELINE_QUEUES = [
 ] as const;
 export type PipelineQueue = (typeof PIPELINE_QUEUES)[number];
 
-export const OTHER_QUEUES = ['email', 'billing', 'notifications'] as const;
+export const OTHER_QUEUES = ['email', 'billing', 'notifications', 'retention'] as const;
 
 /** §7: 3 attempts with exponential backoff. */
 export const DEFAULT_JOB_OPTIONS = {

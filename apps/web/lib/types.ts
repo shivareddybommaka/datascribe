@@ -354,8 +354,10 @@ export interface DocumentRow {
   pageCount: number | null;
   sha256: string | null;
   scanStatus: ScanStatus;
-  state: 'uploading' | ScanStatus;
+  state: 'uploading' | 'purged' | ScanStatus;
   uploadedAt: string | null;
+  /** deleted by the retention job (D-128); the row stays as a tombstone */
+  purgedAt: string | null;
   createdAt: string;
   uploadedBy: { id: string; name: string };
   partSize: number;

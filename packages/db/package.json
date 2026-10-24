@@ -9,7 +9,8 @@
     ".": "./src/index.ts",
     "./client": "./generated/client/index.js",
     "./seed": "./prisma/seed-lib.ts",
-    "./notifications": "./src/notifications.ts"
+    "./notifications": "./src/notifications.ts",
+    "./retention": "./src/retention.ts"
   },
   "scripts": {
     "generate": "prisma generate",

@@ -7,6 +7,7 @@ import {
   notifyProcessingFailed,
   notifyTasksDue,
 } from '@datascribe/db/notifications';
+import { runRetention } from '@datascribe/db/retention';
 import {
   createMedicalData,
   createOcrProvider,
@@ -44,6 +45,12 @@ import {
   type ScanOutcome,
 } from './pipeline/runner';
 import { renderPdfPage } from './pipeline/render-page';
+import {
+  RETENTION_QUEUE,
+  RETENTION_SCHEDULES,
+  processRetentionJob,
+  retentionConfigFromEnv,
+} from './retention';
 import { s3DocumentObjects } from './pipeline/s3';
 import { DEFAULT_JOB_OPTIONS, PIPELINE_QUEUES, redisConnection } from './queues';
 import { closeSentry, initSentry, isFinalAttempt } from './sentry';
@@ -235,6 +242,32 @@ workers.push(
   ),
 );
 
+// ── §10 retention: hard-delete source documents of long-closed cases (D-128) ──
+const retentionLog = logger.child({ queue: RETENTION_QUEUE });
+const retentionConfig = retentionConfigFromEnv(process.env);
+const retentionQueue = new Queue(RETENTION_QUEUE, queueOpts);
+for (const [name, repeat] of Object.entries(RETENTION_SCHEDULES)) {
+  await retentionQueue.upsertJobScheduler(name, repeat, { name, opts: DEFAULT_JOB_OPTIONS });
+}
+workers.push(
+  new Worker(
+    RETENTION_QUEUE,
+    async (job) => {
+      const result = await processRetentionJob(job.name, ({ now }) =>
+        runRetention(prisma, {
+          now,
+          ...retentionConfig,
+          deleteObject: objects.remove,
+          log: retentionLog,
+        }),
+      );
+      retentionLog.info({ job: job.name, jobId: job.id, ...result }, 'retention job done');
+      return result;
+    },
+    { ...queueOpts, concurrency: 1 },
+  ),
+);
+
 if (reportJobError) {
   for (const worker of workers) {
     worker.on('failed', (job, err) => {
@@ -253,6 +286,7 @@ async function shutdown() {
   await Promise.all(workers.map((w) => w.close()));
   await billingQueue.close();
   await notificationsQueue.close();
+  await retentionQueue.close();
   await uploadScanQueue.close();
   await Promise.all([...pipelineQueues.values()].map((q) => q.close()));
   await usage.close();

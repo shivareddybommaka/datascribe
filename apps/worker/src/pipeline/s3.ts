@@ -1,5 +1,6 @@
 /** Uploaded documents for the pipeline. Same S3 settings as the API (`S3_*` in .env). */
 import {
+  AbortMultipartUploadCommand,
   CopyObjectCommand,
   DeleteObjectCommand,
   GetObjectCommand,
@@ -11,6 +12,8 @@ import type { Readable } from 'node:stream';
 
 export interface DocumentObjects extends ScanStorage {
   read(key: string): Promise<Uint8Array>;
+  /** Retention (D-128): delete the object, or abort an unfinished upload. Missing keys are fine. */
+  remove(doc: { s3Key: string; uploadId: string | null }): Promise<void>;
 }
 
 export function s3DocumentObjects(env: Record<string, string | undefined>): DocumentObjects {
@@ -55,6 +58,19 @@ export function s3DocumentObjects(env: Record<string, string | undefined>): Docu
         new CopyObjectCommand({ Bucket: bucket, Key: to, CopySource: `${bucket}/${from}`, ...sse }),
       );
       await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: from }));
+    },
+    async remove({ s3Key, uploadId }) {
+      if (uploadId) {
+        try {
+          await s3.send(
+            new AbortMultipartUploadCommand({ Bucket: bucket, Key: s3Key, UploadId: uploadId }),
+          );
+        } catch (err) {
+          // already completed or aborted: fall through to deleting the object
+          if ((err as { name?: string }).name !== 'NoSuchUpload') throw err;
+        }
+      }
+      await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: s3Key }));
     },
   };
 }

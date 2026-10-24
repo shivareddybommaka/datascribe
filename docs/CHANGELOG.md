@@ -1,5 +1,20 @@
 # Changelog
 
+## M10 part 6 — Retention / hard-delete job (2026-10-25, branch `sentinel/m10`)
+
+Approved by Shiva on 2026-10-24 (item 4). Design notes: D-128.
+
+- **Worker job** `retention-delete` (queue `retention`, daily 03:00 UTC) calling `runRetention` from
+  `@datascribe/db/retention`: for orgs with a valid `retentionDays`, deletes the S3 object and the
+  encrypted page text of documents on cases closed longer ago than that. Cases, clinical events and
+  deliverables are kept. Orgs with no or an invalid setting are skipped.
+- **Audited**: one `document.retention_delete` row per file (system actor, ids only, no file names).
+  Idempotent, batch-limited (`RETENTION_BATCH_SIZE`, default 500), one failed file doesn't stop the
+  run and is retried next time; `RETENTION_DRY_RUN=true` counts only.
+- **Tombstone**: migration `document_retention` adds `Document.purgedAt`. The API reports
+  `state: 'purged'`, download answers 410; the portal shows "Deleted by retention".
+- Tests: 8 API/DB tests (`apps/api/test/retention.test.ts`, one against the local S3), 4 worker tests.
+
 ## M10 part 5 — Lighthouse on the public pages (2026-10-24, branch `sentinel/m10`)
 
 Approved by Shiva on 2026-10-24 (item 6). Design notes: D-127.
