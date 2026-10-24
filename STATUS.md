@@ -76,6 +76,12 @@ never apply. Native `tesseract` 5.5.3 is also installed (optional; OCR uses tess
 
 ## Local staging (Shiva, 2026-10-24)
 
+**Live since 2026-10-24 18:50** at https://datascribe.stayspot.app (merged `launchpad/staging`,
+`.env.staging` generated, `datascribe_staging` seeded, ClamAV `clamav-debian` running, tunnel
+`datascribe-staging` → `http://localhost:3020`, route + DNS added in Cloudflare). Runs as background
+processes started by the master (`pnpm staging:start`, tunnel via `--config infra/staging/cloudflared.yml
+run --token-file .env.tunnel-token`); they stop if the Mac or the OpenClaw gateway restarts.
+
 Staging from the Mac Studio at `https://datascribe.stayspot.app` (stayspot.app is on Shiva's
 Cloudflare) via a NEW token-based tunnel Shiva creates, pointing to `http://localhost:3020`. Never
 touch StaySpot's tunnel or `~/.cloudflared`. Synthetic data only until AWS production.
