@@ -1,0 +1,53 @@
+# Copy to production.tfvars (git-ignored) and replace every <placeholder>. No secrets here, ever:
+# secrets go in Secrets Manager (docs/INFRA.md). Use a separate AWS account from staging.
+
+environment    = "production"
+aws_account_id = "<12-digit production account id>"
+region         = "ap-south-1"
+
+vpc_cidr           = "10.50.0.0/16"
+az_count           = 3
+single_nat_gateway = false
+
+app_domain          = "<app.example.com>"
+acm_certificate_arn = "arn:aws:acm:ap-south-1:<account id>:certificate/<certificate id>"
+
+db_instance_class           = "db.m7g.large"
+db_allocated_storage_gb     = 100
+db_max_allocated_storage_gb = 500
+db_multi_az                 = true
+db_backup_retention_days    = 30
+deletion_protection         = true
+
+redis_node_type = "cache.m7g.large"
+redis_replicas  = 1
+
+bucket_prefix           = "<company>-datascribe-production"
+noncurrent_version_days = 30
+
+image_api    = "<account id>.dkr.ecr.ap-south-1.amazonaws.com/datascribe-production/api@sha256:<64 hex digest>"
+image_web    = "<account id>.dkr.ecr.ap-south-1.amazonaws.com/datascribe-production/web@sha256:<64 hex digest>"
+image_worker = "<account id>.dkr.ecr.ap-south-1.amazonaws.com/datascribe-production/worker@sha256:<64 hex digest>"
+
+# 0 on the first apply, until every secret has a value.
+api_desired_count    = 0
+web_desired_count    = 0
+worker_desired_count = 0
+
+api_cpu       = 1024
+api_memory    = 2048
+worker_cpu    = 2048
+worker_memory = 8192
+
+log_retention_days = 365
+
+mail_from           = "no-reply@<domain>"
+smtp_host           = "email-smtp.ap-south-1.amazonaws.com"
+smtp_port           = 587
+staff_email_domains = "<staff email domain>"
+
+medical_data_provider = "nlm"
+ocr_provider          = "tesseract"
+summary_provider      = "mock"
+phi_llm_baa_confirmed = false
+optional_secrets      = ["OPENFDA_API_KEY"]

@@ -1,0 +1,8 @@
+# Copy to <env>.backend.hcl (git-ignored), one per environment, then:
+#   terraform init -backend-config=environments/<env>.backend.hcl
+# The state bucket and its KMS key are created once by hand (docs/INFRA.md), outside this config.
+
+bucket     = "<company>-datascribe-<env>-tfstate"
+key        = "datascribe/<env>/terraform.tfstate"
+region     = "ap-south-1"
+kms_key_id = "arn:aws:kms:ap-south-1:<account id>:key/<key id>"

@@ -58,6 +58,22 @@
   `on_hold` notifies the case manager and ops managers. Only the run that changes the status sends,
   and a failed notification is logged (ids and error name only) without failing the stage.
 
+## M10 part 3a — Infrastructure as code (2026-10-24, branch `sentinel/m10`)
+
+Design notes: D-115. **Written only: nothing planned, applied or deployed; no AWS account used.**
+
+- **Terraform for AWS** (`infra/terraform/`, `docs/INFRA.md`): VPC with private app and isolated data
+  subnets, RDS Postgres 16 (KMS, TLS forced, daily snapshots kept 30 days), ElastiCache Redis (TLS,
+  KMS, `noeviction`), document and deliverable buckets (SSE-KMS, versioning, public access blocked,
+  TLS only), ECS Fargate api / web / worker with a ClamAV sidecar and a migration task, ALB with TLS
+  1.2+ and HTTP redirect, Secrets Manager entries (no values in Terraform), CloudWatch logs (KMS),
+  ECR. Staging and production tfvars examples without real values.
+- `apps/api/test/infra-terraform.test.ts` checks the files as text (Terraform isn't installed):
+  encryption, versioning, TLS, backups, private tasks, no secrets, no port 3000, tfvars complete,
+  every container env var one the apps read.
+- The worker's BullMQ connection keeps TLS and credentials from a `rediss://` `REDIS_URL` (it
+  dropped them before, so it couldn't reach ElastiCache with TLS).
+
 ## M10 part 2b — Load test and security checklist (2026-10-24, branch `sentinel/m10`)
 
 Design notes: D-114.
