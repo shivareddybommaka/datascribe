@@ -1,5 +1,16 @@
 # Changelog
 
+## Local staging behind a Cloudflare tunnel (2026-10-24, branch `launchpad/staging`)
+
+Staging copy on the Mac Studio at `https://datascribe.stayspot.app` (Shiva's own tunnel to
+`http://localhost:3020`), synthetic data only. Design notes: D-120 and up.
+
+- **Deploy profile** `DEPLOY_ENV = local | staging | production` (D-120): production refusals
+  unchanged; staging (a `NODE_ENV=production` build) may use local SeaweedFS without SSE, the fake
+  gateway and the mock scanner, and refuses a real LLM, Textract, live Stripe keys, non-Mailpit SMTP,
+  Postgres 5432, databases not named `staging` and an http `APP_URL`. The worker checks the same.
+  `API_HOST` lets staging bind the API to 127.0.0.1.
+
 ## M9 part 1 — Notifications (2026-10-24, branch `herald/m9`)
 
 §5.8 notifications. Design notes: D-090. Migration `20261024160000_m9_notifications`

@@ -109,7 +109,12 @@ const app = createApp({
   storage,
 });
 
-app.listen(env.API_PORT, () => {
-  logger.info({ port: env.API_PORT, gateway: gateway.name, sse: env.S3_SSE }, 'api listening');
+const onListening = () => {
+  logger.info(
+    { port: env.API_PORT, deploy: env.DEPLOY_ENV, gateway: gateway.name, sse: env.S3_SSE },
+    'api listening',
+  );
   void startupTasks();
-});
+};
+if (env.API_HOST) app.listen(env.API_PORT, env.API_HOST, onListening);
+else app.listen(env.API_PORT, onListening);

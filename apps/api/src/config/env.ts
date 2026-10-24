@@ -1,9 +1,13 @@
+import { deployProfileIssues, resolveDeployEnv, type DeployEnv } from '@datascribe/shared/deploy';
 import { z } from 'zod';
 
 const bool = z
   .enum(['true', 'false'])
   .default('false')
   .transform((v) => v === 'true');
+
+const profileOf = (env: { NODE_ENV: string; DEPLOY_ENV?: string }): DeployEnv =>
+  resolveDeployEnv({ NODE_ENV: env.NODE_ENV, DEPLOY_ENV: env.DEPLOY_ENV });
 
 const secret = z.string().min(32, 'must be at least 32 characters');
 
@@ -16,7 +20,13 @@ const optionalString = z
 export const EnvSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+    /** local | staging | production; unset = production when NODE_ENV=production (D-120) */
+    DEPLOY_ENV: optionalString,
+    /** smoke test of a staging build on http://localhost only (D-120); never set otherwise */
+    STAGING_ALLOW_HTTP_FOR_SMOKE: optionalString,
     API_PORT: z.coerce.number().int().positive().default(4000),
+    /** interface the API listens on; unset = all. Staging binds 127.0.0.1 (behind the tunnel) */
+    API_HOST: optionalString,
     APP_URL: z.string().url().default('http://localhost:3010'),
     /** Extra browser origins trusted for CORS/CSRF (comma-separated), e.g. a local preview proxy. */
     EXTRA_TRUSTED_ORIGINS: z
@@ -110,6 +120,22 @@ export const EnvSchema = z
       .default('info'),
   })
   .superRefine((env, ctx) => {
+    // D-120: staging is a production build with its own, narrower allowances and refusals.
+    for (const issue of deployProfileIssues({
+      NODE_ENV: env.NODE_ENV,
+      DEPLOY_ENV: env.DEPLOY_ENV,
+      STAGING_ALLOW_HTTP_FOR_SMOKE: env.STAGING_ALLOW_HTTP_FOR_SMOKE,
+      APP_URL: env.APP_URL,
+      DATABASE_URL: env.DATABASE_URL,
+      SMTP_HOST: env.SMTP_HOST,
+      SUMMARY_PROVIDER: env.SUMMARY_PROVIDER,
+      STRIPE_SECRET_KEY: env.STRIPE_SECRET_KEY,
+      S3_SSE: env.S3_SSE,
+      S3_ENDPOINT: env.S3_ENDPOINT,
+    })) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [issue.path], message: issue.message });
+    }
+    const production = profileOf(env) === 'production';
     if (env.NODE_ENV === 'production' && env.EXTRA_TRUSTED_ORIGINS.length > 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -129,33 +155,36 @@ export const EnvSchema = z
         message: 'A real SUMMARY_PROVIDER in production requires PHI_LLM_BAA_CONFIRMED=true',
       });
     }
-    // §10: documents are encrypted at rest and virus-scanned for real in production.
-    if (env.NODE_ENV === 'production' && env.S3_SSE === 'none') {
+    // §10: documents are encrypted at rest and virus-scanned for real in production. Staging
+    // (synthetic data on the Mac) may use local SeaweedFS without SSE and the mock scanner.
+    if (production && env.S3_SSE === 'none') {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['S3_SSE'],
         message: 'production needs server-side encryption (AES256 or aws:kms)',
       });
     }
-    if (env.NODE_ENV === 'production' && !env.CLAMAV_HOST) {
+    if (production && !env.CLAMAV_HOST) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['CLAMAV_HOST'],
         message: 'production needs a real virus scanner (set CLAMAV_HOST)',
       });
     }
-    // The fake gateway marks invoices paid without money changing hands: never in production.
+    // The fake gateway marks invoices paid without money changing hands: never in production
+    // (staging has no real money, so it may).
     const fake =
       env.PAYMENT_GATEWAY === 'fake' ||
       (env.PAYMENT_GATEWAY === 'stripe' && !env.STRIPE_SECRET_KEY);
-    if (env.NODE_ENV === 'production' && fake) {
+    if (production && fake) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['PAYMENT_GATEWAY'],
         message: 'production needs a real payment gateway (set STRIPE_SECRET_KEY)',
       });
     }
-  });
+  })
+  .transform((env) => ({ ...env, DEPLOY_ENV: profileOf(env) }));
 
 export type Env = z.infer<typeof EnvSchema>;
 
