@@ -10,6 +10,12 @@ Staging copy on the Mac Studio at `https://datascribe.stayspot.app` (Shiva's own
   gateway and the mock scanner, and refuses a real LLM, Textract, live Stripe keys, non-Mailpit SMTP,
   Postgres 5432, databases not named `staging` and an http `APP_URL`. The worker checks the same.
   `API_HOST` lets staging bind the API to 127.0.0.1.
+- **Behind the tunnel** (D-121): tests for Secure cookies, the https CSRF origin, CORS, security
+  headers and per-IP limits keyed on the last `X-Forwarded-For` entry; optional
+  `TRUST_CF_CONNECTING_IP` (only from a hop `TRUST_PROXY` trusts; refused in production).
+- **Storage relay** (D-122): `S3_BROWSER_ACCESS=relay` makes upload-part and download URLs
+  same-origin (`/api/v1/storage-relay/<sealed token>`), so uploads work through the tunnel while S3
+  stays on localhost. Refused in production.
 
 ## M9 part 1 — Notifications (2026-10-24, branch `herald/m9`)
 

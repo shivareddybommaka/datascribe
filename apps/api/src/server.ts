@@ -9,6 +9,7 @@ import { createLogger } from './lib/logger';
 import { createSmtpMailer } from './lib/mailer';
 import { MedicalSwitches } from './lib/medical-switches';
 import { RedisRateLimitStore, createRedis } from './lib/redis';
+import { relayKey } from './lib/relay-token';
 import { S3DocumentStorage } from './lib/storage';
 import { encryptLegacyPhi } from './services/phi-backfill';
 
@@ -41,7 +42,11 @@ redis.on('ready', () => {
   if (redisDown) logger.info('redis reconnected');
   redisDown = false;
 });
-const storage = new S3DocumentStorage(env, [env.APP_URL, ...env.EXTRA_TRUSTED_ORIGINS]);
+const storage = new S3DocumentStorage(
+  env,
+  [env.APP_URL, ...env.EXTRA_TRUSTED_ORIGINS],
+  env.S3_BROWSER_ACCESS === 'relay' ? { key: relayKey(env.JWT_ACCESS_SECRET) } : undefined,
+);
 
 const errInfo = (err: unknown) => ({ err: errorInfo(err) });
 

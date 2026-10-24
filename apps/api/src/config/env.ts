@@ -88,6 +88,11 @@ export const EnvSchema = z
     /** AES256 (SSE-S3) | aws:kms (SSE-KMS) | none (local SeaweedFS only, D-070) */
     S3_SSE: z.enum(['AES256', 'aws:kms', 'none']).default('AES256'),
     S3_SSE_KMS_KEY_ID: optionalString,
+    /**
+     * direct: browsers use presigned S3 URLs. relay: same-origin URLs the API streams, for
+     * staging, whose S3 (local SeaweedFS) browsers behind the tunnel can't reach (D-122).
+     */
+    S3_BROWSER_ACCESS: z.enum(['direct', 'relay']).default('direct'),
     /** multipart part size; S3 needs ≥ 5 MiB for every part but the last */
     UPLOAD_PART_SIZE_MB: z.coerce.number().int().min(5).max(512).default(8),
     /** clamd (ClamAV) host; unset = mock scanner (EICAR test string only), refused in production */
@@ -113,6 +118,11 @@ export const EnvSchema = z
       .transform((v): string | number | false =>
         v === 'false' || v === '' ? false : /^\d+$/.test(v) ? Number(v) : v,
       ),
+    /**
+     * Behind a Cloudflare tunnel: client IP from CF-Connecting-IP, honoured only from a hop that
+     * TRUST_PROXY trusts (D-121). Refused in production, where no Cloudflare sits in front.
+     */
+    TRUST_CF_CONNECTING_IP: bool,
     SUMMARY_PROVIDER: z.enum(['mock', 'anthropic', 'openai']).default('mock'),
     PHI_LLM_BAA_CONFIRMED: bool,
     LOG_LEVEL: z
@@ -136,6 +146,22 @@ export const EnvSchema = z
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: [issue.path], message: issue.message });
     }
     const production = profileOf(env) === 'production';
+    // Production hands browsers presigned S3 URLs; the API doesn't carry file bytes (D-122).
+    if (production && env.S3_BROWSER_ACCESS === 'relay') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['S3_BROWSER_ACCESS'],
+        message: 'relay is for staging on the Mac; production uses presigned S3 URLs',
+      });
+    }
+    // On AWS the ALB is the only proxy; a client could send this header straight through it.
+    if (production && env.TRUST_CF_CONNECTING_IP) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['TRUST_CF_CONNECTING_IP'],
+        message: 'is for staging behind the Cloudflare tunnel; not allowed in production',
+      });
+    }
     if (env.NODE_ENV === 'production' && env.EXTRA_TRUSTED_ORIGINS.length > 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

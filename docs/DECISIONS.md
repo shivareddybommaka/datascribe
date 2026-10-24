@@ -1115,3 +1115,52 @@ queues.ts`) keeps them; the API and the usage tracker already pass the URL to io
 - The worker runs the same checks at start-up (it read `NODE_ENV` for its ClamAV rule before).
 - `API_HOST` (optional, default all interfaces): staging binds the API to `127.0.0.1`, so the only
   way in from outside the Mac is the tunnel to the web app.
+
+## D-121 — Staging behind the Cloudflare tunnel: cookies, CSRF, client IPs (launchpad, 2026-10-24)
+
+- Path: browser → Cloudflare edge (TLS) → `cloudflared` on the Mac → `http://localhost:3020`
+  (Next, bound to 127.0.0.1) → rewrite → API on `127.0.0.1:4020`. Next's rewrite proxy
+  (`next/dist/server/lib/router-utils/proxy-request.js`) forwards the request headers unchanged
+  (no `xfwd`; it only adds `X-Forwarded-Host`), so the API sees a loopback peer carrying the
+  `X-Forwarded-For`, `X-Forwarded-Proto: https`, `Origin` and `CF-Connecting-IP` that
+  cloudflared sent.
+- **Cookies**: the refresh cookie is `Secure` whenever `NODE_ENV=production` (staging included),
+  `HttpOnly`, `SameSite=Strict`, `Path=/api/v1/auth`; the browser sees https, so it is stored.
+- **CSRF / CORS**: `APP_URL=https://datascribe.stayspot.app` is the only trusted origin; the
+  http variant and anything else get 403 / no CORS header. `EXTRA_TRUSTED_ORIGINS` stays refused.
+- **Client IPs**: `TRUST_PROXY=loopback` (unchanged default) is right: the one trusted hop is the
+  local Next proxy, and Express takes the last `X-Forwarded-For` entry. Cloudflare _appends_ the
+  real client address to any `X-Forwarded-For` the client sent, so a forged entry on the left never
+  makes a new rate-limit bucket (tested).
+- **`TRUST_CF_CONNECTING_IP=true`** (staging example sets it): use `CF-Connecting-IP`, which the
+  edge always overwrites, as `req.ip`, but only when the immediate peer passes the `TRUST_PROXY`
+  check (`app.get('trust proxy fn')`), so with `TRUST_PROXY=false` or from an untrusted peer it is
+  ignored, and only when it is a valid IP. Refused in production: on AWS no Cloudflare sits in front
+  and a client could send the header through the ALB. Without it, the `X-Forwarded-For` rule above
+  gives the same answer.
+- Anything on the Mac that reaches `localhost:3020` / `:4020` directly can still choose its own
+  address (as in dev): that's why staging binds both to 127.0.0.1. Found on the way: in dev, Next on
+  :3010 forwards a client's own `X-Forwarded-For`, so D-101's "only the local Next.js proxy" is
+  spoofable by anyone who can reach the Next port; harmless locally, worth knowing before any other
+  exposure.
+- Security headers stay: helmet on the API (HSTS, nosniff, frame options), Next's baseline headers
+  (`X-Frame-Options: DENY`, `frame-ancestors 'none'`, etc.).
+
+## D-122 — Storage relay for staging uploads and downloads (launchpad, 2026-10-24)
+
+- Browsers PUT upload parts and GET downloads straight from S3 with presigned URLs (D-070, D-071).
+  On the Mac the S3 is SeaweedFS on `localhost:9000`; a browser reaching staging through the tunnel
+  can't see it, so uploads would fail for anyone not sitting at the Mac. Exposing SeaweedFS through
+  the tunnel would put a storage API on the internet, so instead:
+- `S3_BROWSER_ACCESS = direct | relay` (default `direct`). With `relay`, `presignPart` and
+  `presignDownload` return a same-origin `/api/v1/storage-relay/<token>` and the API streams the
+  part to S3 (`UploadPart`, mounted before the JSON parser, Content-Length required, ≤ 512 MiB) or
+  the object back (attachment, `Cache-Control: private, no-store`). The 8 MiB parts stay under
+  Next's 10 MB proxied-body limit and Cloudflare's 100 MB request limit.
+- The token replaces the S3 signature: AES-256-GCM sealed with a key derived (HKDF) from
+  `JWT_ACCESS_SECRET`, so the object key and file name aren't readable in the URL; bound to one
+  operation (put part n of one upload / get one object); expiring with the same TTLs (30 min parts,
+  5 min downloads). Authorization, audit and scan checks are unchanged: they happen where the URL is
+  issued, exactly as for presigned URLs. Tokens are redacted from request logs.
+- **Refused in production** (`S3_BROWSER_ACCESS=relay`): production keeps presigned S3 URLs and
+  the API never carries file bytes there.
