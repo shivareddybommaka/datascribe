@@ -1,9 +1,6 @@
-# cloudflared settings for the Datascribe staging tunnel (docs/STAGING.md, D-124).
-#
-# Passed with `cloudflared --config infra/staging/cloudflared.yml tunnel run`, so cloudflared never
-# reads ~/.cloudflared/config.yml (StaySpot's tunnel). No secrets here: the tunnel token comes from
-# the TUNNEL_TOKEN environment variable (or --token "$TUNNEL_TOKEN"), never from a file in the repo.
-# The public hostname (datascribe.stayspot.app -> http://localhost:3020) is configured in the
-# Cloudflare Zero Trust dashboard, not here.
+# Config for the datascribe-staging tunnel (docs/STAGING.md). The tunnel is remotely managed: its
+# hostname (datascribe.stayspot.app -> http://localhost:3020) lives in the Cloudflare dashboard and
+# the token is read from the git-ignored .env.tunnel-token. Always pass this file with --config so
+# cloudflared never falls back to ~/.cloudflared/config.yml (StaySpot's tunnel).
 no-autoupdate: true
 loglevel: info
