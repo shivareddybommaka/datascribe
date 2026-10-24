@@ -17,11 +17,11 @@ existing CRM, never touch), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025). CMS 
 | M6 Workspace + QA + delivery  | not started                        |                                                                                             |
 | M7 CRM                        | done                               |                                                                                             |
 | M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen built in M4; Stripe test key needed for the manual test-card demo |
-| M9 Notifications + dashboards | in progress (`herald/m9`)          |                                                                                             |
-| M10 Hardening                 | in progress (`sentinel/m10`)       |                                                                                             |
+| M9 Notifications + dashboards | in progress (`herald/m9`)          | part 1 infra committed (`dd32407`); bell UI + merge of main running (hit usage limit once)  |
+| M10 Hardening                 | in progress (`sentinel/m10`)       | part 1 (open audit findings) merged; part 2 (CI e2e + load test) running                    |
 
-Tests on `main` (2026-10-24, after M5b step 3): lint, typecheck, unit/API tests and build green
-(33/33 turbo tasks; worker 41 tests); Playwright e2e 18/18.
+Tests on `main` (2026-10-24, after M5b step 3 and the M10 part 1 merge): lint, typecheck, unit/API
+tests and build green (33/33 turbo tasks; worker 41 tests); Playwright e2e 18/18.
 
 M4 merge notes: main's `.env` needs `S3_SSE=none` (local SeaweedFS has no SSE, D-070) or the API's
 uploads fail; the API creates the buckets at startup and encrypts legacy case notes / messages
@@ -64,15 +64,12 @@ ledger D-040+, pipeline D-050+, herald D-090+, sentinel D-100+.
 
 ## Security review (datascribe-auditor)
 
-No critical findings; §4.4 PHI rules verified. Fixed: H1, M1, M3, M7 (nodemailer 10, 2026-10-24),
-M8, M9. Open:
-
-- M2 lockout bypass with concurrent guesses (with M2). M4 invites ≤ inviter's permissions (with M2).
-- M5 absolute session lifetime + re-check MFA policy on refresh. M6 trust-proxy, per-account limits.
-- Low: L1 revoke reason vs reuse alerts, L2 kill other reset tokens, L3 unverified-account squatting,
-  L6 PHI notice on lead form, L7 Prisma error logging, L8 single-use MFA token, L9 timing, L10
-  conversion email domain, L11 non-owner DB role, L12 pin images/actions. (L4 audit case list and L5
-  encrypt Case.notes / Message.body: fixed on `portal/m4`.)
+No critical findings; §4.4 PHI rules verified. **All findings fixed**: H1, M1, M3, M7, M8, M9; M2 + M4
+(with M2, D-064); L4 + L5 (with M4); M5, M6, L1, L2, L3, L6, L7, L8, L9, L10, L12 (M10 part 1,
+`sentinel/m10` merged 2026-10-24, D-100..D-109). L11 (non-owner DB roles): SQL + runbook in
+`docs/DB-ROLES.md` (D-110), not applied to any database; switching staging/production is part of the
+IaC work and Shiva's call. New env with safe defaults: `RATE_LIMIT_ACCOUNT`, `TRUST_PROXY`,
+`AUTH_RESPONSE_FLOOR_MS`, `STAFF_EMAIL_DOMAINS`.
 
 ## Known follow-ups
 
