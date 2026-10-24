@@ -33,6 +33,8 @@ export function testEnv(overrides: Record<string, string> = {}) {
     JWT_REFRESH_SECRET: 'test-refresh-secret-'.padEnd(48, 'b'),
     PHI_ENCRYPTION_KEY: testPhiKey.toString('base64'),
     LOG_LEVEL: 'silent',
+    // the L9 timing floor has its own test (auth.test.ts); elsewhere it only slows the suite
+    AUTH_RESPONSE_FLOOR_MS: '0',
     ...TEST_S3,
     ...overrides,
   });

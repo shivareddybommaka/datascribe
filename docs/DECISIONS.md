@@ -748,3 +748,16 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
   and warnings in full (they carry no query values).
 - The worker should use `errorInfo` too. Its pipeline code is being written on another branch, so
   this run didn't touch it (worker code outside the pipeline logs no error messages today).
+
+## D-106 — Constant-time compares and uniform auth timing (audit L9, M10, 2026-10-24)
+
+- TOTP: otplib compares codes with `===`. `verifyTotp` now generates the previous, current and
+  next step's code and compares each with `timingSafeEqual` (`safeEqual` in `lib/timing.ts`)
+  without stopping at the first match. Other secrets are already compared by SHA-256 lookup
+  (tokens) or `timingSafeEqual` (fake gateway webhook).
+- Login, register and forgot hold their response until `AUTH_RESPONSE_FLOOR_MS` (default 400 ms)
+  after the request started, for success and error alike (`withTimingFloor`). Existing accounts
+  cost more work: the attempt reservation, a reset token, an email. Register also runs argon2 on
+  every path now. The floor is the simple fix; it costs every sign-in up to 400 ms. API tests set
+  it to 0 except the test that checks it. If SMTP ever takes longer than the floor, forgot would
+  leak again; moving its email to the worker queue (M9) removes that.

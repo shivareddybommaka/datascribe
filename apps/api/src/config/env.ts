@@ -71,6 +71,8 @@ export const EnvSchema = z
     RATE_LIMIT_PUBLIC: z.coerce.number().int().min(1).default(10),
     /** per-account requests per 15 min on login/MFA/forgot/register, whatever the IP (audit M6) */
     RATE_LIMIT_ACCOUNT: z.coerce.number().int().min(1).default(10),
+    /** minimum response time of login / register / forgot, hiding which accounts exist (audit L9) */
+    AUTH_RESPONSE_FLOOR_MS: z.coerce.number().int().min(0).max(5000).default(400),
     /**
      * Express `trust proxy`: which hops may set X-Forwarded-For (audit M6). `loopback` (default)
      * trusts the local Next.js proxy only; behind a load balancer give its hop count or CIDRs.

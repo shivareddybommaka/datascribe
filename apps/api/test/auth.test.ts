@@ -129,6 +129,37 @@ describe('login', () => {
     expect((await send('203.0.113.3')).status).toBe(429);
   });
 
+  it('login, register and forgot take the same minimum time for known and unknown accounts (audit L9)', async () => {
+    const floor = 300;
+    const slow = buildApp({ envOverrides: { AUTH_RESPONSE_FLOOR_MS: String(floor) } });
+    const timed = async (send: () => Promise<request.Response>) => {
+      const start = Date.now();
+      const res = await send();
+      return { res, ms: Date.now() - start };
+    };
+    const post = (path: string, body: object) =>
+      timed(() => request(slow.app).post(`/api/v1/auth/${path}`).send(body));
+
+    const cases = [
+      await post('login', { email: SEED.acmeUser, password: 'wrong-password-x' }),
+      await post('login', { email: 'ghost@test.example', password: 'wrong-password-x' }),
+      await post('forgot', { email: SEED.harborAdmin }),
+      await post('forgot', { email: 'ghost@test.example' }),
+      await post('register', {
+        organizationName: 'Dup Firm',
+        name: 'Dup',
+        email: SEED.acmeAdmin,
+        password: TEST_PASSWORD,
+      }),
+    ];
+    for (const { ms } of cases) expect(ms).toBeGreaterThanOrEqual(floor - 5);
+    expect(cases.map((c) => c.res.status)).toEqual([401, 401, 202, 202, 202]);
+    expect(cases[0]!.res.body.error.code).toBe('invalid_credentials');
+    expect(cases[2]!.res.body).toEqual({ status: 'check_email' });
+    // undo the failed attempt on the shared seed user
+    await prisma.user.update({ where: { email: SEED.acmeUser }, data: { failedLoginCount: 0 } });
+  });
+
   it('TRUST_PROXY=true is refused; the default trusts only the loopback proxy', () => {
     expect(() => testEnv({ TRUST_PROXY: 'true' })).toThrow(/TRUST_PROXY/);
     expect(testEnv().TRUST_PROXY).toBe('loopback');

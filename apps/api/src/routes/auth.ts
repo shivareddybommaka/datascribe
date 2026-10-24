@@ -17,6 +17,7 @@ import { PasswordSchema, burnPasswordCheck, hashPassword, verifyPassword } from 
 import { renderEmail } from '../lib/templates';
 import { randomToken, sha256, signMfaToken, verifyToken, type MfaClaims } from '../lib/tokens';
 import { newTotpSecret, totpQrDataUrl, totpUri, verifyTotp } from '../lib/totp';
+import { withTimingFloor } from '../lib/timing';
 import { parse } from '../lib/validate';
 
 export const MAX_FAILED_LOGINS = 5;
@@ -170,48 +171,58 @@ export function authRouter(deps: Deps): Router {
   }
 
   // ── Login ──────────────────────────────────────────────────────────────
-  r.post('/auth/login', authLimit, accountLimit, async (req, res) => {
-    const body = parse(z.object({ email: Email, password: z.string().min(1).max(128) }), req.body);
-    const user = await prisma.user.findUnique({
-      where: { email: body.email },
-      include: { organization: true, roles: { include: { role: true } } },
-    });
-    if (!user) {
-      await burnPasswordCheck(body.password);
-      throw invalidCredentials();
-    }
-    const attempt = await reserveAttempt(user.id);
-    if (!(await verifyPassword(user.passwordHash, body.password))) {
-      await recordFailure(req, user, attempt, 'password');
-      throw invalidCredentials();
-    }
-    await releaseAttempt(user.id, attempt);
-    if (user.status !== 'active' || user.organization.status !== 'active') {
-      throw forbidden('This account is suspended');
-    }
-    if (!user.emailVerifiedAt) {
-      throw new HttpError(403, 'email_not_verified', 'Verify your email address first');
-    }
-    // set by an admin (M2): no session until the emailed reset link is used
-    if (user.mustResetPassword) {
-      throw new HttpError(
-        403,
-        'password_reset_required',
-        'Set a new password using the link we emailed you, or use "Forgot password"',
-      );
-    }
+  const floor = env.AUTH_RESPONSE_FLOOR_MS;
 
-    if (mfaRequired(user)) {
-      const setup = !user.mfaEnabled;
-      const mfaToken = signMfaToken(
-        { sub: user.id, setup, at: Date.now() },
-        env.JWT_REFRESH_SECRET,
+  r.post(
+    '/auth/login',
+    authLimit,
+    accountLimit,
+    withTimingFloor(floor, async (req, res) => {
+      const body = parse(
+        z.object({ email: Email, password: z.string().min(1).max(128) }),
+        req.body,
       );
-      res.json(setup ? { mfaSetupRequired: true, mfaToken } : { mfaRequired: true, mfaToken });
-      return;
-    }
-    res.json(await completeLogin(req, res, user.id));
-  });
+      const user = await prisma.user.findUnique({
+        where: { email: body.email },
+        include: { organization: true, roles: { include: { role: true } } },
+      });
+      if (!user) {
+        await burnPasswordCheck(body.password);
+        throw invalidCredentials();
+      }
+      const attempt = await reserveAttempt(user.id);
+      if (!(await verifyPassword(user.passwordHash, body.password))) {
+        await recordFailure(req, user, attempt, 'password');
+        throw invalidCredentials();
+      }
+      await releaseAttempt(user.id, attempt);
+      if (user.status !== 'active' || user.organization.status !== 'active') {
+        throw forbidden('This account is suspended');
+      }
+      if (!user.emailVerifiedAt) {
+        throw new HttpError(403, 'email_not_verified', 'Verify your email address first');
+      }
+      // set by an admin (M2): no session until the emailed reset link is used
+      if (user.mustResetPassword) {
+        throw new HttpError(
+          403,
+          'password_reset_required',
+          'Set a new password using the link we emailed you, or use "Forgot password"',
+        );
+      }
+
+      if (mfaRequired(user)) {
+        const setup = !user.mfaEnabled;
+        const mfaToken = signMfaToken(
+          { sub: user.id, setup, at: Date.now() },
+          env.JWT_REFRESH_SECRET,
+        );
+        res.json(setup ? { mfaSetupRequired: true, mfaToken } : { mfaRequired: true, mfaToken });
+        return;
+      }
+      res.json(await completeLogin(req, res, user.id));
+    }),
+  );
 
   const mfaStepExpired = () => unauthorized('invalid_token', 'MFA step expired, sign in again');
 
@@ -461,107 +472,113 @@ export function authRouter(deps: Deps): Router {
     });
 
   // ── Self-registration (§5.2): creates Organization + first client_admin ──
-  r.post('/auth/register', publicLimit, accountLimit, async (req, res) => {
-    const body = parse(
-      z.object({
-        organizationName: z.string().trim().min(2).max(200),
-        name: z.string().trim().min(1).max(200),
-        email: Email,
-        password: PasswordSchema,
-      }),
-      req.body,
-    );
-    const existing = await prisma.user.findUnique({
-      where: { email: body.email },
-      include: { organization: { include: { _count: { select: { users: true } } } } },
-    });
-    // An unverified sign-up proves nothing about who owns the address. Someone registering it
-    // again replaces that pending sign-up instead of being locked out (audit L3). Only the
-    // latest link works, and it activates the password chosen with it.
-    const pending =
-      existing &&
-      !existing.emailVerifiedAt &&
-      existing.organization.type === 'client' &&
-      existing.organization._count.users === 1;
-    if (existing && !pending) {
-      // Same response either way, so the endpoint can't be used to discover accounts.
-      await alreadyRegistered(body.email);
-      res.status(202).json({ status: 'check_email' });
-      return;
-    }
-    const role = await prisma.role.findUniqueOrThrow({ where: { key: 'client_admin' } });
-    const passwordHash = await hashPassword(body.password);
-    const token = randomToken();
-    const user = await prisma.$transaction(async (tx) => {
-      if (existing) {
-        // Tokens first, then the user, the same lock order as /auth/verify-email: a verification
-        // that lands first makes the conditional update below match nothing.
-        await tx.userToken.updateMany({
-          where: { userId: existing.id, type: 'email_verify', usedAt: null },
-          data: { usedAt: new Date() },
+  r.post(
+    '/auth/register',
+    publicLimit,
+    accountLimit,
+    withTimingFloor(floor, async (req, res) => {
+      const body = parse(
+        z.object({
+          organizationName: z.string().trim().min(2).max(200),
+          name: z.string().trim().min(1).max(200),
+          email: Email,
+          password: PasswordSchema,
+        }),
+        req.body,
+      );
+      // hashed on every path, so the argon2 cost doesn't reveal whether the address is taken (L9)
+      const passwordHash = await hashPassword(body.password);
+      const existing = await prisma.user.findUnique({
+        where: { email: body.email },
+        include: { organization: { include: { _count: { select: { users: true } } } } },
+      });
+      // An unverified sign-up proves nothing about who owns the address. Someone registering it
+      // again replaces that pending sign-up instead of being locked out (audit L3). Only the
+      // latest link works, and it activates the password chosen with it.
+      const pending =
+        existing &&
+        !existing.emailVerifiedAt &&
+        existing.organization.type === 'client' &&
+        existing.organization._count.users === 1;
+      if (existing && !pending) {
+        // Same response either way, so the endpoint can't be used to discover accounts.
+        await alreadyRegistered(body.email);
+        res.status(202).json({ status: 'check_email' });
+        return;
+      }
+      const role = await prisma.role.findUniqueOrThrow({ where: { key: 'client_admin' } });
+      const token = randomToken();
+      const user = await prisma.$transaction(async (tx) => {
+        if (existing) {
+          // Tokens first, then the user, the same lock order as /auth/verify-email: a verification
+          // that lands first makes the conditional update below match nothing.
+          await tx.userToken.updateMany({
+            where: { userId: existing.id, type: 'email_verify', usedAt: null },
+            data: { usedAt: new Date() },
+          });
+          const replaced = await tx.user.updateMany({
+            where: { id: existing.id, emailVerifiedAt: null },
+            data: { name: body.name, passwordHash, failedLoginCount: 0, lockedUntil: null },
+          });
+          if (replaced.count !== 1) return null;
+          await tx.organization.update({
+            where: { id: existing.organizationId },
+            data: { name: body.organizationName },
+          });
+          await tx.userToken.create({
+            data: {
+              userId: existing.id,
+              type: 'email_verify',
+              tokenHash: sha256(token),
+              expiresAt: new Date(Date.now() + VERIFY_TTL_MS),
+            },
+          });
+          return existing;
+        }
+        const org = await tx.organization.create({
+          data: { name: body.organizationName, type: 'client' },
         });
-        const replaced = await tx.user.updateMany({
-          where: { id: existing.id, emailVerifiedAt: null },
-          data: { name: body.name, passwordHash, failedLoginCount: 0, lockedUntil: null },
-        });
-        if (replaced.count !== 1) return null;
-        await tx.organization.update({
-          where: { id: existing.organizationId },
-          data: { name: body.organizationName },
+        const created = await tx.user.create({
+          data: {
+            organizationId: org.id,
+            name: body.name,
+            email: body.email,
+            passwordHash,
+            status: 'active',
+            roles: { create: { roleId: role.id } },
+          },
         });
         await tx.userToken.create({
           data: {
-            userId: existing.id,
+            userId: created.id,
             type: 'email_verify',
             tokenHash: sha256(token),
             expiresAt: new Date(Date.now() + VERIFY_TTL_MS),
           },
         });
-        return existing;
+        return created;
+      });
+      if (!user) {
+        // verified meanwhile: from now on it's an existing account
+        await alreadyRegistered(body.email);
+        res.status(202).json({ status: 'check_email' });
+        return;
       }
-      const org = await tx.organization.create({
-        data: { name: body.organizationName, type: 'client' },
+      await req.audit({
+        action: existing ? 'auth.register.replaced_unverified' : 'auth.register',
+        entity: 'Organization',
+        entityId: user.organizationId,
+        actorId: user.id,
+        organizationId: user.organizationId,
       });
-      const created = await tx.user.create({
-        data: {
-          organizationId: org.id,
-          name: body.name,
-          email: body.email,
-          passwordHash,
-          status: 'active',
-          roles: { create: { roleId: role.id } },
-        },
+      await mailer.send({
+        to: user.email,
+        subject: 'Verify your Datascribe email',
+        text: `Welcome to Datascribe. Confirm your email address:\n${env.APP_URL}/verify-email?token=${token}\nThis link expires in 24 hours.`,
       });
-      await tx.userToken.create({
-        data: {
-          userId: created.id,
-          type: 'email_verify',
-          tokenHash: sha256(token),
-          expiresAt: new Date(Date.now() + VERIFY_TTL_MS),
-        },
-      });
-      return created;
-    });
-    if (!user) {
-      // verified meanwhile: from now on it's an existing account
-      await alreadyRegistered(body.email);
       res.status(202).json({ status: 'check_email' });
-      return;
-    }
-    await req.audit({
-      action: existing ? 'auth.register.replaced_unverified' : 'auth.register',
-      entity: 'Organization',
-      entityId: user.organizationId,
-      actorId: user.id,
-      organizationId: user.organizationId,
-    });
-    await mailer.send({
-      to: user.email,
-      subject: 'Verify your Datascribe email',
-      text: `Welcome to Datascribe. Confirm your email address:\n${env.APP_URL}/verify-email?token=${token}\nThis link expires in 24 hours.`,
-    });
-    res.status(202).json({ status: 'check_email' });
-  });
+    }),
+  );
 
   async function consumeToken(
     type: 'email_verify' | 'password_reset',
@@ -601,36 +618,41 @@ export function authRouter(deps: Deps): Router {
   });
 
   // ── Forgot / reset password ────────────────────────────────────────────
-  r.post('/auth/forgot', publicLimit, accountLimit, async (req, res) => {
-    const { email } = parse(z.object({ email: Email }), req.body);
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (user && user.status === 'active') {
-      const token = randomToken();
-      await prisma.userToken.create({
-        data: {
-          userId: user.id,
-          type: 'password_reset',
-          tokenHash: sha256(token),
-          expiresAt: new Date(Date.now() + RESET_TTL_MS),
-        },
-      });
-      await req.audit({
-        action: 'auth.password.reset_requested',
-        entity: 'User',
-        entityId: user.id,
-        actorId: user.id,
-        organizationId: user.organizationId,
-      });
-      await mailer.send({
-        to: user.email,
-        ...(await renderEmail(prisma, 'password_reset', {
-          name: user.name,
-          resetUrl: `${env.APP_URL}/reset-password?token=${token}`,
-        })),
-      });
-    }
-    res.status(202).json({ status: 'check_email' });
-  });
+  r.post(
+    '/auth/forgot',
+    publicLimit,
+    accountLimit,
+    withTimingFloor(floor, async (req, res) => {
+      const { email } = parse(z.object({ email: Email }), req.body);
+      const user = await prisma.user.findUnique({ where: { email } });
+      if (user && user.status === 'active') {
+        const token = randomToken();
+        await prisma.userToken.create({
+          data: {
+            userId: user.id,
+            type: 'password_reset',
+            tokenHash: sha256(token),
+            expiresAt: new Date(Date.now() + RESET_TTL_MS),
+          },
+        });
+        await req.audit({
+          action: 'auth.password.reset_requested',
+          entity: 'User',
+          entityId: user.id,
+          actorId: user.id,
+          organizationId: user.organizationId,
+        });
+        await mailer.send({
+          to: user.email,
+          ...(await renderEmail(prisma, 'password_reset', {
+            name: user.name,
+            resetUrl: `${env.APP_URL}/reset-password?token=${token}`,
+          })),
+        });
+      }
+      res.status(202).json({ status: 'check_email' });
+    }),
+  );
 
   r.post('/auth/reset', publicLimit, async (req, res) => {
     const body = parse(
