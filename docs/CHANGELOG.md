@@ -1,5 +1,22 @@
 # Changelog
 
+## M10 part 4b — Sentry with PHI scrubbing (2026-10-24, branch `sentinel/m10`)
+
+Approved by Shiva on 2026-10-24 (item 3). Design notes: D-119.
+
+- **Sentry SDKs**: `@sentry/node` in the API and worker, `@sentry/nextjs` in the web app
+  (`instrumentation.ts`, `instrumentation-client.ts`, no `next.config` wrapping). Off unless
+  `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` is set; no default PII, no local variables, tracing sample
+  rate configurable (default 0). New env: `SENTRY_TRACES_SAMPLE_RATE`, `SENTRY_ENVIRONMENT`,
+  `SENTRY_RELEASE` and their `NEXT_PUBLIC_` twins; the API and worker refuse malformed values.
+- **Scrubber** `@datascribe/shared/sentry` on `beforeSend`, `beforeSendTransaction` and
+  `beforeBreadcrumb`: drops request bodies, cookies, auth and other headers, query strings, client
+  IP, user details, local variables and PHI-named fields; redacts emails, dates, long numbers,
+  tokens and quoted values in messages; drops console breadcrumbs and SQL/Redis span text. 37 unit
+  tests with synthetic PHI.
+- Reported: API unhandled 500s, worker jobs failing their last attempt (queue tag only), Next
+  request errors, browser errors, uncaught exceptions.
+
 ## M10 part 4a — KMS-only production storage, WCAG check (2026-10-24, branch `sentinel/m10`)
 
 Both approved by Shiva on 2026-10-24. Design notes: D-117, D-118.

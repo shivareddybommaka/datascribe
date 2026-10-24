@@ -10,11 +10,14 @@ import { createSmtpMailer } from './lib/mailer';
 import { MedicalSwitches } from './lib/medical-switches';
 import { RedisRateLimitStore, createRedis } from './lib/redis';
 import { relayKey } from './lib/relay-token';
+import { initSentry } from './lib/sentry';
 import { S3DocumentStorage } from './lib/storage';
 import { encryptLegacyPhi } from './services/phi-backfill';
 
 const env = loadEnv();
 const logger = createLogger(env.LOG_LEVEL);
+// D-119: off unless SENTRY_DSN is set; first, so start-up errors are reported too
+const reportError = initSentry(env);
 const phiKey = loadKey(env.PHI_ENCRYPTION_KEY);
 const gateway = createGateway({
   ...env,
@@ -112,6 +115,7 @@ const app = createApp({
   gateway,
   store: new LocalObjectStore(repoPath(env.INVOICE_STORAGE_DIR)),
   storage,
+  reportError,
 });
 
 const onListening = () => {

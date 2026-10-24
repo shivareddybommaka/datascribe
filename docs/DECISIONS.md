@@ -1231,6 +1231,53 @@ queues.ts`) keeps them; the API and the usage tracker already pass the URL to io
 - Limits: axe catches roughly a third of WCAG failures. Keyboard paths, focus order, and
   screen-reader output still need a manual AA review (SECURITY-CHECKLIST, Accessibility).
 
+## D-119 — Sentry error reporting with PHI scrubbing (M10 part 4b, 2026-10-24)
+
+- Approved by Shiva (2026-10-24, item 3). `@sentry/node` 10.76 in `apps/api` and `apps/worker`,
+  `@sentry/nextjs` 10.76 in `apps/web`. **Off unless a DSN is set** (`SENTRY_DSN` for the API and
+  worker, `NEXT_PUBLIC_SENTRY_DSN` for the web app): without one `Sentry.init` is never called, so
+  tests and local runs make no network calls. The web app loads the SDK through a dynamic import, so
+  browsers don't download it either.
+- Options: `sendDefaultPii: false`, `includeLocalVariables: false`, `tracesSampleRate` from
+  `SENTRY_TRACES_SAMPLE_RATE` / `NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE` (0..1, default 0 = errors
+  only), environment = `SENTRY_ENVIRONMENT` or the deploy profile (browsers can't see `DEPLOY_ENV`,
+  so staging builds set `NEXT_PUBLIC_SENTRY_ENVIRONMENT=staging`), optional release. The API and the
+  worker refuse to start with a malformed DSN or sample rate (names only, never values). No session
+  replay, no Sentry tunnel route, no `withSentryConfig` wrapping of `next.config.ts` (source-map upload
+  would need an auth token and network at build time; later, if wanted).
+- **Scrubber** `packages/shared/src/sentry.ts` (`@datascribe/shared/sentry`, no Node or Sentry
+  imports) is wired into `beforeSend`, `beforeSendTransaction` and `beforeBreadcrumb` in all three
+  apps. It keeps the shape of an error and drops what could carry PHI or credentials:
+  - request: only the method, the URL without query string or fragment (token path segments such as
+    `/invites/<token>`, `/reset-password/<token>`, `/storage-relay/<token>` and any opaque segment of
+    24+ characters become `[redacted]`), and the `accept`, `content-type`, `content-length`,
+    `x-request-id` and trace headers. Bodies, cookies, `Authorization` and every other header, query
+    strings and `env` (client IP) are dropped. `user` keeps only `id`.
+  - exceptions: type and stack frames kept; local variables and `mechanism.data` dropped. Messages of
+    Prisma, Zod and validation errors (they quote input values) are replaced; other messages go
+    through `redactText`: URLs scrubbed as above, emails, dates, runs of 6+ digits, bearer tokens,
+    JWTs, long tokens and anything in double quotes are replaced, capped at 300 characters.
+  - `extra`, `contexts`, `tags`, breadcrumb and span data: keys that name PHI or secrets are dropped
+    at any depth (patient, birth/dob, notes, text, body, content, summary, chronology, diagnosis,
+    cipher/encrypted, email, phone, address, file name, matter name, reference, password, token,
+    auth, cookie, session, secret, signature, query …); remaining strings go through `redactText`.
+  - breadcrumbs: console ones are dropped (they can hold anything); `ui.*` keep only their category
+    (element labels can name a patient); fetch/xhr/http keep method, status and scrubbed URL;
+    navigation keeps scrubbed from/to.
+  - spans: SQL, cache and Redis descriptions are replaced by their op (Redis keys can hold emails).
+- What is reported: the API's unhandled 500s (`createApp` deps `reportError`; 4xx and handled
+  errors are not), uncaught exceptions / rejections in each process (SDK defaults), worker jobs that
+  failed their **last** attempt (tagged with the queue name only, no job data), Next server request
+  errors (`onRequestError`) and browser errors.
+- Limit: a patient name written into free text can't be recognised by pattern. Code must still keep
+  PHI out of error messages (CLAUDE.md, D-105); the scrubber is the second line. In the Sentry
+  project, also turn on server-side data scrubbing and "Prevent storing of IP addresses", and sign
+  Sentry's BAA before production carries real PHI (Shiva's call).
+- Tests: `packages/shared/src/sentry.test.ts` (synthetic event with PHI in body, query, cookies,
+  auth headers, extra, user, breadcrumbs, spans and messages; asserts none survives),
+  `apps/api/src/app.test.ts` (only 500s reported; env validation), `apps/worker/src/sentry.test.ts`
+  and `env.test.ts`, `apps/web/lib/sentry.test.ts`.
+
 ## D-120 — Deploy profile: local, staging, production (launchpad, 2026-10-24)
 
 - Shiva asked (2026-10-24) for a staging copy on the Mac Studio at `https://datascribe.stayspot.app`

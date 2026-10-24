@@ -46,6 +46,7 @@ import {
 import { renderPdfPage } from './pipeline/render-page';
 import { s3DocumentObjects } from './pipeline/s3';
 import { DEFAULT_JOB_OPTIONS, PIPELINE_QUEUES, redisConnection } from './queues';
+import { closeSentry, initSentry, isFinalAttempt } from './sentry';
 
 const logger = pino({ base: { service: 'worker' }, level: process.env.LOG_LEVEL ?? 'info' });
 const connection = redisConnection(process.env.REDIS_URL ?? 'redis://localhost:6379');
@@ -56,6 +57,8 @@ const queueOpts = { connection, prefix };
 // Same deploy profile as the API (D-120, D-117); production also needs ClamAV.
 assertWorkerEnv(process.env);
 const deployEnv = resolveDeployEnv(process.env);
+// D-119: off unless SENTRY_DSN is set
+const reportJobError = initSentry(process.env);
 
 // ── §7 stage 1: virus scan (D-072, moved from the API in D-081); staging may use the mock ──
 const scanner = createScanner({
@@ -232,6 +235,14 @@ workers.push(
   ),
 );
 
+if (reportJobError) {
+  for (const worker of workers) {
+    worker.on('failed', (job, err) => {
+      if (job && isFinalAttempt(job)) reportJobError(err, worker.name);
+    });
+  }
+}
+
 logger.info(
   { queues: workers.length, deploy: deployEnv, scanner: scanner.name, ocr: ocrKind },
   'worker started',
@@ -247,6 +258,7 @@ async function shutdown() {
   await usage.close();
   if (ocr instanceof TesseractOcrProvider) await ocr.close();
   await prisma.$disconnect();
+  await closeSentry();
   process.exit(0);
 }
 process.on('SIGINT', shutdown);

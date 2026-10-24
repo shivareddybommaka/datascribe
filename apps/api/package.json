@@ -20,6 +20,7 @@
     "@datascribe/medical-data": "workspace:*",
     "@datascribe/scan": "workspace:*",
     "@datascribe/shared": "workspace:*",
+    "@sentry/node": "^10.76.2",
     "argon2": "^0.43.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",

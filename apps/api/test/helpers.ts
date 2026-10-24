@@ -63,6 +63,7 @@ export function buildApp(
     envOverrides?: Record<string, string>;
     scanner?: VirusScanner;
     rateLimitStore?: Deps['rateLimitStore'];
+    reportError?: Deps['reportError'];
   } = {},
 ) {
   const mailer = new MemoryMailer();
@@ -93,6 +94,7 @@ export function buildApp(
     medical: opts.medical,
     storage,
     inlineScan: opts.scanner ?? new MockVirusScanner(),
+    reportError: opts.reportError,
   });
   return { app, mailer, gateway, store, storage, storageReady: ready };
 }

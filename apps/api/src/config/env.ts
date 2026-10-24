@@ -1,4 +1,5 @@
 import { deployProfileIssues, resolveDeployEnv, type DeployEnv } from '@datascribe/shared/deploy';
+import { sentryEnvIssues } from '@datascribe/shared/sentry';
 import { z } from 'zod';
 
 const bool = z
@@ -132,6 +133,13 @@ export const EnvSchema = z
     LOG_LEVEL: z
       .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
       .default('info'),
+    /** error reporting (D-119); unset = off. Events are scrubbed of PHI before sending */
+    SENTRY_DSN: optionalString,
+    /** 0..1 share of requests traced; unset = 0 (errors only) */
+    SENTRY_TRACES_SAMPLE_RATE: optionalString,
+    /** unset = DEPLOY_ENV */
+    SENTRY_ENVIRONMENT: optionalString,
+    SENTRY_RELEASE: optionalString,
   })
   .superRefine((env, ctx) => {
     // D-120: staging is a production build with its own, narrower allowances and refusals.
@@ -153,6 +161,12 @@ export const EnvSchema = z
       RATE_LIMIT_PUBLIC: String(env.RATE_LIMIT_PUBLIC),
       RATE_LIMIT_ACCOUNT: String(env.RATE_LIMIT_ACCOUNT),
       AUTH_RESPONSE_FLOOR_MS: String(env.AUTH_RESPONSE_FLOOR_MS),
+    })) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: [issue.path], message: issue.message });
+    }
+    for (const issue of sentryEnvIssues({
+      SENTRY_DSN: env.SENTRY_DSN,
+      SENTRY_TRACES_SAMPLE_RATE: env.SENTRY_TRACES_SAMPLE_RATE,
     })) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: [issue.path], message: issue.message });
     }

@@ -1,5 +1,6 @@
+import type { Store } from 'express-rate-limit';
 import request from 'supertest';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { APP_URL, buildApp } from '../test/helpers';
 import { redactPath } from './app';
 import { loadEnv, staffEmailDomains } from './config/env';
@@ -43,6 +44,45 @@ describe('api skeleton', () => {
     expect(ok.headers['access-control-allow-origin']).toBe(APP_URL);
     const bad = await request(app).get('/api/v1/health').set('Origin', 'https://evil.example');
     expect(bad.headers['access-control-allow-origin']).toBeUndefined();
+  });
+});
+
+describe('error reporting (D-119)', () => {
+  const brokenStore = (): Store => ({
+    increment: async () => {
+      throw new Error('store down');
+    },
+    decrement: async () => {},
+    resetKey: async () => {},
+  });
+
+  it('reports unhandled 500s only, not 4xx answers', async () => {
+    const reportError = vi.fn();
+    const broken = buildApp({ reportError, rateLimitStore: brokenStore }).app;
+    const res = await request(broken).post('/api/v1/auth/forgot').send({ email: 'x@test.example' });
+    expect(res.status).toBe(500);
+    expect(reportError).toHaveBeenCalledTimes(1);
+    expect((reportError.mock.calls[0]![0] as Error).message).toBe('store down');
+
+    const ok = buildApp({ reportError }).app;
+    expect((await request(ok).get('/api/v1/nope')).status).toBe(404);
+    expect((await request(ok).get('/api/v1/cases')).status).toBe(401);
+    expect(reportError).toHaveBeenCalledTimes(1);
+  });
+
+  it('validates the Sentry settings by name, off by default', () => {
+    expect(loadEnv(baseEnv).SENTRY_DSN).toBeUndefined();
+    expect(loadEnv({ ...baseEnv, SENTRY_DSN: '' }).SENTRY_DSN).toBeUndefined();
+    expect(() => loadEnv({ ...baseEnv, SENTRY_DSN: 'nope' })).toThrow(/SENTRY_DSN/);
+    expect(() => loadEnv({ ...baseEnv, SENTRY_TRACES_SAMPLE_RATE: '1.5' })).toThrow(
+      /SENTRY_TRACES_SAMPLE_RATE/,
+    );
+    const env = loadEnv({
+      ...baseEnv,
+      SENTRY_DSN: 'https://key@o1.ingest.example/1',
+      SENTRY_TRACES_SAMPLE_RATE: '0.1',
+    });
+    expect(env.SENTRY_TRACES_SAMPLE_RATE).toBe('0.1');
   });
 });
 
