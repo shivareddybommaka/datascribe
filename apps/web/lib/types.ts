@@ -409,8 +409,13 @@ export interface WorkspaceDeliverable {
   status: 'draft' | 'in_qa' | 'changes_requested' | 'approved' | 'delivered';
   lockedAt: string | null;
   createdAt: string;
+  /** Who saved this version; null = written by the pipeline (D-086). */
+  editedBy: { id: string; name: string } | null;
   content: DeliverableContent;
 }
+
+/** GET /cases/:id/deliverables/:type/versions (D-086). */
+export type DeliverableVersion = Omit<WorkspaceDeliverable, 'type' | 'content'>;
 
 /** GET /cases/:id/workspace (M6 part 2, D-084). Staff only. */
 export interface CaseWorkspace {

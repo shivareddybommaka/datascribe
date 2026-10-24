@@ -4,13 +4,20 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
+import { useMe } from '@/components/auth';
+import {
+  DeliverableEditor,
+  VersionHistory,
+  isEditable,
+} from '@/components/cases/deliverable-editor';
 import { CaseStatusBadge } from '@/components/portal/labels';
-import { Badge, Card, Empty, ErrorText, Select, cn } from '@/components/ui';
+import { Badge, Button, Card, Empty, ErrorText, Select, cn } from '@/components/ui';
 import { api } from '@/lib/api';
 import { date } from '@/lib/format';
 import type {
   CaseWorkspace,
   ChronologyEntry,
+  DeliverableContent,
   DocumentPageText,
   WorkspaceDeliverable,
 } from '@/lib/types';
@@ -31,7 +38,8 @@ interface PageRef {
 /**
  * §5.4 staff workspace (M6 part 2, D-084): source documents on the left, extracted data and the
  * draft deliverables on the right; a chronology entry or index row jumps to its source page.
- * Pages show as images with thumbnails (part 2b, D-085), or as extracted text.
+ * Pages show as images with thumbnails (part 2b, D-085), or as extracted text. Drafts are edited
+ * inline as new versions, with history and restore (part 3b, D-087).
  */
 export default function CaseWorkspacePage() {
   const { id } = useParams<{ id: string }>();
@@ -92,6 +100,10 @@ export default function CaseWorkspacePage() {
               </div>
               <div role="tabpanel" aria-label={TABS.find((t) => t.key === tab)!.label}>
                 <DeliverablePanel
+                  key={tab}
+                  caseId={data.case.id}
+                  caseStatus={data.case.status}
+                  documents={data.documents}
                   deliverable={deliverable(tab)}
                   current={current}
                   onCite={setPicked}
@@ -291,37 +303,100 @@ function PageThumb({
   );
 }
 
+/**
+ * The latest version of one deliverable: read view, inline editor (part 3b, D-087) for staff with
+ * `deliverables:edit` while the case is in review, and the version history with restore.
+ */
 function DeliverablePanel({
+  caseId,
+  caseStatus,
   deliverable,
+  documents,
   current,
   onCite,
 }: {
+  caseId: string;
+  caseStatus: string;
   deliverable: WorkspaceDeliverable | undefined;
+  documents: CaseWorkspace['documents'];
   current: PageRef | null;
   onCite: (p: PageRef) => void;
 }) {
+  const me = useMe();
+  const [editing, setEditing] = useState(false);
   if (!deliverable) return <Empty>Not generated for this case.</Empty>;
-  const c = deliverable.content;
-  const meta = (
-    <p className="mb-3 text-xs text-muted">
-      Version {deliverable.version} · {deliverable.status.replace(/_/g, ' ')}
-    </p>
+  const canEdit =
+    me.permissions.some((p) => p.startsWith('deliverables:edit:')) &&
+    isEditable(caseStatus, deliverable);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+        <span>
+          Version {deliverable.version} · {deliverable.status.replace(/_/g, ' ')}
+          {deliverable.editedBy ? ` · edited by ${deliverable.editedBy.name}` : ''}
+        </span>
+        {canEdit && !editing && (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="ml-auto"
+            onClick={() => setEditing(true)}
+          >
+            Edit
+          </Button>
+        )}
+      </div>
+      {editing && canEdit ? (
+        <DeliverableEditor
+          key={deliverable.id}
+          caseId={caseId}
+          deliverable={deliverable}
+          documents={documents}
+          current={current}
+          onCite={onCite}
+          onDone={() => setEditing(false)}
+        />
+      ) : (
+        <DeliverableView content={deliverable.content} current={current} onCite={onCite} />
+      )}
+      {!editing && (
+        <VersionHistory
+          key={deliverable.type}
+          caseId={caseId}
+          latest={deliverable}
+          canRestore={canEdit}
+          render={(content) => <DeliverableView content={content} current={null} />}
+        />
+      )}
+    </div>
   );
+}
+
+function DeliverableView({
+  content: c,
+  current,
+  onCite,
+}: {
+  content: DeliverableContent;
+  current: PageRef | null;
+  /** Omitted in the version preview: citations there don't jump. */
+  onCite?: (p: PageRef) => void;
+}) {
   const isCurrent = (p: PageRef) =>
     current?.documentId === p.documentId && current.pageNumber === p.pageNumber;
 
   if (c.kind === 'chronology') {
     return (
       <>
-        {meta}
         {c.entries.length === 0 && <Empty>No entries.</Empty>}
-        <ol className="space-y-2">
+        <ol aria-label="Chronology entries" className="space-y-2">
           {c.entries.map((e: ChronologyEntry, i) => (
             <li key={e.eventId ?? i}>
               <button
                 type="button"
-                disabled={!e.citation}
-                onClick={() => e.citation && onCite(e.citation)}
+                disabled={!e.citation || !onCite}
+                onClick={() => e.citation && onCite?.(e.citation)}
                 className={cn(
                   'w-full rounded border p-3 text-left text-sm',
                   e.citation && isCurrent(e.citation)
@@ -356,7 +431,6 @@ function DeliverablePanel({
   if (c.kind === 'index') {
     return (
       <>
-        {meta}
         <table className="w-full text-sm">
           <thead className="text-left text-muted">
             <tr>
@@ -374,7 +448,8 @@ function DeliverablePanel({
                   <button
                     type="button"
                     className="text-brand-700 hover:underline"
-                    onClick={() => onCite({ documentId: r.documentId, pageNumber: r.pageFrom })}
+                    disabled={!onCite}
+                    onClick={() => onCite?.({ documentId: r.documentId, pageNumber: r.pageFrom })}
                   >
                     {r.fileName} p. {r.pageFrom}
                     {r.pageTo !== r.pageFrom ? `–${r.pageTo}` : ''}
@@ -396,7 +471,6 @@ function DeliverablePanel({
 
   return (
     <>
-      {meta}
       <div className="space-y-4 text-sm">
         {c.sections.map((s, i) => (
           <section key={i}>

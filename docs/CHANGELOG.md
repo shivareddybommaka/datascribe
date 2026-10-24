@@ -1,5 +1,19 @@
 # Changelog
 
+## M6 part 3b — Deliverable editor in the staff workspace (2026-10-25, master)
+
+Design notes: D-087.
+
+- **`/console/cases/[id]`**: an **Edit** button (staff with `deliverables:edit` while the case is in
+  review and the draft isn't with QA) turns the tab into an inline editor: chronology entries (date,
+  type, provider, facility, description, "Cite viewed page", add / remove), index rows (pages,
+  record type, providers, dates, remove) and summary paragraphs (edit, add, remove). **Save new
+  version** calls the part 3a API; a 409 offers "Discard and load the latest".
+- **Version history** under each deliverable: who saved each version (or "Pipeline"), when, status;
+  **View** opens it read-only, **Restore** saves its content as a new version.
+- E2E: the M5 DoD test now also checks that the ops manager can't edit, and that an editor (super
+  admin) edits a chronology entry (version 2) and restores version 1 (version 3).
+
 ## M6 part 3a — Versioned deliverable edits, API (2026-10-25, master)
 
 Design notes: D-086.

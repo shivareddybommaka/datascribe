@@ -14,13 +14,13 @@ existing CRM, never touch), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025). CMS 
 | M3 Website + CMS              | done (merged from `storefront/m3`) | Lighthouse (mobile) performance 99–100, SEO 100 on all 7 public pages (D-127, `docs/LIGHTHOUSE.md`)                                                                                                                                   |
 | M4 Portal cases + uploads     | done (merged from `portal/m4`)     | DoD test green (300-page PDF, interrupted + resumed); D-070..D-077                                                                                                                                                                    |
 | M5 Pipeline                   | done (master)                      | DoD e2e green (upload → 7 stages → in_review, all cited); notify; Tesseract OCR (D-082)                                                                                                                                               |
-| M6 Workspace + QA + delivery  | **in progress (master)**           | part 1 done: case queue + assignment (D-083); part 2 done: workspace API + `/console/cases/[id]` (citation jump, D-084), page images + thumbnails (D-085); 3a versioned-edit API done (D-086); 3b console editor next                 |
+| M6 Workspace + QA + delivery  | **in progress (master)**           | part 1 done: case queue + assignment (D-083); part 2 done: workspace API + `/console/cases/[id]` (citation jump, D-084), page images + thumbnails (D-085); 3a versioned-edit API (D-086) + 3b console editor (D-087) done; 4 QA next  |
 | M7 CRM                        | done                               |                                                                                                                                                                                                                                       |
 | M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen built in M4; Stripe test key needed for the manual test-card demo                                                                                                                                           |
 | M9 Notifications + dashboards | done except 3 events blocked on M6 | 8/11 §5.8 events + 4 dashboards; part 3 merged (editable notification emails, demo, D-096/D-097); `assigned_to_you` wired by M6 part 1; QA / approved / delivered wait for M6                                                         |
 | M10 Hardening                 | done; CI deploy waits on Shiva     | parts 1–8 merged (D-100..D-131): security fixes, Dockerfiles, IaC (never applied), KMS-only prod, axe WCAG, Sentry, Lighthouse, retention job, QA lookups; manual OIDC staging deploy workflow never run (D-131); `docs/demos/M10.md` |
 
-Tests on `main` (2026-10-25 07:10, after merging M10 part 8 close-out + M6 part 3a): format, lint,
+Tests on `main` (2026-10-25 09:25, after M6 part 3b): format, lint,
 typecheck, unit/API tests and build green, 36/36 turbo tasks; Playwright e2e 32/32 (run on
 `E2E_WEB_PORT=3150` / `E2E_API_PORT=4150`: port 3100 was taken by another project's server). Staging (still running
 `155a8e5` code) not restarted: Shiva was testing sign-in; restart with `pnpm staging:stop` /
@@ -44,7 +44,8 @@ M6 plan (master, in order): 1 case queue + SLA flags + assignment (API + `/conso
 entry → source page (2a ✅ D-084: workspace + page-text API, console page with text view and citation
 jump; 2b ✅ D-085: worker-rendered page images + thumbnails, staff-only image API, retention deletes them) · 3 versioned edits of chronology entries, index rows and summary paragraphs
 (3a ✅ D-086: `PUT /cases/:id/deliverables/:type` new version per save, optimistic lock, citation
-check, version history API, `Deliverable.editedById`; 3b console editor + version list / restore) ·
+check, version history API, `Deliverable.editedById`; 3b ✅ D-087: console inline editor, "Cite viewed page", version list with
+view / restore) ·
 4 submit for QA, QA approve / request changes (citations required, approval locks the version),
 `notifyQaDecision` · 5 final report PDF + DOCX from templates to S3, `delivered`, usage record,
 `notifyDelivered`, client download · 6 M6 DoD e2e (summarizer edits, QA approves, client downloads).
@@ -60,7 +61,7 @@ Rules: `docs/AUTOPILOT.md`. OpenClaw automation "Datascribe autopilot" (id
 Master on main: M5b → M6. In parallel (Shiva, 2026-10-24): M9 on `herald/m9`, M10 on `sentinel/m10`;
 the autopilot merges finished parts and re-spawns the next part. M10 finished 2026-10-25 (part 8
 merged); herald has nothing left until M6 adds the QA / approved / delivered events. No subagents
-running; master continues M6 part 3.
+running; master continues M6 part 4 (submit for QA, approve / request changes).
 
 ## Agent team
 

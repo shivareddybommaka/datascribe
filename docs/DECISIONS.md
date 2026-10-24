@@ -1680,3 +1680,20 @@ inputs.apply`.
   staff-edited version; it adds a version on top instead.
 - The console editor (inline edit of chronology entries, index rows and summary paragraphs, version
   list, restore) is part 3b.
+
+## D-087 — Console deliverable editor (M6 part 3b, 2026-10-25)
+
+- **Edit a local copy, save the whole document**: the editor clones the latest version's content,
+  edits it in React state and saves it with `baseVersion` = the version it started from (D-086).
+  No autosave: a save is a version, and autosave would flood the history.
+- **Who sees Edit**: a UI hint only (the API decides): a `deliverables:edit:*` permission, case
+  `in_review` / `changes_requested`, latest version `draft` / `changes_requested` and not locked.
+  The ops manager (view only) and QA reviewers get the read view and the history without Restore.
+- **Citations**: chronology entries are re-cited with "Cite viewed page" (the page open in the
+  viewer on the left), and new entries start cited to it, so an entry can't be added without a
+  source. Index rows edit their page range in place; the API checks every page exists (D-086).
+  Medical codes are kept as the pipeline set them (not edited here).
+- **Conflicts**: a 409 (`version_conflict`, `deliverable_locked`, `case_not_editable`) keeps the
+  draft on screen and offers "Discard and load the latest"; there is no merge.
+- **History**: view a version read-only in a dialog (audited by the API); Restore fetches that
+  version and saves its content as a new version on top of the latest, so nothing is lost.

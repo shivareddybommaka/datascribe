@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Browser, type Page } from '@playwright/test';
 import { authenticator } from 'otplib';
 import { TEST_PASSWORD, TEST_TOTP_SECRET } from '../../api/test/constants';
 import { pipelineResult } from '../../api/test/pipeline-check';
@@ -96,19 +96,19 @@ test('M5 DoD: an uploaded case runs through the pipeline to review, every chrono
   }
 
   // M6 part 2 (D-084): staff open the workspace; a chronology entry jumps to its source page
-  const staff = await browser.newPage();
-  await staff.goto('/console/cases');
-  await staff.getByLabel('Email').fill('ops.manager@datascribe.example');
-  await staff.getByLabel('Password').fill(TEST_PASSWORD);
-  await staff.getByRole('button', { name: 'Continue' }).click();
-  await staff.getByLabel('Authentication code').fill(authenticator.generate(TEST_TOTP_SECRET));
-  await staff.getByRole('button', { name: 'Verify' }).click();
-  await expect(staff).not.toHaveURL(/\/console\/login/);
+  const staff = await staffPage(browser, 'ops.manager@datascribe.example');
   await staff.goto(`/console/cases/${caseId}`);
   await expect(staff.getByRole('heading', { level: 1 })).toContainText(MATTER);
   await expect(staff.getByLabel('Document')).toContainText(FILE);
   const target = entries[entries.length - 1]!;
-  const items = staff.getByRole('tabpanel', { name: 'Chronology' }).getByRole('listitem');
+  const items = staff
+    .getByRole('tabpanel', { name: 'Chronology' })
+    .getByRole('list', { name: 'Chronology entries' })
+    .getByRole('listitem');
+  // the ops manager may view drafts but not edit them
+  await expect(
+    staff.getByRole('tabpanel', { name: 'Chronology' }).getByRole('button', { name: 'Edit' }),
+  ).toHaveCount(0);
   await expect(items).toHaveCount(entries.length);
   await items.last().getByRole('button').click();
   await expect(
@@ -132,4 +132,42 @@ test('M5 DoD: an uploaded case runs through the pipeline to review, every chrono
   await staff.getByRole('tab', { name: 'Index' }).click();
   await expect(staff.getByRole('tabpanel', { name: 'Index' })).toContainText(FILE);
   await staff.close();
+
+  // part 3b (D-087): an editor edits an entry (a new version), then restores the pipeline's. The
+  // super admin, because crm.spec resets the case manager's password.
+  const cm = await staffPage(browser, 'super.admin@datascribe.example');
+  await cm.goto(`/console/cases/${caseId}`);
+  const panel = cm.getByRole('tabpanel', { name: 'Chronology' });
+  const first = panel
+    .getByRole('list', { name: 'Chronology entries' })
+    .getByRole('listitem')
+    .first();
+  await panel.getByRole('button', { name: 'Edit', exact: true }).click();
+  const edited = 'Follow-up visit, edited by staff (synthetic)';
+  const description = panel.getByLabel('Entry 1 description');
+  const original = await description.inputValue();
+  expect(original).not.toBe('');
+  await description.fill(edited);
+  await panel.getByRole('button', { name: 'Save new version' }).click();
+  await expect(first).toContainText(edited);
+  await expect(panel).toContainText('Version 2 · draft · edited by');
+  const history = panel.getByRole('region', { name: 'Version history' });
+  await expect(history.getByRole('listitem')).toHaveCount(2);
+  await history.getByRole('button', { name: 'Restore version 1' }).click();
+  await expect(history.getByRole('listitem')).toHaveCount(3);
+  await expect(first).toContainText(original);
+  await expect(panel).toContainText('Version 3 · draft');
+  await cm.close();
 });
+
+async function staffPage(browser: Browser, email: string): Promise<Page> {
+  const p = await browser.newPage();
+  await p.goto('/console/cases');
+  await p.getByLabel('Email').fill(email);
+  await p.getByLabel('Password').fill(TEST_PASSWORD);
+  await p.getByRole('button', { name: 'Continue' }).click();
+  await p.getByLabel('Authentication code').fill(authenticator.generate(TEST_TOTP_SECRET));
+  await p.getByRole('button', { name: 'Verify' }).click();
+  await expect(p).not.toHaveURL(/\/console\/login/);
+  return p;
+}
