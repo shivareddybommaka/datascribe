@@ -13,15 +13,16 @@ existing CRM, never touch), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025). CMS 
 | M2 Admin console              | done (merged from `admin/m2`)      | custom role takes effect without restart; audit M2 + M4 fixed; D-060..D-064                 |
 | M3 Website + CMS              | done (merged from `storefront/m3`) | Lighthouse ≥ 90 not measured yet (needs Lighthouse install)                                 |
 | M4 Portal cases + uploads     | done (merged from `portal/m4`)     | DoD test green (300-page PDF, interrupted + resumed); D-070..D-077                          |
-| M5 Pipeline                   | **M5b in progress (master)**       | M5a adapters done. M5b steps 1–3 done (D-078..D-080); next: scan stage into the worker      |
+| M5 Pipeline                   | **M5b in progress (master)**       | DoD e2e green (upload → 7 stages → in_review, all cited). Left: notify (needs M9), OCR      |
 | M6 Workspace + QA + delivery  | not started                        |                                                                                             |
 | M7 CRM                        | done                               |                                                                                             |
 | M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen built in M4; Stripe test key needed for the manual test-card demo |
-| M9 Notifications + dashboards | in progress (`herald/m9`)          | part 1 infra committed (`dd32407`); bell UI + merge of main running (hit usage limit once)  |
-| M10 Hardening                 | in progress (`sentinel/m10`)       | part 1 (open audit findings) merged; part 2 (CI e2e + load test) running                    |
+| M9 Notifications + dashboards | in progress (`herald/m9`)          | part 1 infra + bell UI committed (`dda7e8e`); merge of main running, then dashboards        |
+| M10 Hardening                 | in progress (`sentinel/m10`)       | parts 1 + 2a merged (D-100..D-113); part 2b (load test, §10 checklist) running              |
 
-Tests on `main` (2026-10-24, after M5b step 3 and the M10 part 1 merge): lint, typecheck, unit/API
-tests and build green (33/33 turbo tasks; worker 41 tests); Playwright e2e 18/18.
+Tests on `main` (2026-10-24 13:30, after M5b steps 4 + 6 and the M10 part 2a merge): lint,
+typecheck, unit/API tests and build green (36/36 turbo tasks; API 271+, worker 47, scan 6);
+Playwright e2e 19/19 (new: M5 DoD pipeline spec; the e2e now runs the worker too).
 
 M4 merge notes: main's `.env` needs `S3_SSE=none` (local SeaweedFS has no SSE, D-070) or the API's
 uploads fail; the API creates the buckets at startup and encrypts legacy case notes / messages
@@ -30,10 +31,15 @@ uploads fail; the API creates the buckets at startup and encrypts legacy case no
 M5b plan (in order): 1 stages 3–6 pure modules (classify, events, coding, index/chronology) ✅ ·
 2 stage 2 text extraction with pdf.js + OCR hook ✅ · 3 stage runner: BullMQ processors per stage,
 `ProcessingJob` rows, encrypted `DocumentPage` / `ClinicalEvent` / `Deliverable` writes, retries →
-case `on_hold` ✅ (D-080; in-memory store tests, Prisma store covered by step 6) · 4 scan stage moves from the API to the worker (D-072), submit enqueues the pipeline ·
-5 stage 7 `in_review` + notify summarizer · 6 pipeline test (Synthea-style PDF → deliverables, every
-chronology entry cited) = M5 DoD · 7 tesseract OCR provider + page renderer (or Waiting on Shiva if it
-needs a system install).
+case `on_hold` ✅ (D-080) · 4 scan stage in the worker (`packages/scan`), DB-to-queue dispatcher for
+completed uploads and submitted cases ✅ (D-081) · 5 stage 7 `in_review` ✅ + notify summarizer /
+case manager on hold (waits for the M9 merge: herald's emit helper) · 6 M5 DoD e2e (synthetic
+six-record PDF → deliverables, every chronology entry cited, status timeline) ✅ · 7 tesseract OCR
+provider + page renderer (or Waiting on Shiva if it needs a system install).
+
+Running the app locally now needs the worker too (`pnpm --filter @datascribe/worker dev`): without
+it uploads stay "Scanning" and submitted cases aren't processed. SeaweedFS volume limit raised to
+200 (it ran out with parallel worktrees' test buckets; container recreated 2026-10-24 13:12).
 
 ## Autopilot
 
@@ -60,7 +66,8 @@ ledger D-040+, pipeline D-050+, herald D-090+, sentinel D-100+.
 - Lighthouse install (M3 performance/SEO check): yes / later.
 - Free openFDA API key before production (D-052). Should QA reviewers use medical lookups (D-056)?
 - Stripe test key for the manual M8 test-card demo. CMS email adapter choice (editor password reset).
-- CI result on GitHub Actions (agent can't read Actions with the deploy key).
+- CI result on GitHub Actions (agent can't read Actions with the deploy key), now including the new
+  e2e job.
 
 ## Security review (datascribe-auditor)
 
@@ -79,6 +86,9 @@ IaC work and Shiva's call. New env with safe defaults: `RATE_LIMIT_ACCOUNT`, `TR
   overrides for dompurify/postcss/sharp in root package.json (D-020).
 
 - Upgrade pass (D-001): Prisma, Vitest, ESLint, TypeScript, otplib.
-- Usage stats and rate limits are in-memory; move to Redis (M10). E2E in CI (M10).
+- Rate limits and usage stats are in Redis now (D-111, D-112); the CI e2e job (D-113) hasn't run on
+  GitHub yet (agent can't read Actions). Without Redis the limited auth routes answer 500 (fail closed).
+- M6: `GET /cases/:id/deliverables` lists draft deliverables to anyone who may view the case; hide
+  drafts from client users when the deliverable viewer is built.
 - `apps/cms/scripts/tmp-edit-home.ts` (untracked, storefront's one-off check script) can be removed.
 - Ask Datascribe for an SVG logo.
