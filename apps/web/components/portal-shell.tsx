@@ -13,6 +13,7 @@ import { cn } from './ui';
 const NAV: { href: string; label: string; perm?: string; exact?: boolean }[] = [
   { href: '/portal', label: 'Dashboard', exact: true },
   { href: '/portal/cases', label: 'Cases' },
+  { href: '/portal/reports', label: 'Reports', perm: 'cases:view:' },
   { href: '/portal/billing', label: 'Billing', perm: 'invoices:view:' },
   { href: '/portal/firm', label: 'Firm', perm: 'users:view:' },
 ];

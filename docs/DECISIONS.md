@@ -826,6 +826,27 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
   folded into one "other clients" row (`organizationId: null`). Client firm names are shown; they are
   business data the finance role already sees, not PHI. No invoice numbers or payment references.
 
+## D-095 — Client dashboard: own firm, case scope, spend for billing roles (M9 part 2, 2026-10-24)
+
+- `GET /dashboards/client` (portal page `/portal/reports`, "Reports") is for client-org users only;
+  staff get 403 (they have the ops / finance dashboards). Every query is pinned to the caller's own
+  organization, through `caseScopeWhere` and `billingOrgWhere` (§4.4 rule 1). The other dashboards
+  keep `requireInternal`.
+- Access: `cases:view` or `dashboard_client:view`. The seeded `client_user` role has no
+  `dashboard_client` grant, and adding one would mean a role-permission migration; with `cases:view`
+  it already may see the same cases case by case, so counting them reveals nothing new. No role
+  defaults changed.
+- Cases by status (all time) and pages follow the caller's `cases:view` scope: `firm` for client
+  admins, created-or-shared (`own`) for client users (`scope` in the response). Without `cases:view`
+  both are `null`.
+- Pages processed over `days` (default 30, max 730) = `pages_processed` usage records created in the
+  window, so a case counts once, on first delivery (D-040), the same number billing uses. Firm-wide
+  viewers also count usage not tied to a case; others only their cases' pages.
+- Spend = succeeded or refunded payments on the firm's invoices paid in the window, net of
+  `refundedAmount`, per currency (as D-094). Only with a firm-wide `invoices:view` (client admins);
+  otherwise `spend: null`, so a client user never sees the firm's bills.
+- Counts and amounts only: no case numbers, matter or patient names, invoice numbers or emails.
+
 ## D-100 — Absolute session lifetime and MFA re-check on refresh (audit M5, M10, 2026-10-24)
 
 - Replaces D-017's "7 days sliding". A rotated session copies its family's `expiresAt`, so a sign-in
