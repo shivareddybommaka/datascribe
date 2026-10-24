@@ -1599,3 +1599,58 @@ queues.ts`) keeps them; the API and the usage tracker already pass the URL to io
 - Existing databases: migration `20261025030000_medical_lookups_permission` inserts the 28 catalogue
   rows and grants the defaults to the built-in (`isSystem`) roles only, both `ON CONFLICT DO NOTHING`
   (idempotent; databases seeded after it get the same rows from the seed). Custom roles are untouched.
+
+## D-130 — `prisma:error document.findMany` at the start of the e2e run is harmless (M10 part 8, 2026-10-25)
+
+- Symptom: one or two `[WebServer] prisma:error document.findMany` lines before "Running 32 tests";
+  every test passes.
+- Cause: Playwright starts the `webServer` processes (API, worker, Next) **before** `globalSetup`,
+  and the e2e global setup then runs `DROP SCHEMA public CASCADE`, `prisma migrate deploy` and the
+  seed on the `_e2e` database (the `playwright.config.ts` comment on `statement_cache_size=0`
+  already notes this order). The worker's dispatcher (D-081) polls every `DISPATCH_INTERVAL_MS`
+  (500 ms in e2e), and its first query each tick is `prismaDispatchSource().pendingUploads` =
+  `document.findMany`. A tick that lands between the drop and the migration hits a missing
+  `Document` table. The shared client logs the failure by target only (`prisma:error <target>`, no
+  arguments, audit L7) to stderr, which Playwright pipes as `[WebServer]`; the dispatcher's
+  `.catch` logs `dispatch failed` at warn (worker stdout isn't piped in e2e) and the next tick
+  succeeds. One or two lines = how many ticks fell into that window.
+- Not the other callers: the API's `cases.ts` queries only run for requests, and no request is made
+  before the first test; the retention job (D-128) runs from a 03:00 scheduler and its first query
+  is `organization.findMany`, not `document.findMany`; the global setup itself never queries
+  `Document`.
+- Not a bug in production code: no deployed environment drops its schema under a running worker,
+  and the dispatcher already retries on the next tick. Nothing is silenced: the line stays, so a
+  real dispatcher failure in e2e still shows. Reordering (servers after setup) isn't possible with
+  Playwright's `webServer`, and delaying the worker only for e2e would hide the same class of
+  error.
+
+## D-131 — Staging deploy workflow, manual and OIDC-only (M10 part 8, 2026-10-25)
+
+- §12 M10 DoD asks for a "staging deploy from CI"; deploying is not allowed for the agent, so the
+  workflow (`.github/workflows/deploy-staging.yml`) is **written, never run**, with no secrets and
+  no AWS variables set. What Shiva must create: `docs/INFRA.md` "CI staging deploy".
+- Trigger: `workflow_dispatch` only, both jobs `if: github.ref == 'refs/heads/main'`. A text test
+  (`apps/api/test/infra-deploy-workflow.test.ts`) fails if any push / pull_request / schedule /
+  workflow_run / workflow_call trigger is added, if `secrets.` or static AWS keys appear, if an
+  action isn't pinned to a commit SHA (D-109), or if an apply / run-task step loses `if:
+inputs.apply`.
+- Credentials: `aws-actions/configure-aws-credentials` with `role-to-assume: vars.AWS_DEPLOY_ROLE_ARN`
+  through GitHub OIDC; workflow permissions `{}`, jobs `contents: read` + `id-token: write`. Both
+  jobs run in the GitHub environment `staging`, and the role's trust policy pins
+  `sub = repo:shivareddybommaka/datascribe:environment:staging`, so forks, PRs and other branches
+  can't assume it. Optional required reviewers on the environment add an approval click.
+- Configuration lives in non-secret environment variables (`AWS_*`, `TF_STATE_*`, `STAGING_APP_URL`,
+  and `STAGING_TFVARS` = the whole tfvars file, which never holds a secret, D-115). App secrets stay in
+  Secrets Manager.
+- Images: buildx for `linux/amd64` (Terraform's default `X86_64`, D-116; the ARM question stays
+  open), `--provenance=false` so the pushed digest is the image manifest, tag = commit SHA (immutable
+  ECR tags: a re-run reuses the pushed image), passed to Terraform by digest in a second var file
+  that overrides the `image_*` lines of `STAGING_TFVARS` (a later `-var-file` wins).
+- Release order with `apply` on: `-target` apply of the migrate task definition, run the migration
+  task and require exit code 0, a fresh plan, apply that plan, `aws ecs wait services-stable`. With
+  `apply` off it stops after `terraform plan`. Concurrency group `deploy-staging`, never cancelled
+  mid-run. The first (bootstrap) apply stays manual (`docs/INFRA.md`), since migrations need the
+  secret values and D-110 roles that only exist after it.
+- `terraform init -backend=false` + `validate` + `fmt -check` pass locally with Terraform 1.17.0 and
+  AWS provider 5.100.0; `.terraform.lock.hcl` is committed (its `zh:` hashes cover the Linux
+  runner). Never planned or applied.

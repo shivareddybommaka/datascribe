@@ -3,9 +3,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-// Terraform isn't installed (system install needs approval, D-115), so this is a text-level check
-// of infra/terraform: the §10 settings are present and no secret is written down. `terraform
-// validate` / `plan` still have to run before the first apply (docs/INFRA.md).
+// Text-level check of infra/terraform that runs in every test run, also where Terraform isn't
+// installed (D-115): the §10 settings are present and no secret is written down. `terraform
+// validate` passes locally (D-131); `plan` still has to run before the first apply (docs/INFRA.md).
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const tfDir = path.join(root, 'infra/terraform');

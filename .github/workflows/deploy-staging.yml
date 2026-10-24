@@ -1,0 +1,179 @@
+name: Deploy staging (AWS)
+
+# Staging deploy from CI (REQUIREMENTS §12 M10 DoD, D-131). Written, never run: it needs the AWS
+# staging account, the OIDC role and the `staging` environment variables in docs/INFRA.md
+# ("CI staging deploy"). Manual only: there is deliberately no push, pull_request or schedule
+# trigger, and the role's trust policy only admits the `staging` environment of this repo.
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'Apply (migrate + roll the services). Off: build, push and plan only.'
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: '1'
+  TF_INPUT: '0'
+  # Fargate runs X86_64 by default (cpu_architecture in infra/terraform, D-116)
+  IMAGE_PLATFORM: linux/amd64
+
+jobs:
+  images:
+    name: Build and push images
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: staging
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      api: ${{ steps.build.outputs.api }}
+      web: ${{ steps.build.outputs.web }}
+      worker: ${{ steps.build.outputs.worker }}
+      migrate: ${{ steps.build.outputs.migrate }}
+    env:
+      AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      APP_URL: ${{ vars.STAGING_APP_URL }}
+    steps:
+      - name: Check configuration
+        env:
+          ROLE: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+        run: |
+          for v in ROLE AWS_ACCOUNT_ID AWS_REGION APP_URL; do
+            if [ -z "${!v}" ]; then echo "::error::staging environment variable for $v is not set (docs/INFRA.md)"; exit 1; fi
+          done
+      # Actions pinned to commit SHAs (audit L12)
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: aws-actions/configure-aws-credentials@b47578312673ae6fa5b5096b330d9fbac3d116df # v4.2.1
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: datascribe-staging-images-${{ github.run_id }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+      - name: Log in to ECR
+        run: aws ecr get-login-password | docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+      # Tags are immutable (ecr.tf): a re-run for the same commit reuses the pushed image.
+      - name: Build and push (tag = commit SHA, deployed by digest)
+        id: build
+        run: |
+          set -euo pipefail
+          registry="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+          build() {
+            local name=$1; shift
+            local repo="datascribe-staging/$name" digest
+            if digest=$(aws ecr describe-images --repository-name "$repo" --image-ids "imageTag=$GITHUB_SHA" --query 'imageDetails[0].imageDigest' --output text 2>/dev/null); then
+              echo "$name: reusing $GITHUB_SHA"
+            else
+              docker buildx build --platform "$IMAGE_PLATFORM" --provenance=false --push \
+                -t "$registry/$repo:$GITHUB_SHA" --metadata-file "$RUNNER_TEMP/$name.json" "$@" .
+              digest=$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/$name.json")
+            fi
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no digest for $name"; exit 1; }
+            echo "$name=$registry/$repo@$digest" >> "$GITHUB_OUTPUT"
+          }
+          build api -f apps/api/Dockerfile
+          build migrate -f apps/api/Dockerfile --target migrate
+          build worker -f apps/worker/Dockerfile
+          build web -f apps/web/Dockerfile --build-arg "API_URL=$APP_URL"
+
+  deploy:
+    name: Terraform plan / apply
+    needs: images
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: staging
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: infra/terraform
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+      TF_STATE_KMS_KEY_ARN: ${{ vars.TF_STATE_KMS_KEY_ARN }}
+      # The whole staging.tfvars (no secrets in it, ever); image_* below override its values
+      STAGING_TFVARS: ${{ vars.STAGING_TFVARS }}
+      IMAGE_API: ${{ needs.images.outputs.api }}
+      IMAGE_WEB: ${{ needs.images.outputs.web }}
+      IMAGE_WORKER: ${{ needs.images.outputs.worker }}
+      IMAGE_MIGRATE: ${{ needs.images.outputs.migrate }}
+      VAR_FILES: -var-file=environments/staging.tfvars -var-file=environments/staging.images.tfvars
+    steps:
+      - name: Check configuration
+        working-directory: .
+        run: |
+          for v in TF_STATE_BUCKET TF_STATE_KMS_KEY_ARN STAGING_TFVARS; do
+            if [ -z "${!v}" ]; then echo "::error::staging environment variable $v is not set (docs/INFRA.md)"; exit 1; fi
+          done
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: aws-actions/configure-aws-credentials@b47578312673ae6fa5b5096b330d9fbac3d116df # v4.2.1
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: datascribe-staging-deploy-${{ github.run_id }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: 1.17.0
+          terraform_wrapper: false
+      - name: Write tfvars and backend config
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$STAGING_TFVARS" > environments/staging.tfvars
+          printf 'image_api     = "%s"\nimage_web     = "%s"\nimage_worker  = "%s"\nimage_migrate = "%s"\n' \
+            "$IMAGE_API" "$IMAGE_WEB" "$IMAGE_WORKER" "$IMAGE_MIGRATE" > environments/staging.images.tfvars
+          printf 'bucket     = "%s"\nkey        = "datascribe/staging/terraform.tfstate"\nregion     = "%s"\nkms_key_id = "%s"\n' \
+            "$TF_STATE_BUCKET" "$AWS_REGION" "$TF_STATE_KMS_KEY_ARN" > environments/staging.backend.hcl
+      - run: terraform init -backend-config=environments/staging.backend.hcl
+      - run: terraform fmt -check -recursive
+      - run: terraform validate
+      - name: Plan
+        run: terraform plan $VAR_FILES -out=staging.tfplan
+
+      # ── Apply (only when started with apply = true) ──
+      # 1. Register the new migrate task definition, 2. run it and require exit code 0,
+      # 3. plan again (state changed in 1) and apply that plan, 4. wait for the services.
+      - name: Register the migrate task definition
+        if: inputs.apply
+        run: terraform apply -auto-approve $VAR_FILES -target=aws_ecs_task_definition.migrate
+      - name: Run database migrations
+        if: inputs.apply
+        run: |
+          set -euo pipefail
+          cluster=$(terraform output -raw ecs_cluster)
+          subnets=$(terraform output -json private_subnet_ids | jq -r 'join(",")')
+          sg=$(terraform output -raw worker_security_group_id)
+          taskdef=$(terraform output -raw migrate_task_definition)
+          task=$(aws ecs run-task --cluster "$cluster" --launch-type FARGATE --task-definition "$taskdef" \
+            --network-configuration "awsvpcConfiguration={subnets=[$subnets],securityGroups=[$sg],assignPublicIp=DISABLED}" \
+            --query 'tasks[0].taskArn' --output text)
+          echo "migration task: $task"
+          aws ecs wait tasks-stopped --cluster "$cluster" --tasks "$task"
+          code=$(aws ecs describe-tasks --cluster "$cluster" --tasks "$task" --query 'tasks[0].containers[?name==`migrate`].exitCode | [0]' --output text)
+          if [ "$code" != "0" ]; then echo "::error::migration task exited with $code (logs: CloudWatch, migrate group)"; exit 1; fi
+      - name: Plan the release
+        if: inputs.apply
+        run: terraform plan $VAR_FILES -out=release.tfplan
+      - name: Apply
+        if: inputs.apply
+        run: terraform apply release.tfplan
+      - name: Wait for the services
+        if: inputs.apply
+        run: |
+          set -euo pipefail
+          cluster=$(terraform output -raw ecs_cluster)
+          aws ecs wait services-stable --cluster "$cluster" --services api web worker
