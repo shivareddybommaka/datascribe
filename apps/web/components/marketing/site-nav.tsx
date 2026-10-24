@@ -4,6 +4,7 @@ import type { Cta, Site } from '@datascribe/site-content';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { LOGIN_LINKS } from './login-links';
 
 const isCurrent = (pathname: string, href: string) =>
   href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(`${href}/`);
@@ -35,6 +36,10 @@ export function SiteNav({ nav, cta }: { nav: Site['nav']; cta: Cta }) {
     <>
       <nav aria-label="Main" className="hidden items-center gap-1 lg:flex">
         {nav.map((item) => (
+          <span key={item.href}>{link(item, false)}</span>
+        ))}
+        <span aria-hidden="true" className="mx-2 h-6 w-px bg-line" />
+        {LOGIN_LINKS.map((item) => (
           <span key={item.href}>{link(item, false)}</span>
         ))}
         <Link
@@ -70,6 +75,11 @@ export function SiteNav({ nav, cta }: { nav: Site['nav']; cta: Cta }) {
         >
           <ul className="space-y-1 pt-2">
             {nav.map((item) => (
+              <li key={item.href}>{link(item, true)}</li>
+            ))}
+          </ul>
+          <ul className="mt-2 space-y-1 border-t border-line pt-2">
+            {LOGIN_LINKS.map((item) => (
               <li key={item.href}>{link(item, true)}</li>
             ))}
           </ul>

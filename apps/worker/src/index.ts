@@ -12,10 +12,12 @@ import {
   createOcrProvider,
   createSummaryProvider,
   medicalDataConfigFromEnv,
+  ocrProviderFromEnv,
   RedisUsageTracker,
+  TesseractOcrProvider,
 } from '@datascribe/medical-data';
 import { createScanner, verifyDocument } from '@datascribe/scan';
-import { loadKey } from '@datascribe/shared';
+import { deployProfileIssues, loadKey, resolveDeployEnv } from '@datascribe/shared';
 import { Queue, Worker } from 'bullmq';
 import nodemailer from 'nodemailer';
 import { pino } from 'pino';
@@ -40,6 +42,7 @@ import {
   type PipelineJobData,
   type ScanOutcome,
 } from './pipeline/runner';
+import { renderPdfPage } from './pipeline/render-page';
 import { s3DocumentObjects } from './pipeline/s3';
 import { DEFAULT_JOB_OPTIONS, PIPELINE_QUEUES, redisConnection } from './queues';
 
@@ -49,8 +52,18 @@ const connection = redisConnection(process.env.REDIS_URL ?? 'redis://localhost:6
 const prefix = process.env.QUEUE_PREFIX || 'bull';
 const queueOpts = { connection, prefix };
 
-// ── §7 stage 1: virus scan (D-072, moved from the API in D-081) ──
-if (process.env.NODE_ENV === 'production' && !process.env.CLAMAV_HOST) {
+// Same deploy profile as the API (D-120): staging refuses real third parties and databases.
+const deployIssues = deployProfileIssues(process.env);
+if (deployIssues.length) {
+  // variable names only, never values
+  throw new Error(
+    `Invalid environment: ${deployIssues.map((i) => `${i.path}: ${i.message}`).join('; ')}`,
+  );
+}
+const deployEnv = resolveDeployEnv(process.env);
+
+// ── §7 stage 1: virus scan (D-072, moved from the API in D-081); staging may use the mock ──
+if (deployEnv === 'production' && !process.env.CLAMAV_HOST) {
   throw new Error('production needs a real virus scanner (set CLAMAV_HOST)');
 }
 const scanner = createScanner({
@@ -73,12 +86,16 @@ const usage = RedisUsageTracker.connect(process.env.REDIS_URL ?? 'redis://localh
   onError: (name) => logger.warn({ err: { name } }, 'medical usage counter not written'),
 });
 const medical = createMedicalData({ ...medicalDataConfigFromEnv(process.env), usage });
+const ocrKind = ocrProviderFromEnv(process.env);
+const ocr = createOcrProvider(ocrKind);
 const pipelineDeps: PipelineDeps = {
   store: prismaPipelineStore(prisma),
   phiKey: loadKey(process.env.PHI_ENCRYPTION_KEY),
   scanDocument,
   readObject: objects.read,
-  ocr: createOcrProvider('mock'), // tesseract arrives with M5b step 7 (D-079)
+  ocr,
+  // scanned PDF pages need an image; the mock OCR keeps them counted in needsOcr instead (D-082)
+  renderPage: ocrKind === 'mock' ? undefined : (page) => renderPdfPage(page),
   coders: medical,
   summary: createSummaryProvider(
     (process.env.SUMMARY_PROVIDER || 'mock') as Parameters<typeof createSummaryProvider>[0],
@@ -223,7 +240,10 @@ workers.push(
   ),
 );
 
-logger.info({ queues: workers.length, scanner: scanner.name }, 'worker started');
+logger.info(
+  { queues: workers.length, deploy: deployEnv, scanner: scanner.name, ocr: ocrKind },
+  'worker started',
+);
 
 async function shutdown() {
   clearInterval(dispatchTimer);
@@ -233,6 +253,7 @@ async function shutdown() {
   await uploadScanQueue.close();
   await Promise.all([...pipelineQueues.values()].map((q) => q.close()));
   await usage.close();
+  if (ocr instanceof TesseractOcrProvider) await ocr.close();
   await prisma.$disconnect();
   process.exit(0);
 }

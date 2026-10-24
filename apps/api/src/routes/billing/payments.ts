@@ -117,8 +117,9 @@ export function paymentsRouter(deps: Deps): Router {
     },
   );
 
-  // ── Simulated hosted checkout for the Fake gateway (never mounted in production) ──
-  if (gateway instanceof FakeGateway && env.NODE_ENV !== 'production') {
+  // ── Simulated hosted checkout for the Fake gateway (never mounted in production; staging, a
+  // production build with no real money, keeps it: D-120) ──
+  if (gateway instanceof FakeGateway && env.DEPLOY_ENV !== 'production') {
     const fake = gateway;
     const loadSession = async (sessionId: string) => {
       const invoiceId = FakeGateway.invoiceIdFromSession(sessionId);

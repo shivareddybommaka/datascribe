@@ -1,0 +1,6 @@
+# Config for the datascribe-staging tunnel (docs/STAGING.md). The tunnel is remotely managed: its
+# hostname (datascribe.stayspot.app -> http://localhost:3020) lives in the Cloudflare dashboard and
+# the token is read from the git-ignored .env.tunnel-token. Always pass this file with --config so
+# cloudflared never falls back to ~/.cloudflared/config.yml (StaySpot's tunnel).
+no-autoupdate: true
+loglevel: info

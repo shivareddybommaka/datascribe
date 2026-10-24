@@ -13,16 +13,16 @@ existing CRM, never touch), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025). CMS 
 | M2 Admin console              | done (merged from `admin/m2`)      | custom role takes effect without restart; audit M2 + M4 fixed; D-060..D-064                     |
 | M3 Website + CMS              | done (merged from `storefront/m3`) | Lighthouse ≥ 90 not measured yet (needs Lighthouse install)                                     |
 | M4 Portal cases + uploads     | done (merged from `portal/m4`)     | DoD test green (300-page PDF, interrupted + resumed); D-070..D-077                              |
-| M5 Pipeline                   | **M5b in progress (master)**       | DoD e2e green (upload → 7 stages → in_review, all cited); notify done. Left: OCR (step 7)       |
-| M6 Workspace + QA + delivery  | not started                        |                                                                                                 |
+| M5 Pipeline                   | done (master)                      | DoD e2e green (upload → 7 stages → in_review, all cited); notify; Tesseract OCR (D-082)         |
+| M6 Workspace + QA + delivery  | **next (master)**                  |                                                                                                 |
 | M7 CRM                        | done                               |                                                                                                 |
 | M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen built in M4; Stripe test key needed for the manual test-card demo     |
 | M9 Notifications + dashboards | in progress (`herald/m9`)          | part 1 + sales, ops, finance dashboards merged (`f72c63a`, D-090..D-094); client dashboard next |
 | M10 Hardening                 | in progress (`sentinel/m10`)       | parts 1–3a merged; 3b Dockerfiles built locally, not pushed (D-116), on branch; CI deploy next  |
 
-Tests on `main` (2026-10-24 17:20, after the M9 ops/finance + M10 part 3a merges): format, lint,
-typecheck, unit/API tests and build green (API 322, worker 55, web 57, scan 6); Playwright e2e 23/23
-(new: ops + finance dashboards).
+Tests on `main` (2026-10-24 17:10, after the M9 ops/finance + M10 part 3a merges and M5b step 7):
+format, lint, typecheck, unit/API tests and build green (API 322, worker 57, web 57, scan 6);
+Playwright e2e 23/23 (new: ops + finance dashboards; real-Tesseract OCR unit test).
 
 M4 merge notes: main's `.env` needs `S3_SSE=none` (local SeaweedFS has no SSE, D-070) or the API's
 uploads fail; the API creates the buckets at startup and encrypts legacy case notes / messages
@@ -35,7 +35,7 @@ case `on_hold` ✅ (D-080) · 4 scan stage in the worker (`packages/scan`), DB-t
 completed uploads and submitted cases ✅ (D-081) · 5 stage 7 `in_review` ✅ + notify summarizer /
 case manager on hold ✅ · 6 M5 DoD e2e (synthetic
 six-record PDF → deliverables, every chronology entry cited, status timeline) ✅ · 7 tesseract OCR
-provider + page renderer (or Waiting on Shiva if it needs a system install).
+provider + page renderer ✅ (D-082: tesseract.js WASM, no system install; `OCR_PROVIDER=tesseract`).
 
 Running the app locally now needs the worker too (`pnpm --filter @datascribe/worker dev`): without
 it uploads stay "Scanning" and submitted cases aren't processed. SeaweedFS volume limit raised to
@@ -59,18 +59,46 @@ removed 2026-10-24. Active: **datascribe-herald** (M9, `.worktrees/herald`, port
 3800/4800, DB `datascribe_sentinel_dev`, Redis /3). DECISIONS numbering per agent: storefront D-030+,
 ledger D-040+, pipeline D-050+, herald D-090+, sentinel D-100+.
 
+## Approved by Shiva (2026-10-24, "approve all"), to build
+
+1. Production refuses to start unless `S3_SSE=aws:kms` (sentinel).
+2. Add `@axe-core/playwright` (dev) and a WCAG check in the e2e suite (sentinel).
+3. Add the Sentry SDKs (API, worker, web): off unless `SENTRY_DSN` is set; scrub PHI fields, request
+   bodies, cookies and auth headers in `beforeSend` (sentinel).
+4. Retention / hard-delete job per §4.4, audited, synthetic data only locally (master, after M6
+   basics, or sentinel).
+5. QA reviewers may use the medical lookups (D-056): grant the lookup permission to `qa_reviewer`.
+6. Add Lighthouse (dev) and measure the M3 pages (target ≥ 90 performance + SEO); fix if below.
+
+Terraform 1.17.0 (`/opt/homebrew/bin/terraform`, works as nova) installed by Shiva: run
+`terraform init -backend=false` + `terraform validate` on `infra/terraform`; never plan against AWS,
+never apply. Native `tesseract` 5.5.3 is also installed (optional; OCR uses tesseract.js, D-082).
+
+## Local staging (Shiva, 2026-10-24)
+
+**Live since 2026-10-24 18:50** at https://datascribe.stayspot.app (merged `launchpad/staging`,
+`.env.staging` generated, `datascribe_staging` seeded, ClamAV `clamav-debian` running, tunnel
+`datascribe-staging` → `http://localhost:3020`, route + DNS added in Cloudflare). Runs as background
+processes started by the master (`pnpm staging:start`, tunnel via `--config infra/staging/cloudflared.yml
+run --token-file .env.tunnel-token`); they stop if the Mac or the OpenClaw gateway restarts.
+
+Staging from the Mac Studio at `https://datascribe.stayspot.app` (stayspot.app is on Shiva's
+Cloudflare) via a NEW token-based tunnel Shiva creates, pointing to `http://localhost:3020`. Never
+touch StaySpot's tunnel or `~/.cloudflared`. Synthetic data only until AWS production.
+**datascribe-launchpad** (`.worktrees/launchpad`, branch `launchpad/staging`, ports 3900/4900, DB
+`datascribe_launchpad_dev`, Redis /4, D-120+) builds the staging profile, banner, noindex, scripts
+and `docs/STAGING.md`. Autopilot merges it when green like herald/sentinel. Going live needs Shiva's
+tunnel token (masked secret entry, never chat). Shiva chose **no Cloudflare Access gate** (option B):
+staging must disable self sign-up, use real ClamAV, use its own seed password, and keep the production
+rate limits, lockout and MFA. Run mode: on demand.
+
 ## Waiting on Shiva
 
 - Telegram control: create a Telegram group with the bot (bot as admin or privacy off), send a
   message, send the group id (forward to @RawDataBot). Then the binding is proposed via OpenClaw.
-- Lighthouse install (M3 performance/SEO check): yes / later.
-- Free openFDA API key before production (D-052). Should QA reviewers use medical lookups (D-056)?
+- Free openFDA API key before production (D-052).
 - Stripe test key for the manual M8 test-card demo. CMS email adapter choice (editor password reset).
-- CI result on GitHub Actions (agent can't read Actions with the deploy key), now including the new
-  e2e job.
-- M10 (sentinel): should production refuse to start unless `S3_SSE=aws:kms`? May we add
-  `@axe-core/playwright` (WCAG check) and the Sentry SDKs? Build the retention / hard-delete job next?
-- Terraform CLI (Homebrew, admin) to `terraform validate` the M10 IaC files; nothing will be applied.
+- CI result on GitHub Actions after the format fix (agent can't read Actions with the deploy key).
 - IaC (`infra/terraform`, `docs/INFRA.md`, D-115) is written, never applied. Going further needs AWS
   accounts (staging, production) with a BAA, a state bucket, domain + ACM certificate, SES and secret
   values; a CI staging deploy also needs a GitHub OIDC role per account (Dockerfiles done, D-116).
@@ -79,8 +107,8 @@ ledger D-040+, pipeline D-050+, herald D-090+, sentinel D-100+.
   ~150 MB) now or later?
 - M9 finance dashboard (D-094): should MRR count trialing / past-due subscriptions (matches the
   existing finance overview now)? OK to show client firm names in "revenue by client"?
-- Next's e2e run rewrites `apps/web/next-env.d.ts` / `tsconfig.json` with the port (herald): ignore
-  them or fix on main? (Agents reset them before each commit for now.)
+- Next's e2e run rewrites `apps/web/next-env.d.ts` / `tsconfig.json` with the port: master fixes this
+  on main (no Shiva decision needed).
 
 ## Security review (datascribe-auditor)
 

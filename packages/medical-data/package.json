@@ -12,7 +12,9 @@
     "record-fixtures": "tsx scripts/record-fixtures.ts"
   },
   "dependencies": {
-    "ioredis": "^5.11.1"
+    "@tesseract.js-data/eng": "^1.0.0",
+    "ioredis": "^5.11.1",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^3.1.2",

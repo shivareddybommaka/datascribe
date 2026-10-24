@@ -9,6 +9,7 @@
  */
 import type { OcrProvider, SummaryOutput, SummaryProvider } from '@datascribe/medical-data';
 import { decrypt, encrypt } from '@datascribe/shared';
+import type { PDFPageProxy } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { PIPELINE_QUEUES, nextStage, type PipelineQueue } from '../queues';
 import { classifyPage, RECORD_TYPES, type RecordType } from './classify';
 import { CaseCoder, type Coders, type EventCode } from './code-events';
@@ -143,7 +144,8 @@ export interface PipelineDeps {
   scanDocument(documentId: string): Promise<ScanOutcome>;
   readObject(s3Key: string): Promise<Uint8Array>;
   ocr: OcrProvider;
-  renderPage?: (data: Uint8Array, pageNumber: number) => Promise<Buffer | null>;
+  /** renders a low-text PDF page for OCR (`renderPdfPage`, D-082); absent = count it in needsOcr */
+  renderPage?: (page: PDFPageProxy) => Promise<Buffer | null>;
   coders: Coders;
   summary: SummaryProvider;
   log: PipelineLogger;
@@ -229,7 +231,7 @@ const PROCESSORS: Record<RunnerStage, Processor> = {
       if (doc.mimeType === 'application/pdf') {
         result = await extractPdfPages(data, {
           ocr: deps.ocr,
-          renderPage: deps.renderPage ? (n) => deps.renderPage!(data, n) : undefined,
+          renderPage: deps.renderPage ? (_n, page) => deps.renderPage!(page) : undefined,
         });
       } else if (IMAGE_TYPES.has(doc.mimeType)) {
         result = await extractImagePage(Buffer.from(data), deps.ocr);

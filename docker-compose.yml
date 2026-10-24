@@ -49,8 +49,10 @@ services:
       - '127.0.0.1:8025:8025'
 
   # Virus scanning (M4). Opt-in: docker compose --profile scan up -d
+  # clamav-debian: the official image with an arm64 build (clamav/clamav is amd64-only, so it
+  # wouldn't start on the Mac Studio). Pinned by multi-arch index digest (audit L12).
   clamav:
-    image: clamav/clamav:stable@sha256:e19130cdebaeacc71fa46eab3ed6f69941f2f22aa5e08d55e9197f8edf43ce5e
+    image: clamav/clamav-debian:stable@sha256:d7ede3cefeaf3b8a72ebcdee849d13f504bbca3f3b3cfade5bc7b6ee06a4f62c
     profiles: ['scan']
     ports:
       - '127.0.0.1:3310:3310'

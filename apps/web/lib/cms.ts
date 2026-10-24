@@ -28,6 +28,8 @@ function warnOnce(message: string) {
 }
 
 async function cmsGet<T>(path: string, tag: string): Promise<T | null> {
+  // CMS_URL=none: no CMS at all, the bundled copy only (staging on the Mac, D-124)
+  if (process.env.CMS_URL === 'none') return null;
   try {
     const res = await fetch(`${cmsUrl()}/api${path}`, {
       next: { revalidate: REVALIDATE_SECONDS, tags: ['cms', tag] },

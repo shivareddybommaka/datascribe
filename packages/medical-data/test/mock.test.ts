@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   ATTRIBUTION,
   MockOcrProvider,
+  TesseractOcrProvider,
   createMedicalData,
   createOcrProvider,
   createSummaryProvider,
   medicalDataConfigFromEnv,
+  ocrProviderFromEnv,
 } from '../src';
 
 describe('factory', () => {
@@ -29,7 +31,11 @@ describe('factory', () => {
 
   it('OCR and summary factories provide mocks and refuse unimplemented providers', () => {
     expect(createOcrProvider()).toBeInstanceOf(MockOcrProvider);
-    expect(() => createOcrProvider('tesseract')).toThrow(/not implemented/);
+    expect(createOcrProvider('tesseract')).toBeInstanceOf(TesseractOcrProvider);
+    expect(() => createOcrProvider('textract')).toThrow(/not implemented/);
+    expect(ocrProviderFromEnv({})).toBe('mock');
+    expect(ocrProviderFromEnv({ OCR_PROVIDER: 'tesseract' })).toBe('tesseract');
+    expect(() => ocrProviderFromEnv({ OCR_PROVIDER: 'abbyy' })).toThrow(/OCR_PROVIDER/);
     expect(createSummaryProvider('mock')).toBeDefined();
     expect(() => createSummaryProvider('anthropic')).toThrow(/not implemented/);
   });

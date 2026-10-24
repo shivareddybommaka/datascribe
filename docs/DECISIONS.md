@@ -729,6 +729,27 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
 - Pipeline status changes write `case.status` system audit rows (`{ from, to, by: 'pipeline' }`) in
   the same transaction as the compare-and-set, so the portal timeline shows Processing / In review.
 
+## D-082 — Tesseract OCR and the PDF page renderer (M5b step 7, 2026-10-24)
+
+- **tesseract.js 7** (named in §2) rather than `node-tesseract-ocr`: it runs the engine as WASM in
+  a worker thread, so no Homebrew/apt install on dev machines, CI or the Fargate image. The English
+  model comes from **`@tesseract.js-data/eng`** (not named in §2; it is tesseract.js's own data
+  package, ~14 MB): by default tesseract.js downloads traineddata from a CDN at first use, which we
+  don't want in a PHI worker or an offline container. `cacheMethod: 'none'` writes no cache files.
+- One Tesseract worker per process, started on the first scanned page, closed on shutdown; a failed
+  start is retried on the next page. Confidence is Tesseract's 0–100 mean scaled to 0..1, matching
+  the text-layer pages' 1.
+- **Rendering**: pdf.js draws the page onto **`@napi-rs/canvas`** (already in the lockfile as
+  pdfjs-dist's optional canvas; prebuilt binaries, no system libraries) at 200 dpi, white
+  background, capped at 25 Mpx so an oversized page can't exhaust memory. The renderer gets the
+  pdf.js page the extractor already opened, so a scanned 300-page PDF is parsed once.
+- `OCR_PROVIDER` (env, default `mock`) selects the provider; with `mock` the worker passes no
+  renderer, so scanned pages stay counted in `needsOcr` as before (D-079) and the e2e suite stays
+  fast and deterministic. `textract` remains the optional second implementation (not built).
+- Test `ocr-real.test.ts` draws synthetic text, embeds it as an image-only PDF page, and checks real
+  OCR finds the words (and for an image upload). It needs a sans-serif system font for the canvas
+  (macOS, ubuntu-latest have one).
+
 ## D-090 — Notifications: catalog, in-app rows and an email outbox (M9, 2026-10-24)
 
 - One typed catalog in `packages/shared` (browser-safe, so the bell renders the same labels): each
@@ -1118,3 +1139,180 @@ queues.ts`) keeps them; the API and the usage tracker already pass the URL to io
   `iam:PassRole` for the task roles), images built for `var.cpu_architecture` (X86_64 by default;
   the build Mac is arm64), digest-pinned updates of `image_*` in tfvars or task definitions, the
   migrate task before the services roll, and an approval step for production.
+
+## D-120 — Deploy profile: local, staging, production (launchpad, 2026-10-24)
+
+- Shiva asked (2026-10-24) for a staging copy on the Mac Studio at `https://datascribe.stayspot.app`
+  through its own Cloudflare tunnel, synthetic data only until the AWS launch. Staging must be a
+  real production build (`NODE_ENV=production`: minified Next, secure cookies, no dev routes) yet
+  run on the Mac's local services, which the production refusals forbid.
+- `DEPLOY_ENV = local | staging | production`, default `production` when `NODE_ENV=production`,
+  `local` otherwise. A production build may only be `staging` or `production` (`local` would switch
+  every refusal off), and `staging` / `production` need `NODE_ENV=production`. The rules live in
+  `packages/shared/src/deploy.ts` (no Node imports) so the API, the worker and the web app agree.
+- **Production is unchanged**: SSE required (no `S3_SSE=none`), `CLAMAV_HOST` required, no fake
+  gateway, no `EXTRA_TRUSTED_ORIGINS`, the §8.3 BAA rule, test-mode Stripe keys only. The approved
+  `S3_SSE=aws:kms`-only rule isn't on `main` yet (sentinel builds it); it applies to production
+  only when it lands. New in production: `STAGING_ALLOW_HTTP_FOR_SMOKE` is refused.
+- **Staging allows** `S3_SSE=none` (only with `S3_ENDPOINT` on localhost, i.e. SeaweedFS), the
+  fake payment gateway (its simulated checkout stays mounted: `DEPLOY_ENV !== 'production'`), and
+  the mock scanner (ClamAV used when `CLAMAV_HOST` is set). `EXTRA_TRUSTED_ORIGINS` stays refused.
+- **Staging refuses**: `SUMMARY_PROVIDER` other than `mock` (even with a BAA), `OCR_PROVIDER=textract`
+  (worker), live Stripe keys, any `SMTP_HOST` other than `localhost` / `127.0.0.1` (Mailpit), a
+  `DATABASE_URL` on port 5432 (or no port) or whose database name lacks `staging`, and an http
+  `APP_URL`. The smoke test may set `STAGING_ALLOW_HTTP_FOR_SMOKE=1`, which allows http only for a
+  localhost `APP_URL`.
+- The worker runs the same checks at start-up (it read `NODE_ENV` for its ClamAV rule before).
+- `API_HOST` (optional, default all interfaces): staging binds the API to `127.0.0.1`, so the only
+  way in from outside the Mac is the tunnel to the web app.
+
+## D-121 — Staging behind the Cloudflare tunnel: cookies, CSRF, client IPs (launchpad, 2026-10-24)
+
+- Path: browser → Cloudflare edge (TLS) → `cloudflared` on the Mac → `http://localhost:3020`
+  (Next, bound to 127.0.0.1) → rewrite → API on `127.0.0.1:4020`. Next's rewrite proxy
+  (`next/dist/server/lib/router-utils/proxy-request.js`) forwards the request headers unchanged
+  (no `xfwd`; it only adds `X-Forwarded-Host`), so the API sees a loopback peer carrying the
+  `X-Forwarded-For`, `X-Forwarded-Proto: https`, `Origin` and `CF-Connecting-IP` that
+  cloudflared sent.
+- **Cookies**: the refresh cookie is `Secure` whenever `NODE_ENV=production` (staging included),
+  `HttpOnly`, `SameSite=Strict`, `Path=/api/v1/auth`; the browser sees https, so it is stored.
+- **CSRF / CORS**: `APP_URL=https://datascribe.stayspot.app` is the only trusted origin; the
+  http variant and anything else get 403 / no CORS header. `EXTRA_TRUSTED_ORIGINS` stays refused.
+- **Client IPs**: `TRUST_PROXY=loopback` (unchanged default) is right: the one trusted hop is the
+  local Next proxy, and Express takes the last `X-Forwarded-For` entry. Cloudflare _appends_ the
+  real client address to any `X-Forwarded-For` the client sent, so a forged entry on the left never
+  makes a new rate-limit bucket (tested).
+- **`TRUST_CF_CONNECTING_IP=true`** (staging example sets it): use `CF-Connecting-IP`, which the
+  edge always overwrites, as `req.ip`, but only when the immediate peer passes the `TRUST_PROXY`
+  check (`app.get('trust proxy fn')`), so with `TRUST_PROXY=false` or from an untrusted peer it is
+  ignored, and only when it is a valid IP. Refused in production: on AWS no Cloudflare sits in front
+  and a client could send the header through the ALB. Without it, the `X-Forwarded-For` rule above
+  gives the same answer.
+- Anything on the Mac that reaches `localhost:3020` / `:4020` directly can still choose its own
+  address (as in dev): that's why staging binds both to 127.0.0.1. Found on the way: in dev, Next on
+  :3010 forwards a client's own `X-Forwarded-For`, so D-101's "only the local Next.js proxy" is
+  spoofable by anyone who can reach the Next port; harmless locally, worth knowing before any other
+  exposure.
+- Security headers stay: helmet on the API (HSTS, nosniff, frame options), Next's baseline headers
+  (`X-Frame-Options: DENY`, `frame-ancestors 'none'`, etc.).
+
+## D-122 — Storage relay for staging uploads and downloads (launchpad, 2026-10-24)
+
+- Browsers PUT upload parts and GET downloads straight from S3 with presigned URLs (D-070, D-071).
+  On the Mac the S3 is SeaweedFS on `localhost:9000`; a browser reaching staging through the tunnel
+  can't see it, so uploads would fail for anyone not sitting at the Mac. Exposing SeaweedFS through
+  the tunnel would put a storage API on the internet, so instead:
+- `S3_BROWSER_ACCESS = direct | relay` (default `direct`). With `relay`, `presignPart` and
+  `presignDownload` return a same-origin `/api/v1/storage-relay/<token>` and the API streams the
+  part to S3 (`UploadPart`, mounted before the JSON parser, Content-Length required, ≤ 512 MiB) or
+  the object back (attachment, `Cache-Control: private, no-store`). The 8 MiB parts stay under
+  Next's 10 MB proxied-body limit and Cloudflare's 100 MB request limit.
+- The token replaces the S3 signature: AES-256-GCM sealed with a key derived (HKDF) from
+  `JWT_ACCESS_SECRET`, so the object key and file name aren't readable in the URL; bound to one
+  operation (put part n of one upload / get one object); expiring with the same TTLs (30 min parts,
+  5 min downloads). Authorization, audit and scan checks are unchanged: they happen where the URL is
+  issued, exactly as for presigned URLs. Tokens are redacted from request logs.
+- **Refused in production** (`S3_BROWSER_ACCESS=relay`): production keeps presigned S3 URLs and
+  the API never carries file bytes there.
+
+## D-123 — Staging guard rails in the web app (launchpad, 2026-10-24)
+
+- **Banner**: the root layout renders a fixed red bar on every page, above everything (z-index
+  1000), not dismissable: "Staging — synthetic data only. Do not upload real patient records." An
+  invisible copy in the flow reserves its height, so it never covers page content at any width.
+- **noindex**: `X-Robots-Tag: noindex, nofollow, noarchive` on every path (`next.config.ts`
+  headers, so API responses through the rewrite get it too), `robots: { index: false }` metadata,
+  and `robots.txt` = `Disallow: /` with no sitemap.
+- **No GA/GTM**: `analyticsIds()` returns nothing in staging whatever `GA4_MEASUREMENT_ID` /
+  `GTM_ID` say, so neither the consent banner nor any tag renders.
+- All three are decided **at build time** (pages are prerendered; Next bakes `headers()` into the
+  build). `pnpm staging:build` builds with `DEPLOY_ENV=staging` into its own `distDir`
+  (`.next-staging`) and stamps it; `staging:start` refuses a build without the stamp.
+- `ENV_FILE` lets `next.config.ts` load `.env.staging` instead of dev's `.env`, so no dev value
+  (analytics IDs, CMS URL) leaks into the staging build.
+- Vitest for the web app now compiles JSX with the automatic runtime (as Next does) so layout and
+  banner can be rendered in unit tests.
+- Next applies `headers()` only to what it serves itself, not to rewrites it proxies, so the API
+  sets `X-Robots-Tag` on its own responses in staging (found by the smoke test).
+
+## D-124 — Staging runner, runbook and smoke test (launchpad, 2026-10-24)
+
+- **One Node script, no new packages**: `scripts/staging.mjs` (`check`, `db:reset`,
+  `db:migrate`, `db:seed`, `build`, `start`, `stop`) on `scripts/staging-lib.mjs`, wired as
+  `pnpm staging:*`. Each process gets the `.env.staging` values on top of a minimal shell
+  environment (PATH, HOME, ...) plus `NODE_ENV=production`, `DEPLOY_ENV=staging`,
+  `API_HOST=127.0.0.1`. Nothing from dev's `.env` or the caller's shell leaks in. Errors name
+  variables, never values.
+- **The script's own refusals** come on top of the app's: web port must be 3020 (3000, 3010 and 5432
+  are always refused), API port distinct and matching `API_URL`, `DATABASE_URL` /
+  `CMS_DATABASE_URL` on a port other than 5432 with `staging` in the name, required secrets
+  present, and no `STAGING_ALLOW_HTTP_FOR_SMOKE` outside the smoke test.
+- **Processes**: Next is a real `next build` into `apps/web/.next-staging`, stamped with
+  `APP_URL`; `start` refuses an unstamped build or one made for another URL. It runs as
+  `next start --hostname 127.0.0.1 --port 3020`. API and worker run from source with `tsx` under
+  `NODE_ENV=production`, because their tsup bundles keep the workspace packages external and those
+  are TypeScript source (D-002); bundling them comes with the Dockerfiles. The supervisor stops
+  all three if one exits, and stops them on SIGINT/SIGTERM (`staging:stop` signals it via
+  `.data/staging/staging.pid`).
+- **Database reset** mirrors the test setup: `CREATE DATABASE` if missing, drop and re-create the
+  `public` schema, `prisma migrate deploy`, then the synthetic seed and the demo leads (run with
+  `NODE_ENV=development`, which the seed scripts require). `prisma migrate reset` isn't used.
+- **No CMS process**: the web app falls back to the bundled copy (`CMS_URL=none` now skips the
+  fetch entirely). CMS media would be served from localhost, which visitors behind the tunnel
+  can't load.
+- `next build` rewrites `tsconfig.json` / `next-env.d.ts` for its dist dir; the build step
+  restores both files afterwards.
+- **Tunnel**: created by Shiva in the dashboard (token-based, remotely managed, public hostname
+  `datascribe.stayspot.app` → `http://localhost:3020`). Run with
+  `cloudflared --config infra/staging/cloudflared.yml tunnel run --token "$VAR"` or with
+  `TUNNEL_TOKEN`. The repo config file keeps cloudflared away from `~/.cloudflared` (StaySpot).
+  launchd templates under `infra/staging/` (not installed) read the token from the login Keychain.
+  Cloudflare Access goes in front before the hostname is added.
+- **Smoke test** (`pnpm staging:smoke`): the production-built stack on 3901 / 4901 against a
+  throwaway `*_staging_smoke` DB, with `STAGING_ALLOW_HTTP_FOR_SMOKE=1` and the relay on.
+  Playwright (`apps/web/playwright.staging-smoke.config.ts`, `apps/web/smoke/`) checks the banner,
+  noindex, robots.txt, no analytics, console sign-in with MFA enrolment and Secure / HttpOnly /
+  Strict cookie, portal case creation, and an upload plus download through the relay. Not part of
+  `pnpm e2e` or CI.
+
+## D-125 — Staging on the open internet, without an Access gate (launchpad, 2026-10-24)
+
+- Shiva chose not to put Cloudflare Access in front of staging, so anyone can reach it. The staging
+  profile tightens accordingly (runbook: `docs/STAGING.md`; Access stays documented as optional):
+- **Sign-up closed**: `POST /auth/register` answers 403 `signup_disabled` in staging unless
+  `STAGING_ALLOW_SIGNUP=true`, so strangers can't create firms. Invites, password reset and the
+  seeded accounts are unaffected. The site has no sign-up page; the check is server-side.
+- **Real ClamAV**: staging refuses to start without `CLAMAV_HOST` (API and worker, shared rule)
+  unless `STAGING_ALLOW_MOCK_SCAN=true`. The example sets `CLAMAV_HOST=localhost` and the runbook
+  starts the existing compose `scan` profile. The smoke test uses ClamAV when 3310 answers and the
+  explicit opt-out otherwise (the image isn't pulled on this Mac yet).
+- **Own seed password**: the staging seed refuses a `SEED_USER_PASSWORD` shorter than 20
+  characters or equal to dev's value. The script compares it with the checkout's `.env` and the main
+  checkout's `.env` (via `git --git-common-dir`), and the error names the variable only.
+  `staging:check` reports it too. Shiva reads it with `grep SEED_USER_PASSWORD .env.staging` as
+  nova. The smoke test generates a random one per run.
+- **Sign-in protection as in production**: no auth code branches on the profile except the
+  sign-up switch, so per-IP and per-account limits, lockout, the timing floor and staff MFA are
+  production's. Staging also refuses `RATE_LIMIT_AUTH` / `_PUBLIC` / `_ACCOUNT` above the defaults
+  (30 / 10 / 10) and `AUTH_RESPONSE_FLOOR_MS` below 400; stricter values are allowed. Tests cover
+  equal limits and that staff MFA still gates the session.
+- Production refuses all three staging switches (`STAGING_ALLOW_HTTP_FOR_SMOKE`,
+  `STAGING_ALLOW_SIGNUP`, `STAGING_ALLOW_MOCK_SCAN`) when set to true / 1.
+- Run mode stays on demand (`staging:start` / `staging:stop`, tunnel in a terminal); the launchd
+  files remain templates.
+
+## D-126 — How the staging tunnel runs (launchpad, 2026-10-24)
+
+- Replaces the tunnel bullet of D-124 (token in an env var / Keychain). The master's command is the
+  only one used, in `pnpm staging:tunnel`, the launchd template and `docs/STAGING.md`:
+  `/opt/homebrew/bin/cloudflared tunnel --config infra/staging/cloudflared.yml run --token-file .env.tunnel-token`
+  from the repo root. `infra/staging/cloudflared.yml` is main's version (merged in).
+- `--config` is always passed; without it cloudflared reads StaySpot's `~/.cloudflared/config.yml`.
+- `.env.tunnel-token` is git-ignored (`.env.*`) and written by Shiva. The script never reads it.
+  It only checks that the file exists, isn't empty and is git-ignored, and warns if it's readable
+  by other accounts.
+- cloudflared gets only the shell basics (PATH, HOME, ...). `TUNNEL_TOKEN` and the other `TUNNEL_*`
+  variables would override `--token-file` or the config, so they're never passed on. Its info-level
+  logs don't contain the token, and the config sets `loglevel: info`.
+- The tunnel is an optional, separate step from `staging:start`; `staging:stop` stops both (pid
+  files under `.data/staging/`).

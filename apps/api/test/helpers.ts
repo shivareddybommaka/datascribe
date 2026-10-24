@@ -11,6 +11,7 @@ import type { Deps, RateLimits } from '../src/context';
 import { createLogger } from '../src/lib/logger';
 import { MemoryMailer } from '../src/lib/mailer';
 import { MockVirusScanner, type VirusScanner } from '@datascribe/scan';
+import { relayKey } from '../src/lib/relay-token';
 import { S3DocumentStorage } from '../src/lib/storage';
 import {
   TEST_DATABASE_URL,
@@ -65,14 +66,21 @@ export function buildApp(
   } = {},
 ) {
   const mailer = new MemoryMailer();
-  const { storage, ready } = testStorage();
+  const env = testEnv(opts.envOverrides);
+  const shared = testStorage();
+  // staging's relay (D-122): same buckets, same-origin relay URLs instead of presigned ones
+  const storage =
+    env.S3_BROWSER_ACCESS === 'relay'
+      ? new S3DocumentStorage(env, [APP_URL], { key: relayKey(env.JWT_ACCESS_SECRET) })
+      : shared.storage;
+  const ready = shared.ready;
   const gateway = new FakeGateway({
     secret: 'test-fake-gateway-secret',
     checkoutBaseUrl: `${APP_URL}/api/v1/payments/fake-checkout`,
   });
   const store = new MemoryObjectStore();
   const app = createApp({
-    env: testEnv(opts.envOverrides),
+    env,
     prisma,
     mailer,
     logger: createLogger('silent'),
