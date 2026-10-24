@@ -18,11 +18,11 @@ existing CRM, never touch), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025). CMS 
 | M7 CRM                        | done                               |                                                                                                                                                                          |
 | M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen built in M4; Stripe test key needed for the manual test-card demo                                                                              |
 | M9 Notifications + dashboards | done except 4 events blocked on M6 | 7/11 §5.8 events + 4 dashboards; part 3 merged (editable notification emails, demo, D-096/D-097); assigned / QA / approved / delivered need M6 to call the ready helpers |
-| M10 Hardening                 | in progress (`sentinel/m10`)       | parts 1–4b merged (D-100..D-119: Dockerfiles, KMS-only prod, axe WCAG, Sentry); part 5 Lighthouse on the branch, to merge (D-127)                                        |
+| M10 Hardening                 | in progress (`sentinel/m10`)       | parts 1–5 merged (D-100..D-127: Dockerfiles, KMS-only prod, axe WCAG, Sentry, Lighthouse); part 6 retention / hard-delete job spawned 2026-10-25 01:10                   |
 
-Tests on `main` (2026-10-24 23:10, after merging M9 part 3 + M10 part 4b): format, lint, typecheck,
-unit/API tests and build green, 36/36 turbo tasks (API 377, worker 64, shared 154, web 66); Playwright
-e2e 31/31 (new: notification template editor, client-user Reports). Staging (still running
+Tests on `main` (2026-10-25 01:05, after merging M10 part 5): format, lint, typecheck, unit/API tests
+and build green, 36/36 turbo tasks; Playwright e2e 31/31 (run on `E2E_WEB_PORT=3150` /
+`E2E_API_PORT=4150`: port 3100 was taken by another project's server). Staging (still running
 `155a8e5` code) not restarted: Shiva was testing sign-in; restart with `pnpm staging:stop` /
 `staging:build` / `staging:start` when convenient.
 
@@ -69,11 +69,11 @@ ledger D-040+, pipeline D-050+, herald D-090+, sentinel D-100+.
 3. Add the Sentry SDKs (API, worker, web): off unless `SENTRY_DSN` is set; scrub PHI fields, request
    bodies, cookies and auth headers in `beforeSend` (sentinel). ✅ merged
    (D-119): scrubber in `@datascribe/shared/sentry`, unit-tested with synthetic PHI.
-4. Retention / hard-delete job per §4.4, audited, synthetic data only locally (master, after M6
-   basics, or sentinel).
+4. Retention / hard-delete job per §4.4, audited, synthetic data only locally (sentinel part 6,
+   spawned 2026-10-25).
 5. QA reviewers may use the medical lookups (D-056): grant the lookup permission to `qa_reviewer`.
 6. Add Lighthouse (dev) and measure the M3 pages (target ≥ 90 performance + SEO); fix if below.
-   ✅ done on `sentinel/m10` (D-127), to merge: 7 public pages at performance 99–100, SEO 100
+   ✅ merged (D-127): 7 public pages at performance 99–100, SEO 100
    (`docs/LIGHTHOUSE.md`); `/contact` layout shift fixed (80 → 99).
 
 Terraform 1.17.0 (`/opt/homebrew/bin/terraform`, works as nova) installed by Shiva: run
