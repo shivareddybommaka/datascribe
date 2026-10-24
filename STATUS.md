@@ -6,18 +6,18 @@ Remote: https://github.com/shivareddybommaka/datascribe (private, deploy key, ho
 `github-datascribe`). Infra on Colima, all bound to 127.0.0.1: Postgres 16 (:5433; :5432 is Shiva's
 existing CRM, never touch), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025). CMS DB `datascribe_cms`.
 
-| Milestone                     | State                              | Notes                                                                                       |
-| ----------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------- |
-| M0 Foundation                 | done                               |                                                                                             |
-| M1 Auth + RBAC                | done                               | security fixes from the audit applied                                                       |
-| M2 Admin console              | done (merged from `admin/m2`)      | custom role takes effect without restart; audit M2 + M4 fixed; D-060..D-064                 |
-| M3 Website + CMS              | done (merged from `storefront/m3`) | Lighthouse ≥ 90 not measured yet (needs Lighthouse install)                                 |
-| M4 Portal cases + uploads     | done (merged from `portal/m4`)     | DoD test green (300-page PDF, interrupted + resumed); D-070..D-077                          |
-| M5 Pipeline                   | **M5b in progress (master)**       | DoD e2e green (upload → 7 stages → in_review, all cited); notify done. Left: OCR (step 7)  |
-| M6 Workspace + QA + delivery  | not started                        |                                                                                             |
-| M7 CRM                        | done                               |                                                                                             |
-| M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen built in M4; Stripe test key needed for the manual test-card demo |
-| M9 Notifications + dashboards | in progress (`herald/m9`)          | part 1 + sales dashboard merged (`630c868`, D-090..D-092); ops dashboard running            |
+| Milestone                     | State                              | Notes                                                                                          |
+| ----------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------- |
+| M0 Foundation                 | done                               |                                                                                                |
+| M1 Auth + RBAC                | done                               | security fixes from the audit applied                                                          |
+| M2 Admin console              | done (merged from `admin/m2`)      | custom role takes effect without restart; audit M2 + M4 fixed; D-060..D-064                    |
+| M3 Website + CMS              | done (merged from `storefront/m3`) | Lighthouse ≥ 90 not measured yet (needs Lighthouse install)                                    |
+| M4 Portal cases + uploads     | done (merged from `portal/m4`)     | DoD test green (300-page PDF, interrupted + resumed); D-070..D-077                             |
+| M5 Pipeline                   | **M5b in progress (master)**       | DoD e2e green (upload → 7 stages → in_review, all cited); notify done. Left: OCR (step 7)      |
+| M6 Workspace + QA + delivery  | not started                        |                                                                                                |
+| M7 CRM                        | done                               |                                                                                                |
+| M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen built in M4; Stripe test key needed for the manual test-card demo    |
+| M9 Notifications + dashboards | in progress (`herald/m9`)          | part 1 + sales dashboard merged (`630c868`, D-090..D-092); ops dashboard running               |
 | M10 Hardening                 | in progress (`sentinel/m10`)       | parts 1, 2a, 2b merged (D-100..D-114, `docs/SECURITY-CHECKLIST.md`); part 3a IaC files running |
 
 Tests on `main` (2026-10-24 15:30, after the M9 part 1 + M10 part 2b merges and M5b step 5): lint,
