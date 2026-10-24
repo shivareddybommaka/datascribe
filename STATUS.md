@@ -18,7 +18,7 @@ existing CRM, never touch), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025). CMS 
 | M7 CRM                        | done                               |                                                                                                 |
 | M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen built in M4; Stripe test key needed for the manual test-card demo     |
 | M9 Notifications + dashboards | in progress (`herald/m9`)          | part 1 + sales, ops, finance dashboards merged (`f72c63a`, D-090..D-094); client dashboard next |
-| M10 Hardening                 | in progress (`sentinel/m10`)       | parts 1, 2a, 2b, 3a merged (D-100..D-115; Terraform files in `infra/terraform`, not applied)    |
+| M10 Hardening                 | in progress (`sentinel/m10`)       | parts 1–3a merged; 3b Dockerfiles built locally, not pushed (D-116), on branch; CI deploy next  |
 
 Tests on `main` (2026-10-24 17:20, after the M9 ops/finance + M10 part 3a merges): format, lint,
 typecheck, unit/API tests and build green (API 322, worker 55, web 57, scan 6); Playwright e2e 23/23
@@ -73,7 +73,10 @@ ledger D-040+, pipeline D-050+, herald D-090+, sentinel D-100+.
 - Terraform CLI (Homebrew, admin) to `terraform validate` the M10 IaC files; nothing will be applied.
 - IaC (`infra/terraform`, `docs/INFRA.md`, D-115) is written, never applied. Going further needs AWS
   accounts (staging, production) with a BAA, a state bucket, domain + ACM certificate, SES and secret
-  values; a CI staging deploy also needs Dockerfiles and a GitHub OIDC role.
+  values; a CI staging deploy also needs a GitHub OIDC role per account (Dockerfiles done, D-116).
+- M10 (sentinel) part 3b: OK to build images in CI for X86_64 (the Terraform default) or switch
+  Fargate to ARM64 to match the build Mac? Shrink images (drop the auto-installed Prisma CLI peer,
+  ~150 MB) now or later?
 - M9 finance dashboard (D-094): should MRR count trialing / past-due subscriptions (matches the
   existing finance overview now)? OK to show client firm names in "revenue by client"?
 - Next's e2e run rewrites `apps/web/next-env.d.ts` / `tsconfig.json` with the port (herald): ignore
