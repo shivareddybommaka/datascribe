@@ -30,7 +30,11 @@
 - **Ops dashboard** (`GET /dashboards/ops`, `/console/dashboards/ops`): cases by status, open and
   overdue counts, average turnaround (submitted → in review, submitted → delivered) for a 7 / 30 /
   90-day window, workload per summarizer. Ops managers see all cases, case managers their team,
-  summarizers and QA reviewers their own (D-093). Finance and client dashboards are next.
+  summarizers and QA reviewers their own (D-093).
+- **Finance dashboard** (`GET /dashboards/finance`, `/console/dashboards/finance`): MRR and
+  subscriptions by status, invoices outstanding and overdue, revenue net of refunds for a 30 / 90 /
+  365-day window with the top ten clients per currency (D-094). Finance and ops managers. The client
+  dashboard is next.
 
 ## M5b — Processing pipeline (in progress, `main`)
 

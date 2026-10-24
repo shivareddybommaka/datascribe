@@ -5,6 +5,7 @@ import { TEST_PASSWORD, TEST_TOTP_SECRET } from '../../api/test/constants';
 const SALES = 'sales@datascribe.example';
 const OPS = 'ops.manager@datascribe.example';
 const SUMMARIZER = 'summarizer@datascribe.example';
+const FINANCE = 'finance@datascribe.example';
 
 async function signIn(page: Page, email: string) {
   await page.goto('/console/dashboards');
@@ -14,6 +15,8 @@ async function signIn(page: Page, email: string) {
   await page.getByRole('button', { name: 'Continue' }).click();
   await page.getByLabel('Authentication code').fill(authenticator.generate(TEST_TOTP_SECRET));
   await page.getByRole('button', { name: 'Verify' }).click();
+  // wait for the session (refresh cookie) before navigating, or the next page load signs out again
+  await expect(page).not.toHaveURL(/\/console\/login/);
 }
 
 test('M9: sales sees the sales dashboard and can change its window', async ({ page }) => {
@@ -56,4 +59,18 @@ test('M9: ops manager sees every case on the ops dashboard; a summarizer sees th
   await expect(page.getByTestId('kpi-open')).toHaveText(/^\d+$/);
   // a summarizer holds no sales grant, so the tab isn't offered
   await expect(page.getByRole('link', { name: 'Sales', exact: true })).toHaveCount(0);
+});
+
+test('M9: finance sees MRR, outstanding invoices and revenue by client', async ({ page }) => {
+  await signIn(page, FINANCE);
+  await page.goto('/console/dashboards');
+  await expect(page).toHaveURL(/\/console\/dashboards\/finance$/);
+  await expect(page.getByRole('heading', { name: 'Finance dashboard' })).toBeVisible();
+  await expect(page.getByTestId('kpi-mrr')).toHaveText(/\d|—/);
+  await expect(page.getByRole('heading', { name: 'Revenue by client' })).toBeVisible();
+  await expect(page.getByRole('list', { name: 'Subscriptions by status' })).toContainText('Active');
+
+  const year = page.waitForResponse((r) => r.url().includes('/dashboards/finance?days=365'));
+  await page.getByLabel('Window').selectOption('365');
+  expect((await year).status()).toBe(200);
 });

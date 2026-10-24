@@ -1,3 +1,4 @@
+import { SCALE, formatUnits, multiply, toUnits } from '@datascribe/billing';
 import type { Prisma } from '@datascribe/db';
 import { CASE_STATUSES, LEAD_STAGES, type CaseStatus } from '@datascribe/shared';
 import { Router } from 'express';
@@ -7,7 +8,25 @@ import { authenticate, requireAuth, requirePermission } from '../auth/middleware
 import type { Deps } from '../context';
 import { forbidden } from '../lib/errors';
 import { parse } from '../lib/validate';
+import { billingOrgWhere } from './billing/common';
 import { requireInternal } from './crm/common';
+
+const FinanceRange = z.object({
+  /** payments on invoices paid in the last N days count as revenue (default 90) */
+  days: z.coerce.number().int().min(1).max(730).default(90),
+});
+
+const SUBSCRIPTION_STATUSES = ['trialing', 'active', 'past_due', 'canceled'] as const;
+/** Revenue rows per currency before the rest are folded into "other clients". */
+const TOP_CLIENTS = 10;
+
+/** Adds `units` to the running total for `key`. */
+const add = (m: Map<string, bigint>, key: string, units: bigint) =>
+  m.set(key, (m.get(key) ?? 0n) + units);
+const byCurrency = (m: Map<string, bigint>) =>
+  [...m]
+    .map(([currency, units]) => ({ currency, amount: formatUnits(units) }))
+    .sort((a, b) => a.currency.localeCompare(b.currency));
 
 const Range = z.object({
   /** leads created in the last N days count towards conversion and sources (default 90) */
@@ -65,8 +84,8 @@ const avgHours = (spans: number[]) =>
 
 /**
  * §5.9 dashboards (M9 part 2, D-092). Aggregates only: counts and sums, never lead rows, so a
- * dashboard grant shows no contact or case details. Sales (D-092) and ops (D-093); finance and
- * client follow.
+ * dashboard grant shows no contact or case details. Sales (D-092), ops (D-093) and finance
+ * (D-094); client follows.
  */
 export function dashboardsRouter(deps: Deps): Router {
   const { prisma } = deps;
@@ -226,6 +245,137 @@ export function dashboardsRouter(deps: Deps): Router {
         inReview: { count: reviewSpans.length, avgHours: avgHours(reviewSpans) },
       },
       workload,
+    });
+  });
+
+  r.get('/dashboards/finance', requirePermission('dashboard_finance', 'view'), async (req, res) => {
+    const auth = requireAuth(req);
+    const { days } = parse(FinanceRange, req.query);
+    const org = billingOrgWhere(auth, 'dashboard_finance', 'view');
+    const now = new Date();
+    const since = new Date(now.getTime() - days * 86_400_000);
+
+    const [subs, plans, outstanding, overdue, payments] = await Promise.all([
+      prisma.subscription.groupBy({ by: ['planId', 'status'], where: org, _count: { _all: true } }),
+      prisma.subscriptionPlan.findMany({
+        select: { id: true, priceMonthly: true, currency: true },
+      }),
+      prisma.invoice.groupBy({
+        by: ['currency'],
+        where: { ...org, status: { in: ['issued', 'overdue'] } },
+        _count: { _all: true },
+        _sum: { total: true },
+      }),
+      prisma.invoice.groupBy({
+        by: ['currency'],
+        where: {
+          ...org,
+          OR: [{ status: 'overdue' }, { status: 'issued', dueAt: { lt: now } }],
+        },
+        _count: { _all: true },
+        _sum: { total: true },
+      }),
+      // net of refunds, so a fully refunded payment counts as zero
+      prisma.payment.findMany({
+        where: {
+          status: { in: ['succeeded', 'refunded'] },
+          invoice: { ...org, paidAt: { gte: since } },
+        },
+        select: {
+          amount: true,
+          refundedAmount: true,
+          currency: true,
+          invoice: { select: { organizationId: true } },
+        },
+      }),
+    ]);
+
+    // MRR as on the finance overview (D-044): every subscription that isn't canceled, at its
+    // plan's monthly price, per currency
+    const mrr = new Map<string, bigint>();
+    const mrrSubs = new Map<string, number>();
+    for (const s of subs) {
+      const plan = plans.find((p) => p.id === s.planId);
+      if (!plan || s.status === 'canceled') continue;
+      add(mrr, plan.currency, multiply(BigInt(s._count._all) * SCALE, toUnits(plan.priceMonthly)));
+      mrrSubs.set(plan.currency, (mrrSubs.get(plan.currency) ?? 0) + s._count._all);
+    }
+
+    const perClient = new Map<string, { units: bigint; payments: number }>();
+    const revenue = new Map<string, bigint>();
+    for (const p of payments) {
+      const net = toUnits(p.amount) - toUnits(p.refundedAmount);
+      const key = `${p.currency}\u0000${p.invoice.organizationId}`;
+      const row = perClient.get(key) ?? { units: 0n, payments: 0 };
+      perClient.set(key, { units: row.units + net, payments: row.payments + 1 });
+      add(revenue, p.currency, net);
+    }
+    const orgIds = [...new Set(payments.map((p) => p.invoice.organizationId))];
+    const orgs = orgIds.length
+      ? await prisma.organization.findMany({
+          where: { id: { in: orgIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const clients = [...perClient]
+      .map(([key, v]) => {
+        const [currency, organizationId] = key.split('\u0000') as [string, string];
+        return { currency, organizationId, ...v };
+      })
+      .sort(
+        (a, b) =>
+          a.currency.localeCompare(b.currency) ||
+          (b.units > a.units ? 1 : b.units < a.units ? -1 : 0),
+      );
+    const byClient: {
+      organizationId: string | null;
+      name: string | null;
+      currency: string;
+      amount: string;
+      payments: number;
+    }[] = [];
+    for (const currency of new Set(clients.map((c) => c.currency))) {
+      const rows = clients.filter((c) => c.currency === currency);
+      for (const c of rows.slice(0, TOP_CLIENTS)) {
+        byClient.push({
+          organizationId: c.organizationId,
+          name: orgs.find((o) => o.id === c.organizationId)?.name ?? null,
+          currency,
+          amount: formatUnits(c.units),
+          payments: c.payments,
+        });
+      }
+      const rest = rows.slice(TOP_CLIENTS);
+      if (rest.length) {
+        byClient.push({
+          organizationId: null, // "other clients"
+          name: null,
+          currency,
+          amount: formatUnits(rest.reduce((n, c) => n + c.units, 0n)),
+          payments: rest.reduce((n, c) => n + c.payments, 0),
+        });
+      }
+    }
+
+    const money = (g: {
+      currency: string;
+      _count: { _all: number };
+      _sum: { total: unknown };
+    }) => ({
+      currency: g.currency,
+      count: g._count._all,
+      amount: formatUnits(g._sum.total ? toUnits(String(g._sum.total)) : 0n),
+    });
+    res.json({
+      days,
+      mrr: byCurrency(mrr).map((m) => ({ ...m, subscriptions: mrrSubs.get(m.currency) ?? 0 })),
+      subscriptions: SUBSCRIPTION_STATUSES.map((status) => ({
+        status,
+        count: subs.filter((s) => s.status === status).reduce((n, s) => n + s._count._all, 0),
+      })),
+      outstanding: outstanding.map(money).sort((a, b) => a.currency.localeCompare(b.currency)),
+      overdue: overdue.map(money).sort((a, b) => a.currency.localeCompare(b.currency)),
+      revenue: { total: byCurrency(revenue), byClient },
     });
   });
 

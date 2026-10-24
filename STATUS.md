@@ -17,7 +17,7 @@ existing CRM, never touch), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025). CMS 
 | M6 Workspace + QA + delivery  | not started                        |                                                                                             |
 | M7 CRM                        | done                               |                                                                                             |
 | M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen built in M4; Stripe test key needed for the manual test-card demo |
-| M9 Notifications + dashboards | in progress (`herald/m9`)          | part 1 merged; part 2: sales + ops dashboards done (D-092, D-093); next finance, client     |
+| M9 Notifications + dashboards | in progress (`herald/m9`)          | part 1 merged; part 2: sales, ops, finance dashboards done (D-092..D-094); next client      |
 | M10 Hardening                 | in progress (`sentinel/m10`)       | parts 1 + 2a merged (D-100..D-113); part 2b (load test, §10 checklist) running              |
 
 Tests on `main` (2026-10-24 13:30, after M5b steps 4 + 6 and the M10 part 2a merge): lint,

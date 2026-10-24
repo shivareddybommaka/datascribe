@@ -790,6 +790,21 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
   at current volumes; if it gets slow, add an `inReviewAt` column and move both averages to SQL.
 - `/console/dashboards` opens ops when the user holds it, otherwise sales.
 
+## D-094 — Finance dashboard: MRR, outstanding, revenue by client (M9 part 2, 2026-10-24)
+
+- `GET /dashboards/finance` (`dashboard_finance:view`: finance + ops_manager), org filter from
+  `billingOrgWhere` like the billing routes. Every amount is per currency, never converted (D-044),
+  summed with the billing package's exact money helpers rather than floats.
+- MRR uses the finance overview's definition (D-044) so the two never disagree: every subscription
+  that isn't canceled (trialing and past_due included) at its plan's monthly price. Subscription
+  counts per status sit next to it so trialing can be read separately.
+- Outstanding = invoices `issued` or `overdue`; overdue = `overdue`, or `issued` with `dueAt` past
+  (the dunning job may not have marked it yet). Drafts, void, paid and refunded are excluded.
+- Revenue over `days` (default 90, max 730) = succeeded or refunded payments on invoices paid in the
+  window, net of `refundedAmount`, so refunds lower it. By client: top ten per currency, the rest
+  folded into one "other clients" row (`organizationId: null`). Client firm names are shown; they are
+  business data the finance role already sees, not PHI. No invoice numbers or payment references.
+
 ## D-100 — Absolute session lifetime and MFA re-check on refresh (audit M5, M10, 2026-10-24)
 
 - Replaces D-017's "7 days sliding". A rotated session copies its family's `expiresAt`, so a sign-in

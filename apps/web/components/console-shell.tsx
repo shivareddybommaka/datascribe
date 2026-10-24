@@ -46,10 +46,11 @@ const SECTIONS: { label: string; href: string; modules: string[]; items: NavItem
   {
     label: 'Dashboards',
     href: '/console/dashboards',
-    modules: ['dashboard_ops', 'dashboard_sales'],
+    modules: ['dashboard_ops', 'dashboard_sales', 'dashboard_finance'],
     items: [
       { href: '/console/dashboards/ops', label: 'Operations', perm: 'dashboard_ops:view:' },
       { href: '/console/dashboards/sales', label: 'Sales', perm: 'dashboard_sales:view:' },
+      { href: '/console/dashboards/finance', label: 'Finance', perm: 'dashboard_finance:view:' },
     ],
   },
   {
