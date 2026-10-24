@@ -783,3 +783,14 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
   The message field references it via `aria-describedby`, so screen readers announce it.
 - The text is in code, not CMS copy, so an editor can't remove it. No server-side PHI detection:
   it would be guesswork and could reject real enquiries.
+
+## D-109 — Images pinned by digest, Actions by commit SHA (audit L12, M10, 2026-10-24)
+
+- `docker-compose.yml` and CI use `tag@sha256:<index digest>` (multi-arch index, so the Mac and
+  CI's amd64 runners resolve the same release). The digests are the ones the local stack already
+  runs (`docker image inspect … RepoDigests`); ClamAV's is from Docker Hub's `stable` tag.
+- CI Actions are pinned to the commit the `v4` tag pointed at on 2026-10-24
+  (`git ls-remote`), with `# v4` kept as a comment.
+- `apps/api/test/supply-chain.test.ts` fails on any unpinned image or Action.
+- Updating: pull the tag, copy the new RepoDigest; for an Action, `git ls-remote` the tag (use the
+  `^{}` commit for annotated tags). Dependabot can do this later (needs repo settings, Shiva).
