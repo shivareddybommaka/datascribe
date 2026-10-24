@@ -1478,3 +1478,27 @@ queues.ts`) keeps them; the API and the usage tracker already pass the URL to io
   read from `window.location` after hydration. Send stays disabled until hydration, so a click before
   that can't submit the fields natively as a GET query string (name and email in the URL and logs).
   Re-run: 99, CLS 0.
+
+## D-083 — Staff case queue and assignment (M6 part 1, 2026-10-25)
+
+- **Queue** = `GET /cases` with staff-only filters: `organizationId`, `assigneeId` (`me` or a user
+  id; matches case manager, summarizer or QA reviewer), `unassigned=case_manager|summarizer|qa_reviewer`
+  (open work only), `sla=red|amber|any`, `dueBefore=YYYY-MM-DD`, and `sort=priority` (urgent first,
+  then due date). Client users get 400 for the staff filters. Staff rows add the client firm and the
+  three assignees (`{id, name}`); client rows never carry them.
+- **SLA flag** on every row and detail (`sla`): `red` when `dueAt` is past, `amber` when due in under
+  24 h, else null. Only for work Datascribe owes (`submitted` … `approved`, `on_hold`); a delivered
+  or closed case is never flagged. `slaWhere()` is the matching Prisma filter.
+- **`POST /cases/:id/assign`** `{caseManagerId?, summarizerId?, qaReviewerId?}` (id sets, null clears).
+  Allowed for internal users with `cases:edit` on every firm. With `cases:manage` (ops_manager,
+  super_admin) anything can be reassigned. Without it (case_manager) the caller must manage the case
+  or the case must have no manager; they set the summarizer and QA reviewer, and may only claim an
+  empty case-manager slot or release their own. Assignable from `submitted` to `delivered`.
+- **Eligibility by permission, not role key**, so custom roles work: case manager = `cases:edit`
+  scope all; summarizer = `deliverables:edit` (all/assigned); QA reviewer = `deliverables:approve`
+  (all/assigned). Active internal users only. `GET /cases/assignable-staff?role=` lists them with
+  their open-case count for the picker.
+- **Four eyes**: summarizer and QA reviewer must be different people (409 `same_person`).
+- Compare-and-set on the previous three assignee columns (409 `assignment_changed` on a race). One
+  `case.assign` audit row per changed slot (`{role, from, to}`, user ids only) and an
+  `assigned_to_you` notification to each new assignee (not to the caller), via M9's `notifyAssigned`.

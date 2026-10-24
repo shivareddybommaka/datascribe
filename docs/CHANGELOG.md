@@ -1,5 +1,18 @@
 # Changelog
 
+## M6 part 1 — Staff case queue and assignment API (2026-10-25, master)
+
+Design notes: D-083.
+
+- **Queue filters** on `GET /cases` for staff: client firm, assignee (`me`), unassigned slot, SLA
+  flag, due-before date, sort by priority. Staff rows include the firm and assignees.
+- **SLA flags** (`sla`: `red` overdue, `amber` due in < 24 h) on case rows and detail.
+- **`POST /cases/:id/assign`**: case managers set the summarizer and QA reviewer on their cases (or
+  claim an unmanaged one); ops managers reassign anything. Eligibility by permission, four-eyes
+  rule, compare-and-set, `case.assign` audit rows, `assigned_to_you` notifications (M9 event now
+  live). `GET /cases/assignable-staff?role=` for the picker.
+- Tests: `apps/api/test/case-queue.test.ts` (11).
+
 ## M10 part 5 — Lighthouse on the public pages (2026-10-24, branch `sentinel/m10`)
 
 Approved by Shiva on 2026-10-24 (item 6). Design notes: D-127.

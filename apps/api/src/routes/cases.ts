@@ -1,5 +1,5 @@
 import type { Prisma } from '@datascribe/db';
-import { notifyCaseSubmitted } from '@datascribe/db/notifications';
+import { notifyAssigned, notifyCaseSubmitted } from '@datascribe/db/notifications';
 import {
   CASE_STATUSES,
   CASE_TYPES,
@@ -12,7 +12,7 @@ import {
 } from '@datascribe/shared';
 import { Router, type Request } from 'express';
 import { z } from 'zod';
-import type { AuthContext } from '../auth/context';
+import { effectivePermissions, type AuthContext } from '../auth/context';
 import { authenticate, requireAuth, requirePermission } from '../auth/middleware';
 import { canOnCase, caseScopeWhere } from '../auth/scoping';
 import type { Deps } from '../context';
@@ -21,10 +21,18 @@ import { safeNotify } from '../lib/notify';
 import { decryptOptional, encryptOptional } from '../lib/phi';
 import { parse } from '../lib/validate';
 import {
+  ASSIGNABLE_BY,
+  ASSIGNABLE_STATUSES,
+  ASSIGNMENT_FIELD,
+  ASSIGNMENT_ROLES,
   CLOSED_STATUSES,
+  SLA_STATUSES,
   TIMELINE_ACTIONS,
   UPLOADABLE_STATUSES,
   nextCaseNumber,
+  slaFlag,
+  slaWhere,
+  type AssignmentRole,
 } from '../services/cases';
 import { serializeDocument } from './documents';
 
@@ -73,11 +81,35 @@ const PatchCase = CaseFields.partial().refine(
   'Nothing to update',
 );
 
+const staffRef = { select: { id: true, name: true } } as const;
+
 const caseInclude = {
   shares: { select: { userId: true, user: { select: { id: true, name: true, email: true } } } },
   createdBy: { select: { id: true, name: true } },
   organization: { select: { id: true, name: true } },
+  caseManager: staffRef,
+  summarizer: staffRef,
+  qaReviewer: staffRef,
 } satisfies Prisma.CaseInclude;
+
+const queueInclude = {
+  organization: { select: { id: true, name: true } },
+  caseManager: staffRef,
+  summarizer: staffRef,
+  qaReviewer: staffRef,
+} satisfies Prisma.CaseInclude;
+
+const UserId = z.string().min(1).max(40);
+
+/** Body of POST /cases/:id/assign: a user id sets the assignment, null clears it (D-083). */
+const AssignBody = z
+  .object({
+    caseManagerId: UserId.nullable().optional(),
+    summarizerId: UserId.nullable().optional(),
+    qaReviewerId: UserId.nullable().optional(),
+  })
+  .strict()
+  .refine((v) => Object.keys(v).length > 0, 'Nothing to assign');
 
 type CaseRow = Prisma.CaseGetPayload<{ include: typeof caseInclude }>;
 
@@ -93,6 +125,21 @@ const scopeAtLeastFirm = (auth: AuthContext, module: Module, action: Action) => 
 const canManageShares = (auth: AuthContext, c: CaseRow) =>
   canOnCase(auth, 'edit', 'cases', c) &&
   (c.createdById === auth.user.id || scopeAtLeastFirm(auth, 'cases', 'edit'));
+
+/** cases:manage (ops_manager) reassigns anything; plain case managers work their own cases. */
+const canReassignAny = (auth: AuthContext) =>
+  broadestScope(auth.permissions, 'cases', 'manage') === 'all';
+
+/**
+ * Assignment rights (§5.4, D-083): internal staff with cases:edit on every firm (case managers,
+ * ops, super admin). Without cases:manage the caller must manage the case, or claim an unmanaged
+ * one, and may set the summarizer and QA reviewer; only cases:manage moves someone else's case.
+ */
+const canAssign = (auth: AuthContext, c: { caseManagerId: string | null; status: string }) =>
+  auth.user.orgType === 'internal' &&
+  broadestScope(auth.permissions, 'cases', 'edit') === 'all' &&
+  (ASSIGNABLE_STATUSES as readonly string[]).includes(c.status) &&
+  (canReassignAny(auth) || c.caseManagerId === null || c.caseManagerId === auth.user.id);
 
 /**
  * §5.3 / §9 case routes. Every route: Zod input, permission check, org scoping (caseScopeWhere +
@@ -126,8 +173,18 @@ export function casesRouter(deps: Deps): Router {
     priority: c.priority,
     status: c.status,
     dueAt: c.dueAt,
+    sla: slaFlag(c),
     submittedAt: c.submittedAt,
     createdAt: c.createdAt,
+  });
+
+  /** Queue row for staff: adds the client firm and who is assigned (never shown to clients). */
+  const staffSummary = (c: Prisma.CaseGetPayload<{ include: typeof queueInclude }>) => ({
+    ...summary(c),
+    organization: c.organization,
+    caseManager: c.caseManager,
+    summarizer: c.summarizer,
+    qaReviewer: c.qaReviewer,
   });
 
   async function detail(req: Request, c: CaseRow) {
@@ -168,7 +225,18 @@ export function casesRouter(deps: Deps): Router {
           canOnCase(auth, 'delete', 'documents', c) && UPLOADABLE_STATUSES.includes(c.status),
         message: true,
         internalMessages: auth.user.orgType === 'internal',
+        assign: canAssign(auth, c),
+        reassignAny: canAssign(auth, c) && canReassignAny(auth),
       },
+      ...(auth.user.orgType === 'internal'
+        ? {
+            assignees: {
+              caseManager: c.caseManager,
+              summarizer: c.summarizer,
+              qaReviewer: c.qaReviewer,
+            },
+          }
+        : {}),
     };
   }
 
@@ -186,12 +254,24 @@ export function casesRouter(deps: Deps): Router {
         caseType: z.enum(CASE_TYPES).optional(),
         priority: z.enum(PRIORITIES).optional(),
         q: z.string().trim().min(1).max(100).optional(),
-        sort: z.enum(['created', 'due']).default('created'),
+        // staff queue filters (§5.4): client firm, assignee, SLA flag, due date
+        organizationId: z.string().min(1).max(40).optional(),
+        assigneeId: z.string().min(1).max(40).optional(),
+        unassigned: z.enum(ASSIGNMENT_ROLES).optional(),
+        sla: z.enum(['red', 'amber', 'any']).optional(),
+        dueBefore: DateOnly.optional(),
+        sort: z.enum(['created', 'due', 'priority']).default('created'),
         limit: z.coerce.number().int().min(1).max(100).default(50),
         offset: z.coerce.number().int().min(0).default(0),
       }),
       req.query,
     );
+    const staff = auth.user.orgType === 'internal';
+    if (!staff && (q.organizationId || q.assigneeId || q.unassigned)) {
+      throw badRequest('staff_only_filter', 'These filters are for Datascribe staff');
+    }
+    const assignee = q.assigneeId === 'me' ? auth.user.id : q.assigneeId;
+    const now = new Date();
     const where: Prisma.CaseWhereInput = {
       AND: [
         caseScopeWhere(auth, 'cases', 'view'),
@@ -199,6 +279,25 @@ export function casesRouter(deps: Deps): Router {
         q.open === 'true' ? { status: { notIn: [...CLOSED_STATUSES] } } : {},
         q.caseType ? { caseType: q.caseType } : {},
         q.priority ? { priority: q.priority } : {},
+        q.organizationId ? { organizationId: q.organizationId } : {},
+        assignee
+          ? {
+              OR: [
+                { caseManagerId: assignee },
+                { summarizerId: assignee },
+                { qaReviewerId: assignee },
+              ],
+            }
+          : {},
+        q.unassigned
+          ? { [ASSIGNMENT_FIELD[q.unassigned]]: null, status: { in: [...SLA_STATUSES] } }
+          : {},
+        q.sla === 'any'
+          ? { OR: [slaWhere('red', now), slaWhere('amber', now)] }
+          : q.sla
+            ? slaWhere(q.sla, now)
+            : {},
+        q.dueBefore ? { dueAt: { lte: new Date(`${q.dueBefore}T23:59:59Z`) } } : {},
         // patient names are encrypted, so search covers matter, reference and number only
         q.q
           ? {
@@ -217,9 +316,17 @@ export function casesRouter(deps: Deps): Router {
         orderBy:
           q.sort === 'due'
             ? [{ dueAt: { sort: 'asc', nulls: 'last' } }, { createdAt: 'desc' }]
-            : { createdAt: 'desc' },
+            : q.sort === 'priority'
+              ? // Priority enum order is low < normal < high < urgent
+                [
+                  { priority: 'desc' },
+                  { dueAt: { sort: 'asc', nulls: 'last' } },
+                  { createdAt: 'desc' },
+                ]
+              : { createdAt: 'desc' },
         take: q.limit,
         skip: q.offset,
+        include: staff ? queueInclude : undefined,
       }),
       prisma.case.count({ where }),
     ]);
@@ -230,7 +337,172 @@ export function casesRouter(deps: Deps): Router {
       organizationId: auth.user.orgType === 'client' ? auth.user.organizationId : null,
       metadata: { count: rows.length, total },
     });
-    res.json({ total, items: rows.map(summary) });
+    res.json({
+      total,
+      items: staff
+        ? (rows as Prisma.CaseGetPayload<{ include: typeof queueInclude }>[]).map(staffSummary)
+        : rows.map(summary),
+    });
+  });
+
+  // ── Assignment (§5.4, D-083) ──────────────────────────────────────────
+  /** Active internal users who can fill a role, with their open workload, for the assign picker. */
+  r.get('/cases/assignable-staff', requirePermission('cases', 'edit'), async (req, res) => {
+    const auth = requireAuth(req);
+    if (
+      auth.user.orgType !== 'internal' ||
+      broadestScope(auth.permissions, 'cases', 'edit') !== 'all'
+    ) {
+      throw forbidden();
+    }
+    const { role } = parse(z.object({ role: z.enum(ASSIGNMENT_ROLES) }), req.query);
+    const people = await eligibleStaff(role);
+    const field = ASSIGNMENT_FIELD[role];
+    const load = await prisma.case.groupBy({
+      by: [field],
+      where: { [field]: { in: people.map((p) => p.id) }, status: { in: [...SLA_STATUSES] } },
+      _count: { _all: true },
+    });
+    const openCount = new Map(load.map((l) => [l[field] as string, l._count._all]));
+    res.json({
+      role,
+      items: people.map((p) => ({ ...p, openCases: openCount.get(p.id) ?? 0 })),
+    });
+  });
+
+  /** Internal active users whose permissions fit the role (by grant, so custom roles count). */
+  async function eligibleStaff(role: AssignmentRole, ids?: string[]) {
+    const need = ASSIGNABLE_BY[role];
+    const users = await prisma.user.findMany({
+      where: {
+        ...(ids ? { id: { in: ids } } : {}),
+        status: 'active',
+        organization: { type: 'internal', status: 'active' },
+        roles: {
+          some: {
+            role: {
+              permissions: {
+                some: {
+                  permission: {
+                    module: need.module,
+                    action: need.action,
+                    scope: { in: need.scopes },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        roles: {
+          include: { role: { include: { permissions: { include: { permission: true } } } } },
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
+    // the SQL filter is a pre-check; effectivePermissions is the same rule the request path uses
+    return users
+      .filter((u) =>
+        effectivePermissions(
+          u.roles.flatMap((ur) => ur.role.permissions.map((rp) => rp.permission)),
+          'internal',
+        ).some(
+          (p) =>
+            p.module === need.module && p.action === need.action && need.scopes.includes(p.scope),
+        ),
+      )
+      .map((u) => ({ id: u.id, name: u.name, email: u.email }));
+  }
+
+  r.post('/cases/:id/assign', requirePermission('cases', 'edit'), async (req, res) => {
+    const auth = requireAuth(req);
+    const body = parse(AssignBody, req.body);
+    const c = await loadCase(req, 'cases', 'edit');
+    if (!canAssign(auth, c)) {
+      if (!(ASSIGNABLE_STATUSES as readonly string[]).includes(c.status)) {
+        throw conflict('not_assignable', `A ${c.status} case cannot be assigned`);
+      }
+      throw forbidden();
+    }
+    const any = canReassignAny(auth);
+    const changes: { role: AssignmentRole; from: string | null; to: string | null }[] = [];
+    for (const role of ASSIGNMENT_ROLES) {
+      const field = ASSIGNMENT_FIELD[role];
+      const to = body[field];
+      if (to === undefined || to === c[field]) continue;
+      changes.push({ role, from: c[field], to });
+    }
+    if (changes.length === 0) {
+      res.json(await detail(req, c));
+      return;
+    }
+    // Without cases:manage, the case manager slot can only be claimed (empty → me) or released (me → empty)
+    const cm = changes.find((ch) => ch.role === 'case_manager');
+    if (
+      cm &&
+      !any &&
+      !(cm.from === null && cm.to === auth.user.id) &&
+      !(cm.from === auth.user.id && cm.to === null)
+    ) {
+      throw forbidden('Only an operations manager can move a case to another case manager');
+    }
+    const next = {
+      caseManagerId: body.caseManagerId !== undefined ? body.caseManagerId : c.caseManagerId,
+      summarizerId: body.summarizerId !== undefined ? body.summarizerId : c.summarizerId,
+      qaReviewerId: body.qaReviewerId !== undefined ? body.qaReviewerId : c.qaReviewerId,
+    };
+    // four eyes: the person who wrote the deliverables cannot QA them (D-083)
+    if (next.summarizerId && next.summarizerId === next.qaReviewerId) {
+      throw conflict('same_person', 'The summarizer and the QA reviewer must be different people');
+    }
+    for (const ch of changes) {
+      if (ch.to === null) continue;
+      const ok = await eligibleStaff(ch.role, [ch.to]);
+      if (ok.length !== 1) {
+        throw badRequest(
+          'not_eligible',
+          `That person cannot be the case's ${ch.role.replace('_', ' ')}`,
+        );
+      }
+    }
+    // compare-and-set on the previous assignment so two managers can't overwrite each other
+    const { count } = await prisma.case.updateMany({
+      where: {
+        id: c.id,
+        status: { in: [...ASSIGNABLE_STATUSES] },
+        caseManagerId: c.caseManagerId,
+        summarizerId: c.summarizerId,
+        qaReviewerId: c.qaReviewerId,
+      },
+      data: next,
+    });
+    if (count !== 1)
+      throw conflict('assignment_changed', 'Someone else changed this case; reload it');
+    for (const ch of changes) {
+      await req.audit({
+        action: 'case.assign',
+        entity: 'Case',
+        entityId: c.id,
+        organizationId: c.organizationId,
+        metadata: { role: ch.role, from: ch.from, to: ch.to },
+      });
+    }
+    for (const ch of changes) {
+      if (!ch.to) continue;
+      const to = ch.to;
+      await safeNotify(deps.logger, 'assigned_to_you', () =>
+        notifyAssigned(prisma, c.id, to, ch.role, auth.user.id),
+      );
+    }
+    const fresh = await prisma.case.findUniqueOrThrow({
+      where: { id: c.id },
+      include: caseInclude,
+    });
+    res.json(await detail(req, fresh));
   });
 
   // ── Create ────────────────────────────────────────────────────────────
