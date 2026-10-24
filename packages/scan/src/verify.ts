@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { PassThrough, type Readable } from 'node:stream';
 import { errorInfo, type Document, type Prisma, type PrismaClient } from '@datascribe/db';
+import { notifyUploadScanned } from '@datascribe/db/notifications';
 import { countPages } from './pages';
 import type { VirusScanner } from './scanner';
 
@@ -84,6 +85,7 @@ export async function verifyDocument(
         data: { scanStatus: 'error' },
       });
       await systemAudit(prisma, doc, 'document.scan', { result: 'error', scanner: scanner.name });
+      await safeNotify(logger, doc.id, 'error', prisma);
       return updated;
     }
 
@@ -104,9 +106,27 @@ export async function verifyDocument(
       ...(outcome.signature ? { signature: outcome.signature } : {}),
       pageCount: outcome.pageCount,
     });
+    await safeNotify(logger, doc.id, outcome.clean ? 'clean' : 'infected', prisma);
     return updated;
   } finally {
     running.delete(documentId);
+  }
+}
+
+/** Tell the uploader and staff; a failed dispatch is logged and never undoes the scan (D-090). */
+async function safeNotify(
+  logger: VerifyDeps['logger'],
+  documentId: string,
+  result: 'clean' | 'infected' | 'error',
+  prisma: PrismaClient,
+): Promise<void> {
+  try {
+    await notifyUploadScanned(prisma, documentId, result);
+  } catch (err) {
+    logger.error(
+      { event: `upload_${result}`, err: { name: (err as Error).name } },
+      'notification dispatch failed',
+    );
   }
 }
 

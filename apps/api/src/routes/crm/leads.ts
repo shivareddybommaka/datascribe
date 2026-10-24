@@ -1,4 +1,5 @@
 import type { Prisma } from '@datascribe/db';
+import { notifyLeadAssigned } from '@datascribe/db/notifications';
 import { LEAD_STAGES, broadestScope, type LeadStage } from '@datascribe/shared';
 import express, { Router, type Request } from 'express';
 import { z } from 'zod';
@@ -7,6 +8,7 @@ import { staffEmailDomains } from '../../config/env';
 import type { Deps } from '../../context';
 import { parseCsv, toCsv } from '../../lib/csv';
 import { HttpError, badRequest, conflict, forbidden, notFound } from '../../lib/errors';
+import { safeNotify } from '../../lib/notify';
 import { parse } from '../../lib/validate';
 import { Email } from '../auth';
 import { issueInvite } from '../invites';
@@ -323,6 +325,9 @@ export function leadsRouter(deps: Deps): Router {
       include: { owner: ownerSelect },
     });
     await req.audit({ action: 'crm.lead.create', entity: 'Lead', entityId: lead.id });
+    await safeNotify(deps.logger, 'lead_assigned', () =>
+      notifyLeadAssigned(prisma, lead, auth.user.id),
+    );
     res.status(201).json(serializeLead(lead));
   });
 
@@ -387,6 +392,11 @@ export function leadsRouter(deps: Deps): Router {
         ...(stageChanging ? { from: existing.stage, to: nextStage } : {}),
       },
     });
+    if (lead.ownerId !== existing.ownerId) {
+      await safeNotify(deps.logger, 'lead_assigned', () =>
+        notifyLeadAssigned(prisma, lead, auth.user.id),
+      );
+    }
     res.json(serializeLead(lead));
   });
 

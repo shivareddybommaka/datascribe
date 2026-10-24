@@ -8,6 +8,7 @@ import type { Me } from '@/lib/types';
 import { ImpersonationBanner } from './admin/impersonation';
 import { useMe } from './auth';
 import { Logo } from './logo';
+import { NotificationBell } from './notifications';
 import { cn } from './ui';
 
 interface NavItem {
@@ -41,6 +42,12 @@ const SECTIONS: { label: string; href: string; modules: string[]; items: NavItem
       { href: '/console/finance/subscriptions', label: 'Subscriptions' },
       { href: '/console/finance/plans', label: 'Plans' },
     ],
+  },
+  {
+    label: 'Dashboards',
+    href: '/console/dashboards',
+    modules: ['dashboard_sales'],
+    items: [{ href: '/console/dashboards/sales', label: 'Sales', perm: 'dashboard_sales:view:' }],
   },
   {
     label: 'Admin',
@@ -109,6 +116,7 @@ export function ConsoleShell({ children }: { children: ReactNode }) {
             })}
           </nav>
           <div className="ml-auto flex items-center gap-3 text-sm">
+            <NotificationBell area="console" />
             <span className="text-muted" title={me.roles.join(', ')}>
               {me.user.name}
             </span>

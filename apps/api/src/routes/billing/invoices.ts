@@ -6,12 +6,14 @@ import {
   voidInvoice,
 } from '@datascribe/billing';
 import type { Prisma } from '@datascribe/db';
+import { notifyInvoicesIssued } from '@datascribe/db/notifications';
 import type { Action } from '@datascribe/shared';
 import { Router, type Request } from 'express';
 import { z } from 'zod';
 import { authenticate, requireAuth, requirePermission } from '../../auth/middleware';
 import type { Deps } from '../../context';
 import { HttpError, badRequest, notFound } from '../../lib/errors';
+import { safeNotify } from '../../lib/notify';
 import { parse } from '../../lib/validate';
 import {
   Currency,
@@ -160,6 +162,7 @@ export function invoicesRouter(deps: Deps): Router {
       organizationId: inv.organizationId,
       metadata: { number: inv.number, total: inv.total.toFixed(2), currency: inv.currency },
     });
+    await safeNotify(deps.logger, 'invoice_issued', () => notifyInvoicesIssued(prisma, [inv.id]));
     res.status(201).json({ ...serializeInvoice(inv), lines: inv.lines.map(serializeLine) });
   });
 
@@ -221,6 +224,9 @@ export function invoicesRouter(deps: Deps): Router {
       entity: 'Invoice',
       metadata: { asOf: now.toISOString(), invoices: result.invoiceIds.length },
     });
+    await safeNotify(deps.logger, 'invoice_issued', () =>
+      notifyInvoicesIssued(prisma, result.invoiceIds),
+    );
     res.json(result);
   });
 

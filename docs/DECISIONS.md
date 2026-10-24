@@ -729,6 +729,47 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
 - Pipeline status changes write `case.status` system audit rows (`{ from, to, by: 'pipeline' }`) in
   the same transaction as the compare-and-set, so the portal timeline shows Processing / In review.
 
+## D-090 — Notifications: catalog, in-app rows and an email outbox (M9, 2026-10-24)
+
+- One typed catalog in `packages/shared` (browser-safe, so the bell renders the same labels): each
+  §5.8 type has its audience, default channels, a `critical` flag and its text. Payloads carry ids
+  and non-PHI labels only (case / invoice numbers, amounts, CRM company names); never patient,
+  matter or file names, because subjects end up in mail logs and on lock screens.
+- `packages/db` resolves recipients and writes one `Notification` row per recipient (in-app flag
+  plus email status columns), after the admin per-event switches (D-063) and the user's own
+  preferences. Critical types (password changed, upload quarantined, payment failed) can't be muted
+  by the user.
+- Dispatch runs after the domain change and never fails it (`safeNotify` in the API, the same in
+  `packages/scan`): a failure is logged by event and error name only.
+- Those rows are the email outbox: the worker's `notifications` queue claims pending ones
+  (`deliver-emails` every 10 s; up to 3 attempts, backoff 1 then 2 min, then `failed`); `tasks-due`
+  runs every 15 min. Queue and worker use the shared
+  `queueOpts` (Redis DB index + `QUEUE_PREFIX`, D-081). Dev and e2e send to Mailpit only.
+- Upload-scan notifications moved with the scan into `packages/scan` (D-081). The stage runner gets
+  typed helpers (`notifyCaseReadyForReview`, `notifyProcessingFailed`, …) to call from the pipeline.
+
+## D-091 — Notification API and bell (M9, 2026-10-24)
+
+- `/notifications` needs a session but no module permission: a user only reads their own rows, and
+  only those created in their current organisation, so no firm sees another firm's notifications.
+- Preferences list only the types the user's kind (client / staff) can receive; critical types
+  show as locked on.
+- Impersonation is read-only (D-061): the super admin sees the bell but can't mark anything read.
+- The bell polls the unread count every 30 s (no websocket yet) and loads the latest items only when
+  opened; the full list is a cursor-paged centre page in console and portal.
+
+## D-092 — Dashboards: aggregates per module, sales first (M9 part 2, 2026-10-24)
+
+- One endpoint per dashboard under `/dashboards/*`, each gated by its own module (D-005), staff
+  only. Responses are counts and sums, never rows, so a dashboard grant shows no contact or case
+  details.
+- Sales (`dashboard_sales`, sales + ops_manager): pipeline count and value per stage over all
+  leads, summed per currency (leads aren't converted); conversion = won ÷ leads created in the window
+  (`days`, default 90, max 730) next to win rate = won ÷ (won + lost); leads by source in the window.
+- It sits beside the CRM overview's `/pipeline/summary` (needs only `crm:view`, so finance and case
+  managers see it) rather than replacing it.
+- Ops, finance and client dashboards follow with their own scopes (ops: `assigned` / `own`).
+
 ## D-100 — Absolute session lifetime and MFA re-check on refresh (audit M5, M10, 2026-10-24)
 
 - Replaces D-017's "7 days sliding". A rotated session copies its family's `expiresAt`, so a sign-in

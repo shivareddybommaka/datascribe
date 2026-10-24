@@ -1,5 +1,33 @@
 # Changelog
 
+## M9 part 1 — Notifications (2026-10-24, branch `herald/m9`)
+
+§5.8 notifications. Design notes: D-090. Migration `20261024160000_m9_notifications`
+(notifications with email delivery columns, preferences).
+
+- **Catalog and dispatcher** (`packages/shared`, `packages/db`): one typed event list with audience,
+  default channels and templates; `emit` fans out to in-app rows and queues email per recipient,
+  honouring the admin notification rules and each user's preferences.
+- **Email outbox** on a BullMQ `notifications` queue in the worker, sent to Mailpit in dev, retried
+  with backoff.
+- **Events wired**: case submitted, upload scanned, invoice issued, payment recorded, lead assigned,
+  invite accepted, password changed, tasks due (upload scanned is sent from `packages/scan` in the
+  worker). Typed helpers ready for the stage runner and QA flow:
+  case ready for review, processing failed, assigned, QA decision, delivered.
+- **API**: list (cursor paged), unread count, mark read / mark all read, get and update preferences.
+- **UI**: header bell in console and portal with an unread badge (polled every 30 s), the latest
+  notifications and "mark all read"; a notification centre page at `/console/notifications` and
+  `/portal/notifications` with preferences. Read-only while impersonating.
+- **Tests**: API and unit tests for the catalog, dispatcher and routes; Playwright e2e for the bell.
+
+## M9 part 2 — Dashboards (in progress, branch `herald/m9`)
+
+§5.9. Design notes: D-092.
+
+- **Sales dashboard** (`GET /dashboards/sales`, `/console/dashboards/sales`): pipeline value by
+  stage (per currency), conversion and win rate for a 30 / 90 / 365-day window, leads by source.
+  Sales and ops managers only. Ops, finance and client dashboards are next.
+
 ## M5b — Processing pipeline (in progress, `main`)
 
 - Stages 3–6 as pure modules (D-078) and stage 2 text extraction with pdf.js (D-079).

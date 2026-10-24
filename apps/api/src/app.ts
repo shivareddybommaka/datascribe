@@ -27,9 +27,11 @@ import { portalRouter } from './routes/portal';
 import { activitiesRouter } from './routes/crm/activities';
 import { contactsRouter } from './routes/crm/contacts';
 import { leadsRouter } from './routes/crm/leads';
+import { dashboardsRouter } from './routes/dashboards';
 import { healthRouter } from './routes/health';
 import { invitesRouter } from './routes/invites';
 import { medicalRouter } from './routes/medical';
+import { notificationsRouter } from './routes/notifications';
 import { permissionsRouter } from './routes/permissions';
 import { publicRouter } from './routes/public';
 
@@ -95,6 +97,8 @@ export function createApp(deps: Deps): Express {
   v1.use(activitiesRouter(deps));
   v1.use(accountsRouter(deps));
   v1.use(medicalRouter(deps));
+  v1.use(notificationsRouter(deps));
+  v1.use(dashboardsRouter(deps));
   v1.use(publicRouter(deps));
   v1.use(plansRouter(deps));
   v1.use(subscriptionsRouter(deps));

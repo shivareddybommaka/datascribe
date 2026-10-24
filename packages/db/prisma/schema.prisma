@@ -180,6 +180,7 @@ model Organization {
   invoices      Invoice[]
   convertedFrom Lead[]            @relation("LeadConvertedOrg")
   auditLogs     AuditLog[]
+  notifications Notification[]
 
   @@index([type, status])
 }
@@ -221,6 +222,7 @@ model User {
   qaReviews       QaReview[]
   messages        Message[]
   notifications   Notification[]
+  notificationPreferences NotificationPreference[]
   auditActions    AuditLog[]   @relation("AuditActor")
   auditImpersonations AuditLog[] @relation("AuditImpersonator")
 
@@ -759,18 +761,59 @@ model Payment {
 
 // ─────────────────────── Platform ───────────────────────
 
+/// Email outbox state of a notification (D-090): the worker's notifications queue sends `pending`.
+enum NotificationEmailStatus {
+  none
+  pending
+  sending
+  sent
+  failed
+  skipped
+}
+
+/// One row per recipient (M9, D-090). Payload holds ids and non-PHI labels only (case number,
+/// invoice number); titles and email text are rendered from the catalog in @datascribe/shared.
 model Notification {
-  id        String    @id @default(cuid())
+  id                 String                  @id @default(cuid())
+  userId             String
+  /// recipient's organisation when created; reads are scoped to user + org
+  organizationId     String
+  type               String
+  payload            Json                    @default("{}")
+  /// shown in the bell; false = email-only row
+  inApp              Boolean                 @default(true)
+  readAt             DateTime?
+  emailStatus        NotificationEmailStatus @default(none)
+  emailAttempts      Int                     @default(0)
+  emailNextAttemptAt DateTime?
+  emailSentAt        DateTime?
+  /// optional idempotency key per user, e.g. "task_due:<activityId>:<dueAt>"
+  dedupeKey          String?
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, organizationId, inApp, readAt])
+  @@index([emailStatus, emailNextAttemptAt])
+}
+
+/// Per-user channel choices per notification type (§5.8). Missing row = catalog default.
+/// Email for critical types (security, payment failed) is always sent, whatever is stored here.
+model NotificationPreference {
+  id        String   @id @default(cuid())
   userId    String
   type      String
-  payload   Json      @default("{}")
-  readAt    DateTime?
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  email     Boolean
+  inApp     Boolean
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([userId, readAt])
+  @@unique([userId, type])
 }
 
 /// Append-only. No updatedAt by design (D-008).
