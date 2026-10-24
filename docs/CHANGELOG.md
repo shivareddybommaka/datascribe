@@ -16,6 +16,9 @@ Staging copy on the Mac Studio at `https://datascribe.stayspot.app` (Shiva's own
 - **Storage relay** (D-122): `S3_BROWSER_ACCESS=relay` makes upload-part and download URLs
   same-origin (`/api/v1/storage-relay/<sealed token>`), so uploads work through the tunnel while S3
   stays on localhost. Refused in production.
+- **Web guard rails** (D-123): fixed staging banner on every page, `X-Robots-Tag: noindex`,
+  noindex metadata and a disallow-all `robots.txt`, no GA/GTM in staging; `ENV_FILE` for
+  `next.config.ts`.
 
 ## M9 part 1 — Notifications (2026-10-24, branch `herald/m9`)
 

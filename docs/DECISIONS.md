@@ -1164,3 +1164,21 @@ queues.ts`) keeps them; the API and the usage tracker already pass the URL to io
   issued, exactly as for presigned URLs. Tokens are redacted from request logs.
 - **Refused in production** (`S3_BROWSER_ACCESS=relay`): production keeps presigned S3 URLs and
   the API never carries file bytes there.
+
+## D-123 — Staging guard rails in the web app (launchpad, 2026-10-24)
+
+- **Banner**: the root layout renders a fixed red bar on every page, above everything (z-index
+  1000), not dismissable: "Staging — synthetic data only. Do not upload real patient records." An
+  invisible copy in the flow reserves its height, so it never covers page content at any width.
+- **noindex**: `X-Robots-Tag: noindex, nofollow, noarchive` on every path (`next.config.ts`
+  headers, so API responses through the rewrite get it too), `robots: { index: false }` metadata,
+  and `robots.txt` = `Disallow: /` with no sitemap.
+- **No GA/GTM**: `analyticsIds()` returns nothing in staging whatever `GA4_MEASUREMENT_ID` /
+  `GTM_ID` say, so neither the consent banner nor any tag renders.
+- All three are decided **at build time** (pages are prerendered; Next bakes `headers()` into the
+  build). `pnpm staging:build` builds with `DEPLOY_ENV=staging` into its own `distDir`
+  (`.next-staging`) and stamps it; `staging:start` refuses a build without the stamp.
+- `ENV_FILE` lets `next.config.ts` load `.env.staging` instead of dev's `.env`, so no dev value
+  (analytics IDs, CMS URL) leaks into the staging build.
+- Vitest for the web app now compiles JSX with the automatic runtime (as Next does) so layout and
+  banner can be rendered in unit tests.
