@@ -294,7 +294,8 @@ Docs and acceptable use: https://medlineplus.gov/medlineplus-connect/web-service
   `/medical/define?code=&system=ICD10CM|RXNORM|SNOMED`.
 - Access: internal org **and** `cases:edit`. That admits super_admin, ops_manager, case_manager and
   summarizer; sales, finance, all client users and also **qa_reviewer** (cases view-only) get 403. If QA
-  should look codes up while reviewing, grant it here (open question).
+  should look codes up while reviewing, grant it here (open question). **Superseded by D-129**: the
+  `medical_lookups:view` permission, held by qa_reviewer too.
 - Every term goes through `deidentifyTerm()` in the route and again in the adapter. Responses return the
   cleaned `query`, the removed identifier kinds, results and the provider's `attribution`
   (source, statement, URL). Query strings are already excluded from request logs (app.ts serializer).
@@ -1537,3 +1538,19 @@ queues.ts`) keeps them; the API and the usage tracker already pass the URL to io
   delete; the purge is complete after that. RDS snapshots (30 days) keep page text as long.
 - M6 must set `closedAt` when a case is closed (nothing sets it yet) and clear it if a case is
   reopened.
+
+## D-129 — `medical_lookups` permission; QA reviewers may use the lookups (M10 part 7, 2026-10-25)
+
+- Approved by Shiva (2026-10-24, item 5), answering D-056's open question.
+- New permission module **`medical_lookups`** (internal-only: not in `CLIENT_MODULES`). Only `view`
+  is checked, at any scope; the catalogue still holds all 7 actions × 4 scopes like every module
+  (476 permissions now). Admin role editor label: "Medical code lookups (view)".
+- Seed defaults: super_admin (everything), ops_manager, case_manager, summarizer and **qa_reviewer**
+  get `medical_lookups:view:all`. Sales, finance and client roles don't.
+- `/medical/*` now requires internal org **and** (`medical_lookups:view` **or** `cases:edit`). The
+  `cases:edit` fallback keeps the access D-056 gave to custom roles saved before this permission
+  existed, so no custom role changes behaviour; a custom role can now also get lookups without case
+  edit rights.
+- Existing databases: migration `20261025030000_medical_lookups_permission` inserts the 28 catalogue
+  rows and grants the defaults to the built-in (`isSystem`) roles only, both `ON CONFLICT DO NOTHING`
+  (idempotent; databases seeded after it get the same rows from the seed). Custom roles are untouched.

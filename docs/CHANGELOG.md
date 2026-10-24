@@ -16,6 +16,20 @@ Design notes: D-083.
   badges; Assign dialog with the three pickers and each person's open-case count.
 - Tests: `apps/api/test/case-queue.test.ts` (11), e2e `apps/web/e2e/cases.spec.ts`.
 
+## M10 part 7 — QA reviewers may use the medical lookups (2026-10-25, branch `sentinel/m10`)
+
+Approved by Shiva on 2026-10-24 (item 5). Design notes: D-129.
+
+- **New permission** `medical_lookups:view` (internal-only module), granted by default to
+  super_admin, ops_manager, case_manager, summarizer and now **qa_reviewer**. It shows in the admin
+  role editor as "Medical code lookups (view)".
+- `/medical/*` accepts `medical_lookups:view` or, as before, `cases:edit` (custom roles keep their
+  access). Sales, finance and client users still get 403.
+- **Migration** `medical_lookups_permission`: adds the catalogue rows and grants the defaults to the
+  built-in roles of existing databases; idempotent, custom roles untouched.
+- Tests: medical API tests for QA access, attribution / de-identification for QA, and custom roles
+  (new permission, legacy `cases:edit`, neither → 403); matrix rows in `permissions.test.ts`.
+
 ## M10 part 6 — Retention / hard-delete job (2026-10-25, branch `sentinel/m10`)
 
 Approved by Shiva on 2026-10-24 (item 4). Design notes: D-128.

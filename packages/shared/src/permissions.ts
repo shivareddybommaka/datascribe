@@ -13,6 +13,7 @@ export const MODULES = [
   'documents',
   'deliverables',
   'qa_reviews',
+  'medical_lookups', // §9 code / drug lookups; only `view` is checked (D-129)
   'invoices',
   'payments',
   'subscriptions',
@@ -186,6 +187,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<RoleKey, PermissionDef[]> = {
     ['documents', V, 'all'],
     ['deliverables', V, 'all'],
     ['qa_reviews', V, 'all'],
+    ['medical_lookups', V, 'all'],
     ['invoices', V, 'all'],
     ['payments', V, 'all'],
     ['subscriptions', V, 'all'],
@@ -202,6 +204,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<RoleKey, PermissionDef[]> = {
     ['documents', F, 'all'],
     ['deliverables', E, 'all'],
     ['qa_reviews', V, 'all'],
+    ['medical_lookups', V, 'all'],
     ['dashboard_ops', V, 'assigned'], // "team" = cases they manage
   ]),
 
@@ -209,6 +212,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<RoleKey, PermissionDef[]> = {
     ['cases', E, 'assigned'],
     ['documents', E, 'assigned'],
     ['deliverables', E, 'assigned'],
+    ['medical_lookups', V, 'all'],
     ['dashboard_ops', V, 'own'],
   ]),
 
@@ -217,6 +221,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<RoleKey, PermissionDef[]> = {
     ['documents', V, 'assigned'],
     ['deliverables', ['view', 'approve'], 'assigned'],
     ['qa_reviews', F, 'all'],
+    ['medical_lookups', V, 'all'], // look codes up while reviewing (Shiva, 2026-10-24; D-129)
     ['dashboard_ops', V, 'own'],
   ]),
 

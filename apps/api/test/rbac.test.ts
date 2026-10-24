@@ -548,7 +548,7 @@ describe('GET /permissions', () => {
   it('is available to user managers and refused to others', async () => {
     const ok = await get('/api/v1/permissions', tokens[SEED.internal('super_admin')]!);
     expect(ok.status).toBe(200);
-    expect(ok.body.items).toHaveLength(448);
+    expect(ok.body.items).toHaveLength(476); // 17 modules × 7 actions × 4 scopes
     expect((await get('/api/v1/permissions', tokens[SEED.acmeUser]!)).status).toBe(403);
   });
 });

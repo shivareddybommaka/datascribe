@@ -6,11 +6,12 @@ import {
   isRxcui,
   type MedicalData,
 } from '@datascribe/medical-data';
-import { Router } from 'express';
+import { broadestScope } from '@datascribe/shared';
+import { Router, type RequestHandler } from 'express';
 import { z } from 'zod';
-import { authenticate, requirePermission } from '../auth/middleware';
+import { authenticate } from '../auth/middleware';
 import type { Deps } from '../context';
-import { HttpError } from '../lib/errors';
+import { HttpError, forbidden, unauthorized } from '../lib/errors';
 import { parse } from '../lib/validate';
 import { requireInternal } from './crm/common';
 
@@ -34,13 +35,26 @@ function safeTerm(raw: string) {
 }
 
 /**
- * §9 medical lookups for manual coding. Staff only: internal org + cases:edit, so sales, finance,
- * QA (view-only) and every client user get 403. Responses carry source attribution (§8.4).
+ * Internal org + `medical_lookups:view` (D-129). `cases:edit` still admits, so custom roles made
+ * before the permission existed keep the access D-056 gave them.
+ */
+const requireLookup: RequestHandler = (req, _res, next) => {
+  if (!req.auth) throw unauthorized();
+  const p = req.auth.permissions;
+  if (!broadestScope(p, 'medical_lookups', 'view') && !broadestScope(p, 'cases', 'edit')) {
+    throw forbidden();
+  }
+  next();
+};
+
+/**
+ * §9 medical lookups for manual coding and QA review. Staff only: sales, finance and every client
+ * user get 403. Responses carry source attribution (§8.4).
  */
 export function medicalRouter(deps: Deps): Router {
   const md: MedicalData = deps.medical ?? createMedicalData({ provider: 'mock' });
   const r = Router();
-  r.use('/medical', authenticate(deps), requireInternal, requirePermission('cases', 'edit'));
+  r.use('/medical', authenticate(deps), requireInternal, requireLookup);
 
   r.get('/medical/icd10', async (req, res) => {
     const q = parse(z.object({ q: Query, limit: Limit }), req.query);

@@ -78,7 +78,7 @@ describe('roles: list and view', () => {
     }
     const perms = await api().get('/api/v1/permissions').set(as('super'));
     expect(perms.status).toBe(200);
-    expect(perms.body.items.length).toBe(16 * 7 * 4);
+    expect(perms.body.items.length).toBe(17 * 7 * 4);
   });
 });
 
