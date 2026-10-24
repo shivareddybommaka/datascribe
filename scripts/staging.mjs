@@ -18,10 +18,12 @@ import {
   assertStaging,
   buildWeb,
   clearPid,
+  devSeedPasswords,
   migrateDatabase,
   readEnvFile,
   resetDatabase,
   seedDatabase,
+  seedPasswordProblem,
   stagingEnv,
   startStack,
   stopRunning,
@@ -41,9 +43,12 @@ async function main() {
   const env = stagingEnv(readEnvFile(envFile), { ENV_FILE: path.resolve(ROOT, envFile) });
   assertStaging(env);
   switch (command) {
-    case 'check':
+    case 'check': {
+      const seed = seedPasswordProblem(env.SEED_USER_PASSWORD, devSeedPasswords());
+      if (seed) throw new Error(`Staging environment refused:\n  ${seed}`);
       console.log(`${envFile}: OK for staging (web :${env.WEB_PORT}, API :${env.API_PORT}).`);
       break;
+    }
     case 'db:reset':
       resetDatabase(env);
       console.log('Staging database reset and seeded (synthetic data + demo leads).');

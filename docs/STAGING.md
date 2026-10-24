@@ -6,7 +6,7 @@ data only** until the AWS production launch. Design notes: D-120 (deploy profile
 the tunnel), D-122 (storage relay), D-123 (web guard rails), D-124 (runner and runbook).
 
 ```
-browser ─https─▶ Cloudflare (Access) ─▶ cloudflared on the Mac ─▶ 127.0.0.1:3020 Next (production build)
+browser ─https─▶ Cloudflare edge ─▶ cloudflared on the Mac ─▶ 127.0.0.1:3020 Next (production build)
                                                                      └─ /api/v1 ─▶ 127.0.0.1:4020 API ─┐
                                               worker (BullMQ) ◀── Redis /5 ──────────────────────────┤
                                               Postgres :5433 datascribe_staging, SeaweedFS :9000, Mailpit
@@ -22,9 +22,18 @@ browser ─https─▶ Cloudflare (Access) ─▶ cloudflared on the Mac ─▶ 
   `localhost` / `127.0.0.1` (Mailpit), Postgres port 5432, a database name without `staging`, an
   http `APP_URL`, `EXTRA_TRUSTED_ORIGINS`.
 - **What staging allows** that production doesn't: local SeaweedFS without SSE (`S3_SSE=none`), the
-  fake payment gateway (simulated checkout), the mock virus scanner (ClamAV if `CLAMAV_HOST` is
-  set), and the storage relay (uploads and downloads go through the API, because browsers can't
-  reach the Mac's `localhost:9000`).
+  fake payment gateway (simulated checkout), and the storage relay (uploads and downloads go
+  through the API, because browsers can't reach the Mac's `localhost:9000`).
+- **Open internet, no Cloudflare Access gate** (Shiva's choice, D-125), so staging also:
+  - closes public firm sign-up (`/auth/register` answers 403) unless `STAGING_ALLOW_SIGNUP=true`.
+    Invites and the seeded accounts still work;
+  - requires real ClamAV (`CLAMAV_HOST`, section 1) unless `STAGING_ALLOW_MOCK_SCAN=true`;
+  - requires its own seed password (20+ characters, not dev's `SEED_USER_PASSWORD`);
+  - keeps production's sign-in protection unchanged: per-IP and per-account rate limits, the
+    lockout after 5 wrong passwords, the response-time floor and MFA for staff. Looser
+    `RATE_LIMIT_*` or `AUTH_RESPONSE_FLOOR_MS` values are refused.
+- **Run mode**: on demand, with `staging:start` / `staging:stop` and the tunnel in a terminal.
+  The launchd files in `infra/staging/` are templates only.
 - **On every page**: a fixed red banner, "Staging — synthetic data only. Do not upload real patient
   records.", plus `X-Robots-Tag: noindex`, a `robots.txt` that disallows everything, and no GA/GTM.
 - **No CMS process**: `CMS_URL=none` renders the bundled marketing copy. A CMS would serve its
@@ -43,6 +52,20 @@ colima start
 
 ```
 /Users/nova/.local/bin/pnpm infra:up
+```
+
+Start ClamAV, the compose `scan` profile on 127.0.0.1:3310. The first start downloads the
+pinned image and its virus definitions, which takes a few minutes. Staging won't start without it
+unless `STAGING_ALLOW_MOCK_SCAN=true`:
+
+```
+docker-compose --profile scan up -d clamav
+```
+
+Check it answers (it reports "healthy" once the definitions are loaded):
+
+```
+docker-compose --profile scan ps clamav
 ```
 
 Create `.env.staging` from the example (git-ignored, never committed):
@@ -67,8 +90,15 @@ openssl rand -base64 48
 openssl rand -base64 32
 ```
 
-Also set `SEED_USER_PASSWORD` (12+ characters, the password of every seeded synthetic user) and
-`S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY`. Those must be the same values that docker compose
+Also set `SEED_USER_PASSWORD`, the password of every seeded synthetic user. It must be at least
+20 characters and must differ from dev's `SEED_USER_PASSWORD` in `.env`; the staging seed refuses
+anything else. Print one and paste it in:
+
+```
+openssl rand -base64 24
+```
+
+Also set `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY`. Those must be the same values that docker compose
 gives SeaweedFS (the `S3_*` values in `.env`, or compose's defaults). Then check the file. The
 check reports problems by variable name and never prints a value:
 
@@ -92,7 +122,14 @@ After pulling new code with migrations, keep the data and apply only the new mig
 /Users/nova/.local/bin/pnpm staging:db:migrate
 ```
 
-Seeded sign-ins (password = `SEED_USER_PASSWORD`): console `super.admin@datascribe.example` (and
+Shiva reads the staging seed password as account **nova**, from the checkout (it's printed in his
+own terminal only; don't paste it into chat):
+
+```
+grep SEED_USER_PASSWORD .env.staging
+```
+
+Seeded sign-ins (password = staging's `SEED_USER_PASSWORD`): console `super.admin@datascribe.example` (and
 `sales@`, `finance@`, `ops.manager@`, `case.manager@`, ... `@datascribe.example`). Internal users
 enrol in MFA with an authenticator app at first sign-in. Portal users are
 `client.admin@acme.example`, `client.user@acme.example` and `client.admin@harbor.example`. Mail
@@ -129,12 +166,12 @@ Stop the tunnel with Ctrl-C in its terminal (section 6). With the tunnel down th
 Cloudflare error page. To take it off the internet for good, delete the public hostname or the
 tunnel in the dashboard.
 
-## 5. Shiva: create the tunnel and Cloudflare Access (dashboard)
+## 5. Shiva: create the tunnel (dashboard)
 
-Do these in the Cloudflare dashboard for the account that holds `stayspot.app`. Set up Access
-first, so the hostname is never public without it.
+Do these in the Cloudflare dashboard for the account that holds `stayspot.app`.
 
-**Cloudflare Access (protects the site)**
+**Cloudflare Access (optional).** Shiva decided against an Access gate (D-125), so staging is on
+the open internet and relies on the staging guard rails above. To add a gate later:
 
 1. Zero Trust → Access → Applications → **Add an application** → **Self-hosted**.
 2. Name `Datascribe staging`. Session duration 24 hours. Public hostname: subdomain `datascribe`,
@@ -190,8 +227,8 @@ export TUNNEL_TOKEN="$DATASCRIBE_TUNNEL_TOKEN"
 cloudflared --config infra/staging/cloudflared.yml tunnel run
 ```
 
-Then open https://datascribe.stayspot.app. You should get Cloudflare Access, then the site with the
-red staging banner.
+Then open https://datascribe.stayspot.app. You should see the site with the red staging banner
+(and a Cloudflare Access sign-in first, if you added one).
 
 ## 7. Optional: run at login (launchd templates, not installed)
 

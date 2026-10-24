@@ -24,6 +24,9 @@ Staging copy on the Mac Studio at `https://datascribe.stayspot.app` (Shiva's own
 build | start | stop | smoke`, `docs/STAGING.md` (DB, tunnel and Access setup, running
   cloudflared with a token from an env var, stopping), launchd and cloudflared templates in
   `infra/staging/` (not installed). The smoke test passes against the production-built stack.
+- **Open internet, no Access gate** (D-125): staging closes firm sign-up unless
+  `STAGING_ALLOW_SIGNUP=true`, requires ClamAV unless `STAGING_ALLOW_MOCK_SCAN=true`, refuses a seed
+  password under 20 characters or equal to dev's, and refuses auth limits looser than production's.
 
 ## M9 part 1 — Notifications (2026-10-24, branch `herald/m9`)
 

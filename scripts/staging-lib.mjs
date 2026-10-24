@@ -157,11 +157,43 @@ export function migrateDatabase(env) {
   run(bin(DB_DIR, 'prisma'), ['migrate', 'deploy'], { cwd: DB_DIR, env });
 }
 
+export const STAGING_SEED_PASSWORD_MIN = 20;
+
+/** The dev SEED_USER_PASSWORD values on this Mac: this checkout's .env and the main checkout's. */
+export function devSeedPasswords() {
+  const files = new Set([path.join(ROOT, '.env')]);
+  const common = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  });
+  if (common.status === 0) files.add(path.join(path.dirname(common.stdout.trim()), '.env'));
+  const values = [];
+  for (const file of files) {
+    if (!fs.existsSync(file)) continue;
+    const value = parseEnv(fs.readFileSync(file, 'utf8')).SEED_USER_PASSWORD;
+    if (value) values.push(value);
+  }
+  return values;
+}
+
+/**
+ * Staging is on the open internet (D-125): its seeded accounts get their own password, long and
+ * never dev's. Returns the problem (variable name only) or null.
+ */
+export function seedPasswordProblem(password, devPasswords) {
+  if (!password || password.length < STAGING_SEED_PASSWORD_MIN) {
+    return `SEED_USER_PASSWORD: staging needs its own, ${STAGING_SEED_PASSWORD_MIN}+ characters`;
+  }
+  if (devPasswords.includes(password)) {
+    return "SEED_USER_PASSWORD: must not reuse dev's SEED_USER_PASSWORD (.env)";
+  }
+  return null;
+}
+
 /** Synthetic seed (users, orgs, plans, three synthetic cases) plus the demo leads. */
 export function seedDatabase(env) {
-  if (!env.SEED_USER_PASSWORD || env.SEED_USER_PASSWORD.length < 12) {
-    throw new Error('SEED_USER_PASSWORD: required (12+ characters) to seed staging');
-  }
+  const problem = seedPasswordProblem(env.SEED_USER_PASSWORD, devSeedPasswords());
+  if (problem) throw new Error(problem);
   // the seed scripts refuse NODE_ENV=production; the staging-only database name was checked above
   const seedEnv = { ...env, NODE_ENV: 'development', DEPLOY_ENV: '' };
   run(bin(DB_DIR, 'tsx'), ['prisma/seed.ts'], { cwd: DB_DIR, env: seedEnv });

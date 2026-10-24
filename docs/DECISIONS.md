@@ -1224,3 +1224,29 @@ queues.ts`) keeps them; the API and the usage tracker already pass the URL to io
   noindex, robots.txt, no analytics, console sign-in with MFA enrolment and Secure / HttpOnly /
   Strict cookie, portal case creation, and an upload plus download through the relay. Not part of
   `pnpm e2e` or CI.
+
+## D-125 — Staging on the open internet, without an Access gate (launchpad, 2026-10-24)
+
+- Shiva chose not to put Cloudflare Access in front of staging, so anyone can reach it. The staging
+  profile tightens accordingly (runbook: `docs/STAGING.md`; Access stays documented as optional):
+- **Sign-up closed**: `POST /auth/register` answers 403 `signup_disabled` in staging unless
+  `STAGING_ALLOW_SIGNUP=true`, so strangers can't create firms. Invites, password reset and the
+  seeded accounts are unaffected. The site has no sign-up page; the check is server-side.
+- **Real ClamAV**: staging refuses to start without `CLAMAV_HOST` (API and worker, shared rule)
+  unless `STAGING_ALLOW_MOCK_SCAN=true`. The example sets `CLAMAV_HOST=localhost` and the runbook
+  starts the existing compose `scan` profile. The smoke test uses ClamAV when 3310 answers and the
+  explicit opt-out otherwise (the image isn't pulled on this Mac yet).
+- **Own seed password**: the staging seed refuses a `SEED_USER_PASSWORD` shorter than 20
+  characters or equal to dev's value. The script compares it with the checkout's `.env` and the main
+  checkout's `.env` (via `git --git-common-dir`), and the error names the variable only.
+  `staging:check` reports it too. Shiva reads it with `grep SEED_USER_PASSWORD .env.staging` as
+  nova. The smoke test generates a random one per run.
+- **Sign-in protection as in production**: no auth code branches on the profile except the
+  sign-up switch, so per-IP and per-account limits, lockout, the timing floor and staff MFA are
+  production's. Staging also refuses `RATE_LIMIT_AUTH` / `_PUBLIC` / `_ACCOUNT` above the defaults
+  (30 / 10 / 10) and `AUTH_RESPONSE_FLOOR_MS` below 400; stricter values are allowed. Tests cover
+  equal limits and that staff MFA still gates the session.
+- Production refuses all three staging switches (`STAGING_ALLOW_HTTP_FOR_SMOKE`,
+  `STAGING_ALLOW_SIGNUP`, `STAGING_ALLOW_MOCK_SCAN`) when set to true / 1.
+- Run mode stays on demand (`staging:start` / `staging:stop`, tunnel in a terminal); the launchd
+  files remain templates.

@@ -8,7 +8,9 @@ import { parseEnv } from 'node:util';
 import { describe, expect, it } from 'vitest';
 import { loadEnv } from '../src/config/env';
 // @ts-expect-error plain ESM script without types
-import { stagingEnv, stagingProblems } from '../../../scripts/staging-lib.mjs';
+import * as stagingLib from '../../../scripts/staging-lib.mjs';
+
+const { devSeedPasswords, seedPasswordProblem, stagingEnv, stagingProblems } = stagingLib;
 
 const root = path.resolve(import.meta.dirname, '../../..');
 const read = (f: string) => readFileSync(path.join(root, f), 'utf8');
@@ -98,6 +100,31 @@ describe('staging runner refusals (D-124)', () => {
     expect(shellOnly.DEPLOY_ENV).toBe('staging');
     expect(shellOnly.GA4_MEASUREMENT_ID).toBeUndefined();
     expect(shellOnly.DATABASE_URL).toBeUndefined();
+  });
+});
+
+describe('staging seed password (D-125)', () => {
+  const check = seedPasswordProblem as (p: string | undefined, dev: string[]) => string | null;
+  const dev = ['Dev-seed-password-123'];
+
+  it('needs 20+ characters and never dev’s value', () => {
+    expect(check(undefined, dev)).toMatch(/^SEED_USER_PASSWORD: .*20\+/);
+    expect(check('short-but-12chars', dev)).toMatch(/20\+/);
+    expect(check('x'.repeat(19), dev)).toMatch(/20\+/);
+    expect(check('x'.repeat(20), dev)).toBeNull();
+    const longDev = 'a-long-dev-password-of-30-chars';
+    expect(check(longDev, [longDev])).toMatch(/must not reuse/);
+  });
+
+  it('never puts the value in the message', () => {
+    const value = 'q'.repeat(25);
+    expect(check(value, [value])).not.toContain(value);
+  });
+
+  it("reads dev's values from the .env files on this Mac", () => {
+    const values = (devSeedPasswords as () => string[])();
+    expect(Array.isArray(values)).toBe(true);
+    for (const v of values) expect(typeof v).toBe('string');
   });
 });
 
