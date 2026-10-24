@@ -743,7 +743,16 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
   `queueOpts` (Redis DB index + `QUEUE_PREFIX`, D-081). Dev and e2e send to Mailpit only.
 - Upload-scan notifications moved with the scan into `packages/scan` (D-081). The stage runner gets
   typed helpers (`notifyCaseReadyForReview`, `notifyProcessingFailed`, …) to call from the pipeline.
-- The bell polls the unread count every 30 s (no websocket yet); while impersonating it is read-only.
+
+## D-091 — Notification API and bell (M9, 2026-10-24)
+
+- `/notifications` needs a session but no module permission: a user only reads their own rows, and
+  only those created in their current organisation, so no firm sees another firm's notifications.
+- Preferences list only the types the user's kind (client / staff) can receive; critical types
+  show as locked on.
+- Impersonation is read-only (D-061): the super admin sees the bell but can't mark anything read.
+- The bell polls the unread count every 30 s (no websocket yet) and loads the latest items only when
+  opened; the full list is a cursor-paged centre page in console and portal.
 
 ## D-100 — Absolute session lifetime and MFA re-check on refresh (audit M5, M10, 2026-10-24)
 
