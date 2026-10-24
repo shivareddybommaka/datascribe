@@ -74,6 +74,16 @@ Terraform 1.17.0 (`/opt/homebrew/bin/terraform`, works as nova) installed by Shi
 `terraform init -backend=false` + `terraform validate` on `infra/terraform`; never plan against AWS,
 never apply. Native `tesseract` 5.5.3 is also installed (optional; OCR uses tesseract.js, D-082).
 
+## Local staging (Shiva, 2026-10-24)
+
+Staging from the Mac Studio at `https://datascribe.stayspot.app` (stayspot.app is on Shiva's
+Cloudflare) via a NEW token-based tunnel Shiva creates, pointing to `http://localhost:3020`. Never
+touch StaySpot's tunnel or `~/.cloudflared`. Synthetic data only until AWS production.
+**datascribe-launchpad** (`.worktrees/launchpad`, branch `launchpad/staging`, ports 3900/4900, DB
+`datascribe_launchpad_dev`, Redis /4, D-120+) builds the staging profile, banner, noindex, scripts
+and `docs/STAGING.md`. Autopilot merges it when green like herald/sentinel. Going live needs Shiva's
+tunnel token (masked secret entry, never chat) and his Access email list.
+
 ## Waiting on Shiva
 
 - Telegram control: create a Telegram group with the bot (bot as admin or privacy off), send a
