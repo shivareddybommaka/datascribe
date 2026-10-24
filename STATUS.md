@@ -11,14 +11,14 @@ existing CRM, never touch), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025). CMS 
 | M0 Foundation                 | done                               |                                                                                                                                                                          |
 | M1 Auth + RBAC                | done                               | security fixes from the audit applied                                                                                                                                    |
 | M2 Admin console              | done (merged from `admin/m2`)      | custom role takes effect without restart; audit M2 + M4 fixed; D-060..D-064                                                                                              |
-| M3 Website + CMS              | done (merged from `storefront/m3`) | Lighthouse ≥ 90 not measured yet (needs Lighthouse install)                                                                                                              |
+| M3 Website + CMS              | done (merged from `storefront/m3`) | Lighthouse (mobile) performance 99–100, SEO 100 on all 7 public pages (D-127, `docs/LIGHTHOUSE.md`)                                                                      |
 | M4 Portal cases + uploads     | done (merged from `portal/m4`)     | DoD test green (300-page PDF, interrupted + resumed); D-070..D-077                                                                                                       |
 | M5 Pipeline                   | done (master)                      | DoD e2e green (upload → 7 stages → in_review, all cited); notify; Tesseract OCR (D-082)                                                                                  |
 | M6 Workspace + QA + delivery  | **next (master)**                  |                                                                                                                                                                          |
 | M7 CRM                        | done                               |                                                                                                                                                                          |
 | M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen built in M4; Stripe test key needed for the manual test-card demo                                                                              |
 | M9 Notifications + dashboards | done except 4 events blocked on M6 | 7/11 §5.8 events + 4 dashboards; part 3 merged (editable notification emails, demo, D-096/D-097); assigned / QA / approved / delivered need M6 to call the ready helpers |
-| M10 Hardening                 | in progress (`sentinel/m10`)       | parts 1–4b merged (D-100..D-119: Dockerfiles, KMS-only prod, axe WCAG, Sentry with PHI scrubbing, off without a DSN)                                                     |
+| M10 Hardening                 | in progress (`sentinel/m10`)       | parts 1–4b merged (D-100..D-119: Dockerfiles, KMS-only prod, axe WCAG, Sentry); part 5 Lighthouse on the branch, to merge (D-127)                                        |
 
 Tests on `main` (2026-10-24 23:10, after merging M9 part 3 + M10 part 4b): format, lint, typecheck,
 unit/API tests and build green, 36/36 turbo tasks (API 377, worker 64, shared 154, web 66); Playwright
@@ -73,7 +73,8 @@ ledger D-040+, pipeline D-050+, herald D-090+, sentinel D-100+.
    basics, or sentinel).
 5. QA reviewers may use the medical lookups (D-056): grant the lookup permission to `qa_reviewer`.
 6. Add Lighthouse (dev) and measure the M3 pages (target ≥ 90 performance + SEO); fix if below.
-   Sentinel part 5 (spawned 2026-10-24 23:15).
+   ✅ done on `sentinel/m10` (D-127), to merge: 7 public pages at performance 99–100, SEO 100
+   (`docs/LIGHTHOUSE.md`); `/contact` layout shift fixed (80 → 99).
 
 Terraform 1.17.0 (`/opt/homebrew/bin/terraform`, works as nova) installed by Shiva: run
 `terraform init -backend=false` + `terraform validate` on `infra/terraform`; never plan against AWS,

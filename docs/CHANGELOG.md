@@ -1,5 +1,17 @@
 # Changelog
 
+## M10 part 5 — Lighthouse on the public pages (2026-10-24, branch `sentinel/m10`)
+
+Approved by Shiva on 2026-10-24 (item 6). Design notes: D-127.
+
+- **Lighthouse** 13.5 (dev, `apps/web`) and `pnpm --filter @datascribe/web lighthouse`: production
+  build on :3800, mobile preset, performance + SEO, median of 3 runs per page, results in
+  `docs/LIGHTHOUSE.md`; exits 1 below 90. Uses the installed Google Chrome.
+- **Scores** (7 public pages): performance 99–100, SEO 100.
+- **Fix: `/contact` layout shift** (performance 80 → 99, CLS 0.40 → 0). The contact form is now in
+  the static HTML instead of rendering only on the client; `?kind=demo` is applied after hydration
+  and Send stays disabled until then.
+
 ## M10 part 4b — Sentry with PHI scrubbing (2026-10-24, branch `sentinel/m10`)
 
 Approved by Shiva on 2026-10-24 (item 3). Design notes: D-119.
