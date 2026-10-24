@@ -82,7 +82,9 @@ touch StaySpot's tunnel or `~/.cloudflared`. Synthetic data only until AWS produ
 **datascribe-launchpad** (`.worktrees/launchpad`, branch `launchpad/staging`, ports 3900/4900, DB
 `datascribe_launchpad_dev`, Redis /4, D-120+) builds the staging profile, banner, noindex, scripts
 and `docs/STAGING.md`. Autopilot merges it when green like herald/sentinel. Going live needs Shiva's
-tunnel token (masked secret entry, never chat) and his Access email list.
+tunnel token (masked secret entry, never chat). Shiva chose **no Cloudflare Access gate** (option B):
+staging must disable self sign-up, use real ClamAV, use its own seed password, and keep the production
+rate limits, lockout and MFA. Run mode: on demand.
 
 ## Waiting on Shiva
 
