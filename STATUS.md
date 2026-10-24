@@ -13,15 +13,15 @@ existing CRM, never touch), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025). CMS 
 | M2 Admin console              | done (merged from `admin/m2`)      | custom role takes effect without restart; audit M2 + M4 fixed; D-060..D-064                 |
 | M3 Website + CMS              | done (merged from `storefront/m3`) | Lighthouse ≥ 90 not measured yet (needs Lighthouse install)                                 |
 | M4 Portal cases + uploads     | done (merged from `portal/m4`)     | DoD test green (300-page PDF, interrupted + resumed); D-070..D-077                          |
-| M5 Pipeline                   | **M5b in progress (master)**       | M5a adapters done. M5b stages 2–6 built as modules (D-078, D-079); next: DB/queue runner    |
+| M5 Pipeline                   | **M5b in progress (master)**       | M5a adapters done. M5b steps 1–3 done (D-078..D-080); next: scan stage into the worker      |
 | M6 Workspace + QA + delivery  | not started                        |                                                                                             |
 | M7 CRM                        | done                               |                                                                                             |
 | M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen built in M4; Stripe test key needed for the manual test-card demo |
 | M9 Notifications + dashboards | in progress (`herald/m9`)          |                                                                                             |
 | M10 Hardening                 | in progress (`sentinel/m10`)       |                                                                                             |
 
-Tests on `main` (2026-10-24, after the M2 + M4 merges and M5b steps 1–2): lint, typecheck,
-unit/API tests and build green (33/33 turbo tasks; worker 34 tests); Playwright e2e 18/18.
+Tests on `main` (2026-10-24, after M5b step 3): lint, typecheck, unit/API tests and build green
+(33/33 turbo tasks; worker 41 tests); Playwright e2e 18/18.
 
 M4 merge notes: main's `.env` needs `S3_SSE=none` (local SeaweedFS has no SSE, D-070) or the API's
 uploads fail; the API creates the buckets at startup and encrypts legacy case notes / messages
@@ -30,7 +30,7 @@ uploads fail; the API creates the buckets at startup and encrypts legacy case no
 M5b plan (in order): 1 stages 3–6 pure modules (classify, events, coding, index/chronology) ✅ ·
 2 stage 2 text extraction with pdf.js + OCR hook ✅ · 3 stage runner: BullMQ processors per stage,
 `ProcessingJob` rows, encrypted `DocumentPage` / `ClinicalEvent` / `Deliverable` writes, retries →
-case `on_hold` · 4 scan stage moves from the API to the worker (D-072), submit enqueues the pipeline ·
+case `on_hold` ✅ (D-080; in-memory store tests, Prisma store covered by step 6) · 4 scan stage moves from the API to the worker (D-072), submit enqueues the pipeline ·
 5 stage 7 `in_review` + notify summarizer · 6 pipeline test (Synthea-style PDF → deliverables, every
 chronology entry cited) = M5 DoD · 7 tesseract OCR provider + page renderer (or Waiting on Shiva if it
 needs a system install).

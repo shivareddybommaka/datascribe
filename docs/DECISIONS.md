@@ -674,3 +674,26 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
   so scanned pages are visible rather than silently empty. Mock pipeline tests inject a renderer.
 - PNG / JPEG / TIFF uploads are one page, OCR'd from the file bytes (Textract accepts multi-page
   TIFF as one file).
+
+## D-080 — Pipeline stage runner (M5b, 2026-10-24)
+
+- `apps/worker/src/pipeline/runner.ts`: one BullMQ job per **case** per stage (not per document),
+  so the case-level stages (coding memo, deliverables) see every document and a stage's job row
+  covers the whole case. Each finished stage enqueues the next with the §7 retry options.
+- Persistence sits behind `PipelineStore` (`prisma-store.ts` in production, an in-memory fake in
+  unit tests). The runner encrypts page text, event descriptions and deliverable JSON before the
+  store sees them, so the tests can assert nothing reaches storage in clear.
+- Each run writes a `ProcessingJob` row (attempt number, succeeded / failed, error = class + message,
+  capped at 300 chars). Stage counts (pages, OCR pages, coded / uncoded terms…) go to the worker log
+  and the BullMQ job result: `ProcessingJob` has no stats column and doesn't need one yet.
+- On the **last** failed attempt the case moves `submitted|processing → on_hold`; earlier failures
+  only record the job row. A stage for a case outside `submitted|processing` (cancelled, put on hold
+  by staff) is skipped and ends the chain.
+- Extracted terms aren't stored (they are PHI and `ClinicalEvent` has no encrypted column for them):
+  the coding stage re-runs the pure stage-4 extractor on the cited page, which is deterministic.
+- Re-runs are idempotent: pages and events of the case are replaced; a deliverable's latest version is
+  overwritten while it is an unlocked draft, otherwise a new version is added (QA history stays).
+- The index and chronology are always built, even if the client ordered only a summary: review and
+  QA work from them. The summary is built only when ordered.
+- Until step 4 moves scanning into the worker, the extract stage moves the case
+  `submitted → processing` and only clean, uploaded documents are processed.

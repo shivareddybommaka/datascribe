@@ -1,24 +1,69 @@
 import { LocalObjectStore, repoPath, runDunning, runMonthlyInvoicing } from '@datascribe/billing';
 import { prisma } from '@datascribe/db';
+import {
+  createMedicalData,
+  createOcrProvider,
+  createSummaryProvider,
+  medicalDataConfigFromEnv,
+} from '@datascribe/medical-data';
+import { loadKey } from '@datascribe/shared';
 import { Queue, Worker } from 'bullmq';
 import nodemailer from 'nodemailer';
 import { pino } from 'pino';
 import { BILLING_QUEUE, BILLING_SCHEDULES, processBillingJob } from './billing';
+import { prismaPipelineStore } from './pipeline/prisma-store';
+import {
+  RUNNER_STAGES,
+  runStage,
+  type PipelineDeps,
+  type PipelineJobData,
+} from './pipeline/runner';
+import { s3ObjectReader } from './pipeline/s3';
 import { DEFAULT_JOB_OPTIONS, PIPELINE_QUEUES } from './queues';
 
 const logger = pino({ base: { service: 'worker' }, level: process.env.LOG_LEVEL ?? 'info' });
 const redisUrl = new URL(process.env.REDIS_URL ?? 'redis://localhost:6379');
 const connection = { host: redisUrl.hostname, port: Number(redisUrl.port || 6379) };
 
-// M0: workers are registered but stages are no-ops. Real processors arrive in M5.
+// ── M5 pipeline: one queue per stage, each finished stage enqueues the next ──
+const medical = createMedicalData(medicalDataConfigFromEnv(process.env));
+const pipelineDeps: PipelineDeps = {
+  store: prismaPipelineStore(prisma),
+  phiKey: loadKey(process.env.PHI_ENCRYPTION_KEY),
+  readObject: s3ObjectReader(process.env),
+  ocr: createOcrProvider('mock'), // tesseract arrives with M5b step 7 (D-079)
+  coders: medical,
+  summary: createSummaryProvider(
+    (process.env.SUMMARY_PROVIDER || 'mock') as Parameters<typeof createSummaryProvider>[0],
+  ),
+  log: logger.child({ component: 'pipeline' }),
+};
+const pipelineQueues = new Map(
+  RUNNER_STAGES.map((stage) => [stage, new Queue<PipelineJobData>(stage, { connection })]),
+);
+
 const workers = PIPELINE_QUEUES.map(
   (name) =>
-    new Worker(
+    new Worker<PipelineJobData>(
       name,
       async (job) => {
-        logger.info({ queue: name, jobId: job.id }, 'stage not implemented yet (M5)');
+        if (name === 'scan') {
+          // Scanning still runs in the API until M5b step 4 (D-072).
+          logger.info({ queue: name, jobId: job.id }, 'scan stage runs in the API for now');
+          return;
+        }
+        const result = await runStage(
+          name,
+          job.data,
+          { attempt: job.attemptsMade + 1, maxAttempts: job.opts.attempts ?? 1 },
+          pipelineDeps,
+        );
+        if (result.next) {
+          await pipelineQueues.get(result.next)!.add(result.next, job.data, DEFAULT_JOB_OPTIONS);
+        }
+        return result.stats ?? {};
       },
-      { connection },
+      { connection, concurrency: 2 },
     ),
 );
 
@@ -67,6 +112,7 @@ logger.info({ queues: workers.length }, 'worker started');
 async function shutdown() {
   await Promise.all(workers.map((w) => w.close()));
   await billingQueue.close();
+  await Promise.all([...pipelineQueues.values()].map((q) => q.close()));
   await prisma.$disconnect();
   process.exit(0);
 }

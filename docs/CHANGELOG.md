@@ -1,5 +1,14 @@
 # Changelog
 
+## M5b — Processing pipeline (in progress, `main`)
+
+- Stages 3–6 as pure modules (D-078) and stage 2 text extraction with pdf.js (D-079).
+- **Stage runner** (D-080): BullMQ processors for extract → classify → extract-events → code →
+  build-deliverables → ready-for-review, one job per case per stage; `ProcessingJob` rows per
+  attempt; encrypted `DocumentPage` / `ClinicalEvent` / `Deliverable` writes; last failed attempt puts
+  the case `on_hold`; re-runs replace rather than duplicate. The worker reads documents from S3
+  (`@aws-sdk/client-s3`, same settings as the API).
+
 ## M2 — Admin console (2026-10-24, branch `admin/m2`)
 
 §5.7 admin console on top of the users API from `719552e`. Design notes: D-060 to D-064.
