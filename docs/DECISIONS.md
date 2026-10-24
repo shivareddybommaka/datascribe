@@ -1502,3 +1502,38 @@ queues.ts`) keeps them; the API and the usage tracker already pass the URL to io
 - Compare-and-set on the previous three assignee columns (409 `assignment_changed` on a race). One
   `case.assign` audit row per changed slot (`{role, from, to}`, user ids only) and an
   `assigned_to_you` notification to each new assignee (not to the caller), via M9's `notifyAssigned`.
+
+## D-128 — Retention / hard-delete job (M10 part 6, 2026-10-25)
+
+- Approved by Shiva (2026-10-24, item 4). §10: "delete source documents 180 days after case closed;
+  deliverables kept. Hard deletes run as audited jobs."
+- `runRetention` lives in `@datascribe/db/retention` (callable from tests and the worker); the worker
+  runs it as the BullMQ repeatable job `retention-delete` on the `retention` queue, daily at 03:00 UTC.
+- Per organization with a valid `settings.retentionDays` (whole number, 30–3650, the admin console's
+  bounds, D-062), documents of cases whose status is `closed` and whose `closedAt` is more than that
+  many days ago are purged. A case without `closedAt` is never old enough.
+- **Unset or invalid `retentionDays` deletes nothing.** The console shows 180 for an unset value, but
+  the job never applies a default on its own: a hard delete must come from a setting someone saved.
+  To apply the spec's 180-day default, save it per org (open question for Shiva: backfill 180 into
+  every client org, or let the job treat unset as 180).
+- What is deleted: the S3 object in the documents bucket (an unfinished multipart upload is aborted)
+  and the document's `DocumentPage` rows (encrypted page text). What stays: the `Document` row as a
+  tombstone (`purgedAt`, new nullable column; `uploadId` cleared), the case, clinical events (their
+  citations point at the document id; `ClinicalEvent.documentId` is a required relation) and
+  deliverables. File names stay on the tombstone so the portal can show what was deleted.
+- Order per document: re-check eligibility, delete in S3, then one transaction that sets `purgedAt`
+  only if it is still null, deletes the page rows and writes the audit row. A failed S3 delete or
+  transaction leaves the document unpurged, so the next run retries it; S3 deletes of missing keys
+  succeed, so a retry after a half-done run is harmless. Concurrent runs can't audit a file twice.
+- Audit: one `AuditLog` row per file, `action = document.retention_delete`, `entity = Document`,
+  `actorId = null` and `metadata.actor = "system"`, with `caseId`, `retentionDays`, `pagesDeleted`.
+  No file names (they may hold patient names) and no document content.
+- `RETENTION_BATCH_SIZE` (default 500) caps deletes per run; the rest wait for the next day.
+  `RETENTION_DRY_RUN=true` logs per-org counts (org ids only) and changes nothing.
+- API: documents serialize `state: 'purged'` and `purgedAt`; `GET /documents/:id/download-url` answers
+  410 `purged`. The portal shows "Deleted by retention" and hides Download / Remove. The pipeline's
+  document list skips purged rows.
+- S3 versioning (D-115) keeps a non-current version for `noncurrent_version_days` (30) after the
+  delete; the purge is complete after that. RDS snapshots (30 days) keep page text as long.
+- M6 must set `closedAt` when a case is closed (nothing sets it yet) and clear it if a case is
+  reopened.

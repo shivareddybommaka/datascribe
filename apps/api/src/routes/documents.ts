@@ -40,9 +40,10 @@ export function serializeDocument(d: DocRow, env: Pick<Env, 'UPLOAD_PART_SIZE_MB
     pageCount: d.pageCount,
     sha256: d.sha256,
     scanStatus: d.scanStatus,
-    /** uploading → (pending scan) → clean | infected | error */
-    state: d.uploadedAt ? d.scanStatus : 'uploading',
+    /** uploading → (pending scan) → clean | infected | error; purged once retention deleted it */
+    state: d.purgedAt ? 'purged' : d.uploadedAt ? d.scanStatus : 'uploading',
     uploadedAt: d.uploadedAt,
+    purgedAt: d.purgedAt,
     createdAt: d.createdAt,
     uploadedBy: d.uploadedBy,
     partSize,
@@ -302,6 +303,9 @@ export function documentsRouter(deps: Deps): Router {
 
   r.get('/documents/:id/download-url', requirePermission('documents', 'view'), async (req, res) => {
     const doc = await loadDocument(req, 'view');
+    if (doc.purgedAt) {
+      throw new HttpError(410, 'purged', 'This file was deleted by the retention policy');
+    }
     if (!doc.uploadedAt) throw conflict('upload_incomplete', 'This upload has not finished');
     if (doc.scanStatus === 'pending') {
       throw conflict('scan_pending', 'The virus scan has not finished yet');

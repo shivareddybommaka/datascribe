@@ -63,9 +63,10 @@ const SCAN = {
   clean: ['Ready', 'green'],
   infected: ['Quarantined', 'red'],
   error: ['Scan failed', 'red'],
-} as const satisfies Record<ScanStatus | 'uploading', readonly [string, string]>;
+  purged: ['Deleted by retention', 'neutral'],
+} as const satisfies Record<ScanStatus | 'uploading' | 'purged', readonly [string, string]>;
 
-export function DocumentStateBadge({ state }: { state: ScanStatus | 'uploading' }) {
+export function DocumentStateBadge({ state }: { state: ScanStatus | 'uploading' | 'purged' }) {
   const [label, tone] = SCAN[state];
   return <Badge tone={tone}>{label}</Badge>;
 }

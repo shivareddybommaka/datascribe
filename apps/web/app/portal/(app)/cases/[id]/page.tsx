@@ -240,6 +240,12 @@ function Documents({ caseDetail: c }: { caseDetail: CaseDetail }) {
                         Incomplete. Choose the same file again to resume.
                       </p>
                     )}
+                    {d.purgedAt && (
+                      <p className="text-xs text-muted">
+                        Source file deleted {dateTime(d.purgedAt)} under the retention policy.
+                        Deliverables are kept.
+                      </p>
+                    )}
                   </td>
                   <td className="px-2 py-2">
                     <DocumentStateBadge state={d.state} />
@@ -261,19 +267,20 @@ function Documents({ caseDetail: c }: { caseDetail: CaseDetail }) {
                         Download
                       </Button>
                     )}
-                    {(d.state === 'uploading' ? c.can.upload : c.can.deleteDocuments) && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        aria-label={`Remove ${d.fileName}`}
-                        disabled={remove.isPending}
-                        onClick={() => {
-                          if (confirm(`Remove ${d.fileName}?`)) remove.mutate(d);
-                        }}
-                      >
-                        Remove
-                      </Button>
-                    )}
+                    {d.state !== 'purged' &&
+                      (d.state === 'uploading' ? c.can.upload : c.can.deleteDocuments) && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          aria-label={`Remove ${d.fileName}`}
+                          disabled={remove.isPending}
+                          onClick={() => {
+                            if (confirm(`Remove ${d.fileName}?`)) remove.mutate(d);
+                          }}
+                        >
+                          Remove
+                        </Button>
+                      )}
                   </td>
                 </tr>
               ))}

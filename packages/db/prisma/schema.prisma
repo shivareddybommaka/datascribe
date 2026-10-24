@@ -500,6 +500,9 @@ model Document {
   /// S3 multipart upload id while the upload is in progress
   uploadId       String?
   uploadedAt     DateTime?
+  /// set by the retention job (D-128): the S3 object and page text are gone, the row stays as a
+  /// tombstone so citations and the portal keep working
+  purgedAt       DateTime?
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
 

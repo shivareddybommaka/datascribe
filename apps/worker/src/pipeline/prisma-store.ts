@@ -49,7 +49,8 @@ export function prismaPipelineStore(prisma: PrismaClient): PipelineStore {
 
     listDocuments(caseId) {
       return prisma.document.findMany({
-        where: { caseId, uploadedAt: { not: null }, scanStatus: 'clean' },
+        // purged by retention (D-128): no object left to read
+        where: { caseId, uploadedAt: { not: null }, scanStatus: 'clean', purgedAt: null },
         orderBy: [{ uploadedAt: 'asc' }, { id: 'asc' }],
         select: { id: true, fileName: true, mimeType: true, s3Key: true, pageCount: true },
       });
