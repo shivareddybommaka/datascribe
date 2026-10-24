@@ -4,8 +4,19 @@ import request from 'supertest';
 import { afterAll, describe, expect, it } from 'vitest';
 import { tokenFromMail } from '../src/lib/mailer';
 import { hashPassword } from '../src/lib/password';
-import { TEST_PASSWORD, testPhiKey } from './constants';
-import { CSRF, SEED, bearer, buildApp, login, orgId, prisma, uniqueEmail } from './helpers';
+import { TEST_PASSWORD, TEST_TOTP_SECRET, testPhiKey } from './constants';
+import {
+  CSRF,
+  SEED,
+  bearer,
+  buildApp,
+  login,
+  orgId,
+  prisma,
+  testEnv,
+  totpNow,
+  uniqueEmail,
+} from './helpers';
 
 const { app, mailer } = buildApp();
 const api = () => request(app);
@@ -104,6 +115,86 @@ describe('login', () => {
     expect(third.status).toBe(429);
     expect(third.body.error.code).toBe('rate_limited');
   });
+
+  it('without a trusted proxy, X-Forwarded-For cannot reset the per-IP limit (audit M6)', async () => {
+    const limited = buildApp({
+      rateLimits: { windowMs: 60_000, authPerWindow: 2, publicPerWindow: 2 },
+      envOverrides: { TRUST_PROXY: 'false' },
+    });
+    const body = { email: 'nobody@test.example', password: 'x' };
+    const send = (ip: string) =>
+      request(limited.app).post('/api/v1/auth/login').set('x-forwarded-for', ip).send(body);
+    await send('203.0.113.1');
+    await send('203.0.113.2');
+    expect((await send('203.0.113.3')).status).toBe(429);
+  });
+
+  it('login, register and forgot take the same minimum time for known and unknown accounts (audit L9)', async () => {
+    const floor = 300;
+    const slow = buildApp({ envOverrides: { AUTH_RESPONSE_FLOOR_MS: String(floor) } });
+    const timed = async (send: () => Promise<request.Response>) => {
+      const start = Date.now();
+      const res = await send();
+      return { res, ms: Date.now() - start };
+    };
+    const post = (path: string, body: object) =>
+      timed(() => request(slow.app).post(`/api/v1/auth/${path}`).send(body));
+
+    const cases = [
+      await post('login', { email: SEED.acmeUser, password: 'wrong-password-x' }),
+      await post('login', { email: 'ghost@test.example', password: 'wrong-password-x' }),
+      await post('forgot', { email: SEED.harborAdmin }),
+      await post('forgot', { email: 'ghost@test.example' }),
+      await post('register', {
+        organizationName: 'Dup Firm',
+        name: 'Dup',
+        email: SEED.acmeAdmin,
+        password: TEST_PASSWORD,
+      }),
+    ];
+    for (const { ms } of cases) expect(ms).toBeGreaterThanOrEqual(floor - 5);
+    expect(cases.map((c) => c.res.status)).toEqual([401, 401, 202, 202, 202]);
+    expect(cases[0]!.res.body.error.code).toBe('invalid_credentials');
+    expect(cases[2]!.res.body).toEqual({ status: 'check_email' });
+    // undo the failed attempt on the shared seed user
+    await prisma.user.update({ where: { email: SEED.acmeUser }, data: { failedLoginCount: 0 } });
+  });
+
+  it('TRUST_PROXY=true is refused; the default trusts only the loopback proxy', () => {
+    expect(() => testEnv({ TRUST_PROXY: 'true' })).toThrow(/TRUST_PROXY/);
+    expect(testEnv().TRUST_PROXY).toBe('loopback');
+    expect(testEnv({ TRUST_PROXY: '1' }).TRUST_PROXY).toBe(1);
+  });
+
+  it('limits attempts per account even when they come from many IPs (audit M6)', async () => {
+    const limited = buildApp({
+      rateLimits: {
+        windowMs: 60_000,
+        authPerWindow: 100,
+        publicPerWindow: 100,
+        accountPerWindow: 3,
+      },
+    });
+    const email = await makeClientUser();
+    const send = (i: number, target = email) =>
+      request(limited.app)
+        .post('/api/v1/auth/login')
+        .set('x-forwarded-for', `198.51.100.${i}`)
+        .send({ email: target.toUpperCase(), password: 'wrong-password-x' });
+    for (let i = 1; i <= 3; i++) expect((await send(i)).status).toBe(401);
+    const blocked = await send(4);
+    expect(blocked.status).toBe(429);
+    expect(blocked.body.error.code).toBe('rate_limited');
+    // other accounts are unaffected
+    expect((await send(5, 'nobody@test.example')).status).toBe(401);
+    // reset mails to one inbox are capped the same way
+    for (let i = 0; i < 3; i++)
+      await request(limited.app).post('/api/v1/auth/forgot').send({ email: SEED.harborAdmin });
+    expect(
+      (await request(limited.app).post('/api/v1/auth/forgot').send({ email: SEED.harborAdmin }))
+        .status,
+    ).toBe(429);
+  });
 });
 
 describe('MFA (§5.2)', () => {
@@ -183,6 +274,31 @@ describe('MFA (§5.2)', () => {
     expect((await loginReq(email)).body.mfaSetupRequired).toBe(true);
   });
 
+  it('an MFA step token gives one session only, even when replayed or raced (audit L8)', async () => {
+    const email = await makeClientUser({ mfaSecret: TEST_TOTP_SECRET });
+    const first = await loginReq(email);
+    const verify = () =>
+      api()
+        .post('/api/v1/auth/mfa/verify')
+        .send({ mfaToken: first.body.mfaToken, code: totpNow() });
+    const raced = await Promise.all([verify(), verify()]);
+    expect(raced.filter((r) => r.status === 200)).toHaveLength(1);
+
+    const replay = await verify();
+    expect(replay.status).toBe(401);
+    expect(replay.body.error.code).toBe('invalid_token');
+    expect(await prisma.session.count({ where: { user: { email } } })).toBe(1);
+    // a fresh password step still works
+    const again = await loginReq(email);
+    expect(
+      (
+        await api()
+          .post('/api/v1/auth/mfa/verify')
+          .send({ mfaToken: again.body.mfaToken, code: totpNow() })
+      ).status,
+    ).toBe(200);
+  });
+
   it('rejects a forged MFA token', async () => {
     const res = await api()
       .post('/api/v1/auth/mfa/verify')
@@ -245,6 +361,50 @@ describe('sessions', () => {
     expect(await reuseCount()).toBe(2);
   });
 
+  it('rotation keeps the sign-in expiry: a family cannot outlive 7 days (audit M5)', async () => {
+    const email = await makeClientUser();
+    const { agent } = await login(app, email);
+    const first = await prisma.session.findFirstOrThrow({ where: { user: { email } } });
+    // pretend the sign-in was 6 days 23 h ago: one hour of family lifetime is left
+    const expiresAt = new Date(Date.now() + 60 * 60_000);
+    await prisma.session.update({ where: { id: first.id }, data: { expiresAt } });
+
+    const refreshed = await agent.post('/api/v1/auth/refresh').set(CSRF);
+    expect(refreshed.status).toBe(200);
+    const next = await prisma.session.findFirstOrThrow({
+      where: { user: { email }, revokedAt: null },
+    });
+    expect(next.expiresAt.getTime()).toBe(expiresAt.getTime());
+    const maxAge = Number(/Max-Age=(\d+)/i.exec(String(refreshed.headers['set-cookie']))?.[1]);
+    expect(maxAge).toBeLessThanOrEqual(3600);
+
+    await prisma.session.update({
+      where: { id: next.id },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+    const expired = await agent.post('/api/v1/auth/refresh').set(CSRF);
+    expect(expired.status).toBe(401);
+    expect(expired.body.error.code).toBe('session_expired');
+  });
+
+  it('refresh re-checks MFA policy: an org that starts enforcing MFA ends unenrolled sessions (audit M5)', async () => {
+    const email = await makeClientUser();
+    const org = await prisma.organization.create({ data: { name: 'Late MFA Firm (synthetic)' } });
+    await prisma.user.update({ where: { email }, data: { organizationId: org.id } });
+    const { agent } = await login(app, email);
+    expect((await agent.post('/api/v1/auth/refresh').set(CSRF)).status).toBe(200);
+
+    await prisma.organization.update({
+      where: { id: org.id },
+      data: { settings: { enforceMfa: true } },
+    });
+    const res = await agent.post('/api/v1/auth/refresh').set(CSRF);
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('mfa_required');
+    expect(await prisma.session.count({ where: { user: { email }, revokedAt: null } })).toBe(0);
+    expect((await loginReq(email)).body.mfaSetupRequired).toBe(true);
+  });
+
   it('two concurrent refreshes with one token cannot both succeed (audit M1)', async () => {
     const email = await makeClientUser();
     const cookie = cookieOf(await loginReq(email));
@@ -297,6 +457,26 @@ describe('sessions', () => {
     const me = await api().get('/api/v1/auth/me').set(bearer(token));
     expect(me.status).toBe(401);
     expect(me.body.error.code).toBe('session_revoked');
+  });
+
+  it('a token ended by logout is not reported as reuse and leaves other devices alone (audit L1)', async () => {
+    const email = await makeClientUser();
+    const laptop = cookieOf(await loginReq(email));
+    const phone = await login(app, email);
+    expect((await api().post('/api/v1/auth/logout').set(CSRF).set('cookie', laptop)).status).toBe(
+      204,
+    );
+
+    const stale = await api().post('/api/v1/auth/refresh').set(CSRF).set('cookie', laptop);
+    expect(stale.status).toBe(401);
+    expect(stale.body.error.code).toBe('session_revoked');
+    const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+    expect(
+      await prisma.auditLog.count({
+        where: { action: 'auth.refresh.reuse_detected', actorId: user.id },
+      }),
+    ).toBe(0);
+    expect((await phone.agent.post('/api/v1/auth/refresh').set(CSRF)).status).toBe(200);
   });
 
   it('revoke-all ends every session for the user', async () => {
@@ -385,6 +565,41 @@ describe('registration and email verification (§5.2)', () => {
     expect(mailer.lastTo(SEED.acmeUser)?.subject).toMatch(/sign-up attempt/);
   });
 
+  it('an unverified sign-up cannot squat an address; the owner registers over it (audit L3)', async () => {
+    const email = uniqueEmail('owner');
+    const register = (password: string, organizationName: string) =>
+      api().post('/api/v1/auth/register').send({ organizationName, name: 'N', email, password });
+    expect((await register('Squatter-password-111!', 'Squat Firm (synthetic)')).status).toBe(202);
+    const squatterLink = tokenFromMail(mailer.lastTo(email));
+    const orgsBefore = await prisma.organization.count();
+
+    const ownerPassword = 'Owner-password-222!';
+    expect((await register(ownerPassword, 'Owner Firm (synthetic)')).status).toBe(202);
+    expect(mailer.lastTo(email)?.subject).toMatch(/Verify your/);
+    const ownerLink = tokenFromMail(mailer.lastTo(email));
+    expect(await prisma.organization.count()).toBe(orgsBefore);
+
+    // the squatter's link is void; the owner's link activates the owner's password
+    expect(
+      (await api().post('/api/v1/auth/verify-email').send({ token: squatterLink })).status,
+    ).toBe(400);
+    expect((await api().post('/api/v1/auth/verify-email').send({ token: ownerLink })).status).toBe(
+      200,
+    );
+    expect((await loginReq(email, 'Squatter-password-111!')).status).toBe(401);
+    expect((await loginReq(email, ownerPassword)).status).toBe(200);
+    const user = await prisma.user.findUniqueOrThrow({
+      where: { email },
+      include: { organization: true },
+    });
+    expect(user.organization.name).toBe('Owner Firm (synthetic)');
+
+    // once verified, registering again changes nothing
+    expect((await register('Late-password-333!', 'Late Firm (synthetic)')).status).toBe(202);
+    expect(mailer.lastTo(email)?.subject).toMatch(/sign-up attempt/);
+    expect((await loginReq(email, ownerPassword)).status).toBe(200);
+  });
+
   it('enforces the password policy', async () => {
     const res = await api()
       .post('/api/v1/auth/register')
@@ -427,6 +642,26 @@ describe('forgot / reset password (§5.2)', () => {
     expect((await loginReq(email)).status).toBe(401);
     expect((await loginReq(email, newPassword)).status).toBe(200);
     expect(mailer.lastTo(email)?.subject).toMatch(/password was changed/);
+  });
+
+  it('a reset voids every other reset link for the account (audit L2)', async () => {
+    const email = await makeClientUser();
+    await api().post('/api/v1/auth/forgot').send({ email });
+    const older = tokenFromMail(mailer.lastTo(email));
+    await api().post('/api/v1/auth/forgot').send({ email });
+    const newer = tokenFromMail(mailer.lastTo(email));
+    expect(newer).not.toBe(older);
+
+    const first = 'First-new-password-789!';
+    expect(
+      (await api().post('/api/v1/auth/reset').send({ token: newer, password: first })).status,
+    ).toBe(200);
+    const stale = await api()
+      .post('/api/v1/auth/reset')
+      .send({ token: older, password: 'Attacker-password-000!' });
+    expect(stale.status).toBe(400);
+    expect(stale.body.error.code).toBe('token_invalid');
+    expect((await loginReq(email, first)).status).toBe(200);
   });
 
   it('rejects an unknown reset token', async () => {

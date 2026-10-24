@@ -697,3 +697,137 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
   QA work from them. The summary is built only when ordered.
 - Until step 4 moves scanning into the worker, the extract stage moves the case
   `submitted → processing` and only clean, uploaded documents are processed.
+
+## D-100 — Absolute session lifetime and MFA re-check on refresh (audit M5, M10, 2026-10-24)
+
+- Replaces D-017's "7 days sliding". A rotated session copies its family's `expiresAt`, so a sign-in
+  lasts at most 7 days (§2 refresh TTL) however often it refreshes. The cookie `Max-Age` is the time
+  left. No schema change: the first link's `expiresAt` already is the family deadline.
+- `/auth/refresh` reloads roles and org settings. If MFA is now required (internal role granted, org
+  turned on `enforceMfa`) and the user has not enrolled, the whole family is revoked (401
+  `mfa_required`, audit `auth.refresh.mfa_required`). The next sign-in goes through enrolment. A
+  suspended org also ends the session at refresh, as it already did per request.
+
+## D-101 — Trust-proxy setting and per-account auth limits (audit M6, M10, 2026-10-24)
+
+- `TRUST_PROXY` replaces the hard-coded `trust proxy 1`, which let a client that reached the API
+  directly send its own `X-Forwarded-For` and get a fresh per-IP bucket on every request. Default
+  `loopback`: only the local Next.js proxy (dev, e2e) is trusted. Behind a load balancer set its hop
+  count or CIDRs (M10 part 3 IaC). `true` is refused at startup.
+- Per-account limiter (`RATE_LIMIT_ACCOUNT`, default 10 / 15 min) on login, MFA setup/verify,
+  forgot and register, keyed by SHA-256 of the normalised email (or the MFA step's user id). It counts
+  every request, so it also caps reset and "sign-up attempt" mails to one inbox. Lockout (5 wrong
+  secrets) still applies on top. Keys never hold an email in clear, ready for the Redis store.
+
+## D-102 — One-time reset links and MFA step tokens (audit L2, L8, M10, 2026-10-24)
+
+- **L2.** A successful `/auth/reset` marks every other unused `password_reset` token of the user as
+  used, so an older link still in an inbox can't undo the reset. (The admin "force reset" already did
+  this when issuing. There is no signed-in "change password" route yet; when one is added it must do
+  the same.)
+- **L8.** The MFA step token carries `at` (issue time, ms). `/auth/mfa/verify` spends it with one
+  conditional update, `lastLoginAt < at` → `lastLoginAt = now`, so a replayed or raced token gives
+  at most one session. No schema change. Side effect: completing a sign-in on device B voids a
+  password step pending on device A (it re-enters the password). TOTP code replay within the same
+  30 s step is still open (D-017 item, needs a `mfaLastStep` column); not done here, to keep this
+  run free of schema changes.
+
+## D-103 — Revoke reasons: only rotated tokens raise reuse alerts (audit L1, M10, 2026-10-24)
+
+- New nullable `Session.revokedReason` (migration `20261024150000_session_revoked_reason`). Every
+  revocation goes through `revoked(reason)` in `auth/session.ts`: `rotated`, `reuse`, `logout`,
+  `revoke_all`, `idle`, `expired`, `password_reset`, `mfa_required`, `admin_action`,
+  `org_suspended`, `impersonation_ended`.
+- Presenting a revoked refresh token is a reuse alert (family revoked, `auth.refresh.reuse_detected`)
+  only for `rotated` / `reuse`. Any other reason gives `401 session_revoked`, no alert, and other
+  devices keep their sessions. Before, a tab refreshing after logout or a password reset raised a
+  false theft alert, which drowns the real ones.
+- Rows without a reason (from before the migration) keep the old strict rule and count as reuse.
+
+## D-104 — Unverified sign-ups don't own an address (audit L3, M10, 2026-10-24)
+
+- Before, anyone could register someone else's email. The owner was then told "you already have an
+  account" and could never sign up. Worse, if the owner verified that pending account later, it
+  went live with the squatter's password (pre-hijack).
+- Now `/auth/register` on an address whose account is unverified (a self-registered client org with
+  this one user) replaces the pending sign-up: new password, name and org name, older verify links
+  voided, a fresh link sent. The response stays the same 202, so nothing is revealed. Verified
+  accounts, invited users and multi-user orgs keep the old "sign-up attempt" mail.
+- Race: register (tokens, then user `where emailVerifiedAt is null`) and verify-email (token claim +
+  `emailVerifiedAt` in one transaction) take locks in the same order, so a verification that wins
+  makes the replacement a no-op, and a replacement that wins voids the link being verified.
+- Residual: if the owner clicks a link from a later squatter registration, they verify the
+  squatter's password. They can't sign in with their own password, so they use "Forgot password",
+  which ends the squatter's sessions (reset revokes all).
+
+## D-105 — Error logs carry no values (audit L7, M10, 2026-10-24)
+
+- Prisma error messages quote the failed call with its arguments (names, notes, emails). The API
+  logged `err.message` for unhandled errors, and the shared client's `log: ['error']` printed the
+  same text to stdout.
+- `errorInfo(err)` in `@datascribe/db` is now the only way the API logs an error. For Prisma errors
+  it keeps the name, P-code, model and constraint column names (`meta.target`), never the message.
+  Other errors keep name, code and message. The shared client logs Prisma errors by target only,
+  and warnings in full (they carry no query values).
+- The worker should use `errorInfo` too. Its pipeline code is being written on another branch, so
+  this run didn't touch it (worker code outside the pipeline logs no error messages today).
+
+## D-106 — Constant-time compares and uniform auth timing (audit L9, M10, 2026-10-24)
+
+- TOTP: otplib compares codes with `===`. `verifyTotp` now generates the previous, current and
+  next step's code and compares each with `timingSafeEqual` (`safeEqual` in `lib/timing.ts`)
+  without stopping at the first match. Other secrets are already compared by SHA-256 lookup
+  (tokens) or `timingSafeEqual` (fake gateway webhook).
+- Login, register and forgot hold their response until `AUTH_RESPONSE_FLOOR_MS` (default 400 ms)
+  after the request started, for success and error alike (`withTimingFloor`). Existing accounts
+  cost more work: the attempt reservation, a reset token, an email. Register also runs argon2 on
+  every path now. The floor is the simple fix; it costs every sign-in up to 400 ms. API tests set
+  it to 0 except the test that checks it. If SMTP ever takes longer than the floor, forgot would
+  leak again; moving its email to the worker queue (M9) removes that.
+
+## D-107 — Who may become a converted firm's first admin (audit L10, M10, 2026-10-24)
+
+- Converting a lead (`crm:edit`, so sales) invites a `client_admin` (D-018). Any address was
+  accepted. Now:
+  - A Datascribe domain is refused (400 `admin_email_domain`): such a client account would look
+    like staff in emails and the console. The domains are `STAFF_EMAIL_DOMAINS`, defaulting to
+    `MAIL_FROM`'s domain. They are configured rather than derived from staff accounts, because
+    one staff member on gmail.com would otherwise block every firm on gmail.com.
+  - An `adminEmail` on another domain than the lead's own email (or a lead without an email) needs
+    `users:create` (ops manager, super admin). Sales gets 403 and nothing changes.
+  - The `crm.lead.convert` audit entry records `adminEmailOffDomain`.
+- Known limit: sales can still edit the lead's email first (the audit log records
+  `crm.lead.update` with `fields: ['email']`).
+  The rule stops an unnoticed one-step hand-over, not a determined insider.
+
+## D-108 — PHI notice on the public contact form (audit L6, M10, 2026-10-24)
+
+- The website contact / demo form has a free-text message that lands in the CRM and the sales
+  inbox, neither of which is meant for PHI. A fixed notice under it asks people not to send
+  medical records, patient names or other health information and points to the client portal.
+  The message field references it via `aria-describedby`, so screen readers announce it.
+- The text is in code, not CMS copy, so an editor can't remove it. No server-side PHI detection:
+  it would be guesswork and could reject real enquiries.
+
+## D-109 — Images pinned by digest, Actions by commit SHA (audit L12, M10, 2026-10-24)
+
+- `docker-compose.yml` and CI use `tag@sha256:<index digest>` (multi-arch index, so the Mac and
+  CI's amd64 runners resolve the same release). The digests are the ones the local stack already
+  runs (`docker image inspect … RepoDigests`); ClamAV's is from Docker Hub's `stable` tag.
+- CI Actions are pinned to the commit the `v4` tag pointed at on 2026-10-24
+  (`git ls-remote`), with `# v4` kept as a comment.
+- `apps/api/test/supply-chain.test.ts` fails on any unpinned image or Action.
+- Updating: pull the tag, copy the new RepoDigest; for an Action, `git ls-remote` the tag (use the
+  `^{}` commit for annotated tags). Dependabot can do this later (needs repo settings, Shiva).
+
+## D-110 — Least-privilege database roles (audit L11, M10, 2026-10-24)
+
+- Three roles: `datascribe_owner` (NOLOGIN, owns everything), `datascribe_migrator` (runs
+  migrations, logs in as the owner) and `datascribe_app` (API and worker: row access only;
+  `AuditLog` append-only; no DDL or TRUNCATE). SQL in `packages/db/sql/app-roles.sql`, runbook in
+  `docs/DB-ROLES.md`.
+- Written and checked in a throwaway container only. The shared dev Postgres and the test/e2e
+  databases keep the single owner role (roles are cluster-wide; tests recreate the schema).
+  Switching staging/production is part of the IaC work (M10 part 3) and is Shiva's call.
+- The L5 backfill's `VALIDATE CONSTRAINT` needs the owner. It only runs while a constraint is
+  unvalidated, so it must have run once (as owner) before the switch. The runbook checks this.

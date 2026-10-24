@@ -56,6 +56,7 @@ export default defineConfig({
         LOG_LEVEL: 'warn',
         // every spec signs in from the same IP; production keeps the 30 / 15 min default
         RATE_LIMIT_AUTH: '300',
+        RATE_LIMIT_ACCOUNT: '300',
         // local SeaweedFS with buckets of its own (created at API startup), 5 MiB parts
         ...TEST_S3,
         S3_BUCKET_DOCUMENTS: `ds-e2e-${E2E.apiPort}-documents`,

@@ -2,7 +2,7 @@ import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { APP_URL, buildApp } from '../test/helpers';
 import { redactPath } from './app';
-import { loadEnv } from './config/env';
+import { loadEnv, staffEmailDomains } from './config/env';
 
 const { app } = buildApp();
 
@@ -95,6 +95,16 @@ describe('env validation', () => {
     expect(() => loadEnv({ ...prod, S3_SSE: 'none' })).toThrow(/S3_SSE/);
     expect(() => loadEnv({ ...prod, CLAMAV_HOST: '' })).toThrow(/CLAMAV_HOST/);
     expect(loadEnv({ ...baseEnv, S3_SSE: 'none' }).S3_SSE).toBe('none');
+  });
+
+  it("staff email domains default to MAIL_FROM's domain (audit L10)", () => {
+    expect(staffEmailDomains(loadEnv(baseEnv))).toEqual(['datascribe.example']);
+    expect(
+      staffEmailDomains(loadEnv({ ...baseEnv, MAIL_FROM: 'Datascribe <hello@ds.example>' })),
+    ).toEqual(['ds.example']);
+    expect(
+      staffEmailDomains(loadEnv({ ...baseEnv, STAFF_EMAIL_DOMAINS: 'A.example, b.example' })),
+    ).toEqual(['a.example', 'b.example']);
   });
 
   it('requires strong JWT secrets and names the variable, never the value', () => {

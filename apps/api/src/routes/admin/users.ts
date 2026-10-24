@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { AuthContext } from '../../auth/context';
 import { assertCanGrant, isSuperAdmin, rolePermissions } from '../../auth/grants';
 import { authenticate, requireAuth, requirePermission } from '../../auth/middleware';
+import { revoked } from '../../auth/session';
 import type { Deps } from '../../context';
 import { badRequest, forbidden, notFound } from '../../lib/errors';
 import { renderEmail } from '../../lib/templates';
@@ -81,7 +82,7 @@ async function loadTarget(deps: Deps, auth: AuthContext, id: string, action: Act
 async function revokeSessions(deps: Deps, userId: string) {
   const { count } = await deps.prisma.session.updateMany({
     where: { userId, revokedAt: null },
-    data: { revokedAt: new Date() },
+    data: revoked('admin_action'),
   });
   return count;
 }

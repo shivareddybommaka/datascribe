@@ -18,7 +18,8 @@ jobs:
     services:
       # Throwaway DB for API integration tests (synthetic data only). Name must end in _test.
       postgres:
-        image: postgres:16-alpine
+        # pinned like docker-compose.yml (audit L12, D-109)
+        image: postgres:16-alpine@sha256:f4610795587492cd4fb887c2dc3de301b813278bb6f616992061141b5f15ac36
         env:
           POSTGRES_USER: datascribe
           POSTGRES_PASSWORD: datascribe
@@ -34,9 +35,10 @@ jobs:
       NEXT_TELEMETRY_DISABLED: '1'
       TEST_DATABASE_URL: postgresql://datascribe:datascribe@localhost:5433/datascribe_test
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      # Actions pinned to commit SHAs (audit L12): a moved tag can't run new code with repo access.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
@@ -45,7 +47,8 @@ jobs:
         run: >-
           docker run -d --name s3 -p 127.0.0.1:9000:8333
           -e AWS_ACCESS_KEY_ID=datascribe -e AWS_SECRET_ACCESS_KEY=datascribe-dev-secret
-          chrislusf/seaweedfs:latest server -dir=/data -s3 -s3.port=8333
+          chrislusf/seaweedfs:latest@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+          server -dir=/data -s3 -s3.port=8333
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:generate
       - run: pnpm format:check

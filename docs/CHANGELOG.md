@@ -9,6 +9,31 @@
   the case `on_hold`; re-runs replace rather than duplicate. The worker reads documents from S3
   (`@aws-sdk/client-s3`, same settings as the API).
 
+## M10 part 1 — Open security findings (2026-10-24, branch `sentinel/m10`)
+
+Fixes for the datascribe-auditor's open M and L findings, one commit each with a regression test.
+Design notes: D-100 to D-110.
+
+- **M5**: a sign-in lasts at most 7 days however often it refreshes (rotation keeps the family's
+  expiry); refresh re-checks the MFA policy and ends sessions of users who must now enrol.
+- **M6**: `TRUST_PROXY` (default `loopback`, `true` refused) replaces the hard-coded trust of one
+  proxy hop; per-account limit `RATE_LIMIT_ACCOUNT` (10 / 15 min) on login, MFA, forgot, register.
+- **L1**: `Session.revokedReason` (migration `20261024150000_session_revoked_reason`). Only a
+  rotated token raises a reuse alert; a token ended by logout, idle, reset etc. is a plain 401.
+- **L2**: a password reset voids every other reset link. **L8**: MFA step tokens are single-use.
+- **L3**: registering an unverified address again replaces the pending sign-up instead of being
+  blocked; verify-email is transactional.
+- **L6**: fixed "no health information" notice on the website contact form.
+- **L7**: `errorInfo()` logs Prisma errors without values; the shared client logs errors by target.
+- **L9**: constant-time TOTP compare; `AUTH_RESPONSE_FLOOR_MS` (400 ms) on login/register/forgot.
+- **L10**: a converted firm's admin must be on the lead's domain (else an admin converts), never a
+  Datascribe staff domain.
+- **L11**: SQL and runbook for owner / migrator / app database roles (`docs/DB-ROLES.md`); not
+  applied to any running database.
+- **L12**: compose and CI images pinned by digest, Actions by commit SHA, with a test.
+- New env: `RATE_LIMIT_ACCOUNT`, `TRUST_PROXY`, `AUTH_RESPONSE_FLOOR_MS`, `STAFF_EMAIL_DOMAINS`
+  (`.env.example`).
+
 ## M2 — Admin console (2026-10-24, branch `admin/m2`)
 
 §5.7 admin console on top of the users API from `719552e`. Design notes: D-060 to D-064.

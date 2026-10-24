@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Router } from 'express';
 import { isSuperAdmin } from '../../auth/grants';
 import { authenticate, requireAuth } from '../../auth/middleware';
+import { revoked } from '../../auth/session';
 import type { Deps } from '../../context';
 import { badRequest, forbidden, notFound } from '../../lib/errors';
 import { ACCESS_TOKEN_TTL_SECONDS, randomToken, sha256, signAccessToken } from '../../lib/tokens';
@@ -22,7 +23,7 @@ export function impersonationRouter(deps: Deps): Router {
     if (!auth.impersonatorId) throw badRequest('not_impersonating', 'Not impersonating anyone');
     await prisma.session.update({
       where: { id: auth.sessionId },
-      data: { revokedAt: new Date() },
+      data: revoked('impersonation_ended'),
     });
     await req.audit({
       action: 'admin.impersonation.stopped',

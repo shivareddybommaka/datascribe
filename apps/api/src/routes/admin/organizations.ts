@@ -4,6 +4,7 @@ import { Router, type Request } from 'express';
 import { z } from 'zod';
 import type { AuthContext } from '../../auth/context';
 import { authenticate, requireAuth, requirePermission } from '../../auth/middleware';
+import { revoked } from '../../auth/session';
 import type { Deps } from '../../context';
 import { badRequest, forbidden, notFound } from '../../lib/errors';
 import { parse } from '../../lib/validate';
@@ -177,7 +178,7 @@ export function organizationsRouter(deps: Deps): Router {
     if (suspended) {
       ({ count: sessionsRevoked } = await prisma.session.updateMany({
         where: { user: { organizationId: id }, revokedAt: null },
-        data: { revokedAt: new Date() },
+        data: revoked('org_suspended'),
       }));
     }
     const statusChanged = body.status !== undefined && body.status !== org.status;
