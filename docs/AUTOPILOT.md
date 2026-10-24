@@ -16,6 +16,8 @@ Finish each milestone's Definition of Done (REQUIREMENTS.md §12) before startin
    lint + typecheck + tests pass.
 4. Before ending the run: format, run the gates, commit, push to `origin main`, update `STATUS.md`
    (and CHANGELOG / DECISIONS / `docs/demos/M<n>.md` when a milestone finishes).
+   Before every push run `pnpm format:check` (CI's first gate); docs-only commits such as STATUS.md
+   edits need it too.
 5. Refresh the pinned dashboard report: `show_widget` with name `datascribe-status`, `pin: true`,
    `size: lg` (metrics, a milestone % bar chart, a milestone table and a "Waiting on Shiva" table),
    built from STATUS.md.
