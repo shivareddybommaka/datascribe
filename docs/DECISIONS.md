@@ -875,3 +875,25 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
 - Not moved: the per-upstream token buckets and circuit breakers stay per process (the defaults
   sit far enough under each provider's limit for a few processes, see factory.ts). Sharing them is
   only worth doing if the worker count grows; noted for part 3.
+
+## D-113 — Playwright e2e job in CI (M10 part 2a, 2026-10-24)
+
+- New `e2e` job in `.github/workflows/ci.yml`, next to `check` (both run on every PR and push to
+  main). It runs exactly `pnpm --filter @datascribe/web e2e`, the local command, so the Playwright
+  config stays the single source: its own API (:4100) and web (:3100), never 3000.
+- Services: Postgres 16 (`datascribe_e2e` on 5433, reset and seeded by the global setup, which
+  refuses any other name), Redis (D-111/D-112), Mailpit (1025 SMTP, 8025 API: the reset and invite
+  specs read mail there). SeaweedFS runs via `docker run` as in `check` (it needs a command). All
+  images pinned by the same digests as `docker-compose.yml`, Actions by commit SHA
+  (`actions/upload-artifact` v4 = `ea165f8…`, a lightweight tag, `git ls-remote` on 2026-10-24).
+- Browser: GitHub's Ubuntu image ships Google Chrome, which the config already uses
+  (`channel: 'chrome'`). No `playwright install`, no browser download. A `google-chrome --version`
+  step fails early if a future runner image drops it.
+- On failure the job uploads `apps/web/test-results/` (traces of failed tests, synthetic data only)
+  for 7 days.
+- `apps/api/test/ci-workflow.test.ts` keeps the job and the Playwright config in step (command, DB
+  name and port, Mailpit ports, Chrome channel, no port 3000). The YAML was parsed locally with
+  js-yaml (from the store, not added as a dependency). The job hasn't run on GitHub yet: the agent
+  can't trigger or read Actions.
+- The portal spec simulated a dropped upload by matching S3 port 9000; it now takes the port from
+  `S3_ENDPOINT`, so the suite also runs against an S3 on another port.
