@@ -1,5 +1,23 @@
 # Changelog
 
+## M10 part 8 — Close-out: CI staging deploy workflow, e2e noise explained, demo (2026-10-25, branch `sentinel/m10`)
+
+Design notes: D-130, D-131. **Nothing was deployed, planned or applied; no AWS account was used.**
+
+- **Staging deploy workflow** `.github/workflows/deploy-staging.yml` (§12 M10 DoD, D-131): manual
+  `workflow_dispatch` on `main` only, never on push / PR / schedule. Assumes an AWS role through
+  GitHub OIDC from the `staging` environment (no secrets), builds and pushes the four images
+  (`linux/amd64`, tag = commit SHA, deployed by digest) and runs `terraform plan`; with `apply` on it
+  also runs the migration task, applies and waits for the services. Written, never run: the role and
+  variables don't exist yet (`docs/INFRA.md` → "CI staging deploy" lists what to create).
+- `apps/api/test/infra-deploy-workflow.test.ts` (5 tests): triggers, apply gating, OIDC-only
+  credentials, SHA-pinned actions, images by digest.
+- **Terraform validated**: `terraform init -backend=false`, `validate` and `fmt -check` pass
+  (Terraform 1.17.0, AWS provider 5.100.0); `.terraform.lock.hcl` committed.
+- **e2e `prisma:error document.findMany`** (D-130): the worker's dispatcher polling while global
+  setup drops and re-creates the e2e schema. Harmless, nothing silenced.
+- **Demo** `docs/demos/M10.md` for parts 1–8.
+
 ## M6 part 2a — Staff workspace read side (2026-10-25, master)
 
 Design notes: D-084.
