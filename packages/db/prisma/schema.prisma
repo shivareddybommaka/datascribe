@@ -297,6 +297,9 @@ model Session {
   impersonatorId   String?
   expiresAt        DateTime
   revokedAt        DateTime?
+  /// why it ended: rotated | reuse | logout | revoke_all | idle | expired | password_reset | ...
+  /// Presenting a token whose reason is rotated / reuse (or unknown) is a reuse alert (D-103).
+  revokedReason    String?
   ip               String?
   userAgent        String?
   createdAt        DateTime  @default(now())

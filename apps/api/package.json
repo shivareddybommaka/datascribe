@@ -17,6 +17,7 @@
     "@datascribe/billing": "workspace:*",
     "@datascribe/db": "workspace:*",
     "@datascribe/medical-data": "workspace:*",
+    "@datascribe/scan": "workspace:*",
     "@datascribe/shared": "workspace:*",
     "argon2": "^0.43.0",
     "cookie-parser": "^1.4.7",

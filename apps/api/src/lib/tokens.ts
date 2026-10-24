@@ -17,6 +17,8 @@ export interface MfaClaims {
   sub: string;
   /** true when the user still has to enrol (internal role or org policy) */
   setup: boolean;
+  /** issued at, in ms: the token is spent once a sign-in completes after it (audit L8) */
+  at: number;
 }
 
 export function signAccessToken(claims: Omit<AccessClaims, 'typ'>, secret: string): string {

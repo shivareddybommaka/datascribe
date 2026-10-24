@@ -2,8 +2,8 @@
 
 ## M9 part 1 — Notifications (2026-10-24, branch `herald/m9`)
 
-§5.8 notifications. Migration `20261024160000_m9_notifications` (notifications, preferences, email
-outbox).
+§5.8 notifications. Design notes: D-090. Migration `20261024160000_m9_notifications`
+(notifications with email delivery columns, preferences).
 
 - **Catalog and dispatcher** (`packages/shared`, `packages/db`): one typed event list with audience,
   default channels and templates; `emit` fans out to in-app rows and queues email per recipient,
@@ -11,13 +11,53 @@ outbox).
 - **Email outbox** on a BullMQ `notifications` queue in the worker, sent to Mailpit in dev, retried
   with backoff.
 - **Events wired**: case submitted, upload scanned, invoice issued, payment recorded, lead assigned,
-  invite accepted, password changed, tasks due. Typed helpers ready for the stage runner and QA flow:
+  invite accepted, password changed, tasks due (upload scanned is sent from `packages/scan` in the
+  worker). Typed helpers ready for the stage runner and QA flow:
   case ready for review, processing failed, assigned, QA decision, delivered.
 - **API**: list (cursor paged), unread count, mark read / mark all read, get and update preferences.
 - **UI**: header bell in console and portal with an unread badge (polled every 30 s), the latest
   notifications and "mark all read"; a notification centre page at `/console/notifications` and
   `/portal/notifications` with preferences. Read-only while impersonating.
 - **Tests**: API and unit tests for the catalog, dispatcher and routes; Playwright e2e for the bell.
+
+## M5b — Processing pipeline (in progress, `main`)
+
+- Stages 3–6 as pure modules (D-078) and stage 2 text extraction with pdf.js (D-079).
+- **Stage runner** (D-080): BullMQ processors for extract → classify → extract-events → code →
+  build-deliverables → ready-for-review, one job per case per stage; `ProcessingJob` rows per
+  attempt; encrypted `DocumentPage` / `ClinicalEvent` / `Deliverable` writes; last failed attempt puts
+  the case `on_hold`; re-runs replace rather than duplicate. The worker reads documents from S3
+  (`@aws-sdk/client-s3`, same settings as the API).
+- **Stage 1 scan in the worker** (D-081): scanner + `verifyDocument` moved to `packages/scan`; the
+  worker scans uploads as they complete and, at submit, scans anything left and claims the case
+  `submitted → processing`. A DB-to-queue dispatcher replaces the API's background scan and its
+  startup resume. E2E now starts the worker. New env: `QUEUE_PREFIX`, `DISPATCH_INTERVAL_MS`,
+  `PIPELINE_START_CASES`; the worker honours the DB index in `REDIS_URL`.
+
+## M10 part 1 — Open security findings (2026-10-24, branch `sentinel/m10`)
+
+Fixes for the datascribe-auditor's open M and L findings, one commit each with a regression test.
+Design notes: D-100 to D-110.
+
+- **M5**: a sign-in lasts at most 7 days however often it refreshes (rotation keeps the family's
+  expiry); refresh re-checks the MFA policy and ends sessions of users who must now enrol.
+- **M6**: `TRUST_PROXY` (default `loopback`, `true` refused) replaces the hard-coded trust of one
+  proxy hop; per-account limit `RATE_LIMIT_ACCOUNT` (10 / 15 min) on login, MFA, forgot, register.
+- **L1**: `Session.revokedReason` (migration `20261024150000_session_revoked_reason`). Only a
+  rotated token raises a reuse alert; a token ended by logout, idle, reset etc. is a plain 401.
+- **L2**: a password reset voids every other reset link. **L8**: MFA step tokens are single-use.
+- **L3**: registering an unverified address again replaces the pending sign-up instead of being
+  blocked; verify-email is transactional.
+- **L6**: fixed "no health information" notice on the website contact form.
+- **L7**: `errorInfo()` logs Prisma errors without values; the shared client logs errors by target.
+- **L9**: constant-time TOTP compare; `AUTH_RESPONSE_FLOOR_MS` (400 ms) on login/register/forgot.
+- **L10**: a converted firm's admin must be on the lead's domain (else an admin converts), never a
+  Datascribe staff domain.
+- **L11**: SQL and runbook for owner / migrator / app database roles (`docs/DB-ROLES.md`); not
+  applied to any running database.
+- **L12**: compose and CI images pinned by digest, Actions by commit SHA, with a test.
+- New env: `RATE_LIMIT_ACCOUNT`, `TRUST_PROXY`, `AUTH_RESPONSE_FLOOR_MS`, `STAFF_EMAIL_DOMAINS`
+  (`.env.example`).
 
 ## M2 — Admin console (2026-10-24, branch `admin/m2`)
 

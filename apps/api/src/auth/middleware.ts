@@ -4,7 +4,7 @@ import type { Deps } from '../context';
 import { HttpError, forbidden, unauthorized } from '../lib/errors';
 import { verifyToken, type AccessClaims } from '../lib/tokens';
 import { loadAuthContext, type AuthContext } from './context';
-import { isIdle } from './session';
+import { isIdle, revoked } from './session';
 
 const TOUCH_INTERVAL_MS = 60 * 1000;
 
@@ -25,7 +25,7 @@ export async function resolveAuth(deps: Deps, req: Request): Promise<AuthContext
     throw unauthorized('session_revoked', 'Session has ended, please sign in again');
   }
   if (isIdle(session, now)) {
-    await deps.prisma.session.update({ where: { id: session.id }, data: { revokedAt: now } });
+    await deps.prisma.session.update({ where: { id: session.id }, data: revoked('idle', now) });
     throw unauthorized('session_idle', 'Signed out after inactivity');
   }
   // The token's impersonator must match the session's, both ways (D-061).

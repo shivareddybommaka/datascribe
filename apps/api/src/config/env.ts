@@ -36,6 +36,16 @@ export const EnvSchema = z
     SMTP_HOST: z.string().default('localhost'),
     SMTP_PORT: z.coerce.number().int().positive().default(1025),
     MAIL_FROM: z.string().default('no-reply@datascribe.example'),
+    /** Datascribe's own email domains (comma-separated); unset = MAIL_FROM's domain (audit L10) */
+    STAFF_EMAIL_DOMAINS: z
+      .string()
+      .optional()
+      .transform((v) =>
+        (v ?? '')
+          .split(',')
+          .map((s) => s.trim().toLowerCase())
+          .filter(Boolean),
+      ),
     /** website contact / demo forms notify this inbox (§5.1) */
     SALES_INBOX: z.string().email().default('sales@datascribe.example'),
     MEDICAL_DATA_PROVIDER: z.enum(['nlm', 'mock']).default('mock'),
@@ -69,6 +79,23 @@ export const EnvSchema = z
     /** per-IP requests per 15 min: login/MFA/refresh, and register/forgot/invite-accept (D-017) */
     RATE_LIMIT_AUTH: z.coerce.number().int().min(1).default(30),
     RATE_LIMIT_PUBLIC: z.coerce.number().int().min(1).default(10),
+    /** per-account requests per 15 min on login/MFA/forgot/register, whatever the IP (audit M6) */
+    RATE_LIMIT_ACCOUNT: z.coerce.number().int().min(1).default(10),
+    /** minimum response time of login / register / forgot, hiding which accounts exist (audit L9) */
+    AUTH_RESPONSE_FLOOR_MS: z.coerce.number().int().min(0).max(5000).default(400),
+    /**
+     * Express `trust proxy`: which hops may set X-Forwarded-For (audit M6). `loopback` (default)
+     * trusts the local Next.js proxy only; behind a load balancer give its hop count or CIDRs.
+     * `true` is refused: it lets any client choose its own IP and dodge the per-IP limits.
+     */
+    TRUST_PROXY: z
+      .string()
+      .default('loopback')
+      .transform((v) => v.trim())
+      .refine((v) => v !== 'true', 'trusting every hop lets clients spoof their IP')
+      .transform((v): string | number | false =>
+        v === 'false' || v === '' ? false : /^\d+$/.test(v) ? Number(v) : v,
+      ),
     SUMMARY_PROVIDER: z.enum(['mock', 'anthropic', 'openai']).default('mock'),
     PHI_LLM_BAA_CONFIRMED: bool,
     LOG_LEVEL: z
@@ -124,6 +151,19 @@ export const EnvSchema = z
   });
 
 export type Env = z.infer<typeof EnvSchema>;
+
+/** STAFF_EMAIL_DOMAINS, or the domain of MAIL_FROM when it is unset. */
+export function staffEmailDomains(env: Pick<Env, 'STAFF_EMAIL_DOMAINS' | 'MAIL_FROM'>): string[] {
+  if (env.STAFF_EMAIL_DOMAINS.length) return env.STAFF_EMAIL_DOMAINS;
+  const at = env.MAIL_FROM.lastIndexOf('@');
+  return at >= 0
+    ? [
+        env.MAIL_FROM.slice(at + 1)
+          .replace(/>.*$/, '')
+          .toLowerCase(),
+      ]
+    : [];
+}
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   const parsed = EnvSchema.safeParse(source);

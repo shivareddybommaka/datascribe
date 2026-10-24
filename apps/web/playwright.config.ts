@@ -14,10 +14,24 @@ export const E2E = {
     'postgresql://datascribe:datascribe@localhost:5433/datascribe_e2e',
   apiPort: Number(process.env.E2E_API_PORT ?? 4100),
   webPort: Number(process.env.E2E_WEB_PORT ?? 3100),
+  redisUrl: process.env.E2E_REDIS_URL ?? 'redis://localhost:6379/1',
   mailpit: 'http://localhost:8025',
 };
 if (!/@localhost:5433\//.test(E2E.dbUrl)) throw new Error('E2E database must be on localhost:5433');
 const webUrl = `http://localhost:${E2E.webPort}`;
+
+// The worker polls from the start, but global setup drops and re-creates the schema after the
+// servers are up: without a statement cache no connection keeps plans for the dropped types.
+const workerDbUrl = new URL(E2E.dbUrl);
+workerDbUrl.searchParams.set('statement_cache_size', '0');
+
+const PHI_KEY = Buffer.alloc(32, 7).toString('base64');
+// local SeaweedFS with buckets of its own (created at API startup), 5 MiB parts
+const S3_ENV = {
+  ...TEST_S3,
+  S3_BUCKET_DOCUMENTS: `ds-e2e-${E2E.apiPort}-documents`,
+  S3_BUCKET_DELIVERABLES: `ds-e2e-${E2E.apiPort}-deliverables`,
+};
 
 // Picked up by the API test setup module that globalSetup reuses.
 process.env.TEST_DATABASE_URL = E2E.dbUrl;
@@ -50,16 +64,36 @@ export default defineConfig({
         DATABASE_URL: E2E.dbUrl,
         JWT_ACCESS_SECRET: 'e2e-access-secret-'.padEnd(48, 'a'),
         JWT_REFRESH_SECRET: 'e2e-refresh-secret-'.padEnd(48, 'b'),
-        PHI_ENCRYPTION_KEY: Buffer.alloc(32, 7).toString('base64'),
+        PHI_ENCRYPTION_KEY: PHI_KEY,
         SMTP_HOST: 'localhost',
         SMTP_PORT: '1025',
         LOG_LEVEL: 'warn',
         // every spec signs in from the same IP; production keeps the 30 / 15 min default
         RATE_LIMIT_AUTH: '300',
-        // local SeaweedFS with buckets of its own (created at API startup), 5 MiB parts
-        ...TEST_S3,
-        S3_BUCKET_DOCUMENTS: `ds-e2e-${E2E.apiPort}-documents`,
-        S3_BUCKET_DELIVERABLES: `ds-e2e-${E2E.apiPort}-deliverables`,
+        RATE_LIMIT_ACCOUNT: '300',
+        ...S3_ENV,
+      },
+    },
+    {
+      // virus scans (pipeline stage 1) run in the worker (D-081)
+      command: 'pnpm --filter @datascribe/worker exec tsx src/index.ts',
+      wait: { stdout: /worker started/ },
+      reuseExistingServer: false,
+      timeout: 60_000,
+      env: {
+        NODE_ENV: 'test',
+        DATABASE_URL: workerDbUrl.toString(),
+        REDIS_URL: E2E.redisUrl,
+        // own queue key space, so another checkout's worker on the same Redis never takes its jobs
+        QUEUE_PREFIX: `e2e-${E2E.apiPort}`,
+        PHI_ENCRYPTION_KEY: PHI_KEY,
+        SMTP_HOST: 'localhost',
+        SMTP_PORT: '1025',
+        LOG_LEVEL: 'info',
+        DISPATCH_INTERVAL_MS: '500',
+        // the portal specs check the "Submitted" state; the M5 DoD spec runs the whole pipeline
+        PIPELINE_START_CASES: 'false',
+        ...S3_ENV,
       },
     },
     {

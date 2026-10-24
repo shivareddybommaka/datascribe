@@ -49,9 +49,11 @@ pnpm build
 
 API tests use a throwaway `datascribe_test` database on the same Postgres and `ds-test-*` buckets on
 the local S3 (`pnpm infra:up`). Local SeaweedFS has no server-side encryption, so set `S3_SSE=none`
-in `.env`; production requires `AES256` or `aws:kms`. Uploads are scanned by a mock scanner unless
-`CLAMAV_HOST` is set (`docker compose --profile scan up -d`). Browser E2E (needs
-`pnpm infra:up` for Mailpit; uses the installed Google Chrome and a `datascribe_e2e` database):
+in `.env`; production requires `AES256` or `aws:kms`. Uploads are virus-scanned by the worker
+(`pnpm --filter @datascribe/worker dev`; documents stay "Scanning" without it), with a mock scanner
+unless `CLAMAV_HOST` is set (`docker compose --profile scan up -d`). Browser E2E (needs
+`pnpm infra:up` for Mailpit and Redis; starts its own API, web and worker; uses the installed Google
+Chrome and a `datascribe_e2e` database):
 
 ```
 pnpm --filter @datascribe/web e2e

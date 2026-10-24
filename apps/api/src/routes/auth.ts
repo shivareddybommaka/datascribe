@@ -4,14 +4,22 @@ import { Router, type Request, type Response } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 import { authenticate, requireAuth, requireCsrf, resolveAuth } from '../auth/middleware';
-import { REFRESH_COOKIE, clearRefreshCookie, isIdle, issueSession } from '../auth/session';
-import type { Deps } from '../context';
+import {
+  REFRESH_COOKIE,
+  clearRefreshCookie,
+  isIdle,
+  isReuseSignal,
+  issueSession,
+  revoked,
+} from '../auth/session';
+import { DEFAULT_RATE_LIMITS, type Deps } from '../context';
 import { HttpError, badRequest, conflict, forbidden, unauthorized } from '../lib/errors';
 import { safeNotify } from '../lib/notify';
 import { PasswordSchema, burnPasswordCheck, hashPassword, verifyPassword } from '../lib/password';
 import { renderEmail } from '../lib/templates';
 import { randomToken, sha256, signMfaToken, verifyToken, type MfaClaims } from '../lib/tokens';
 import { newTotpSecret, totpQrDataUrl, totpUri, verifyTotp } from '../lib/totp';
+import { withTimingFloor } from '../lib/timing';
 import { parse } from '../lib/validate';
 
 export const MAX_FAILED_LOGINS = 5;
@@ -24,12 +32,20 @@ export const Email = z.string().trim().toLowerCase().email().max(254);
 const invalidCredentials = () =>
   unauthorized('invalid_credentials', 'Email or password is incorrect');
 
-export function rateLimiter(windowMs: number, limit: number) {
+export function rateLimiter(
+  windowMs: number,
+  limit: number,
+  /** key requests by something other than the client IP; requests without a key are not counted */
+  keyOf?: (req: Request) => string | undefined,
+) {
   return rateLimit({
     windowMs,
     limit,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
+    ...(keyOf
+      ? { keyGenerator: (req: Request) => keyOf(req) ?? '', skip: (req: Request) => !keyOf(req) }
+      : {}),
     handler: (_req, res) => {
       res
         .status(429)
@@ -37,6 +53,12 @@ export function rateLimiter(windowMs: number, limit: number) {
     },
   });
 }
+
+/** The account a request targets, hashed (limiter keys never hold an email address). */
+const accountKey = (prefix: string, value: unknown): string | undefined =>
+  typeof value === 'string' && value.trim()
+    ? `${prefix}:${sha256(value.trim().toLowerCase())}`
+    : undefined;
 
 type LoginUser = {
   mfaEnabled: boolean;
@@ -63,6 +85,19 @@ export function authRouter(deps: Deps): Router {
   const r = Router();
   const authLimit = rateLimiter(deps.rateLimits.windowMs, deps.rateLimits.authPerWindow);
   const publicLimit = rateLimiter(deps.rateLimits.windowMs, deps.rateLimits.publicPerWindow);
+  // Per target account, so spreading guesses or reset mails over many IPs doesn't help (audit M6).
+  // Email for login/forgot/register, the MFA step's user for the TOTP step.
+  const accountLimit = rateLimiter(
+    deps.rateLimits.windowMs,
+    deps.rateLimits.accountPerWindow ?? DEFAULT_RATE_LIMITS.accountPerWindow,
+    (req) => {
+      const body = (req.body ?? {}) as { email?: unknown; mfaToken?: unknown };
+      if (body.email !== undefined) return accountKey('email', body.email);
+      if (typeof body.mfaToken !== 'string') return undefined;
+      const claims = verifyToken<MfaClaims>(body.mfaToken, env.JWT_REFRESH_SECRET, 'mfa');
+      return claims ? accountKey('user', claims.sub) : undefined;
+    },
+  );
 
   async function completeLogin(req: Request, res: Response, userId: string) {
     const user = await prisma.user.update({
@@ -138,64 +173,99 @@ export function authRouter(deps: Deps): Router {
   }
 
   // ── Login ──────────────────────────────────────────────────────────────
-  r.post('/auth/login', authLimit, async (req, res) => {
-    const body = parse(z.object({ email: Email, password: z.string().min(1).max(128) }), req.body);
-    const user = await prisma.user.findUnique({
-      where: { email: body.email },
-      include: { organization: true, roles: { include: { role: true } } },
-    });
-    if (!user) {
-      await burnPasswordCheck(body.password);
-      throw invalidCredentials();
-    }
-    const attempt = await reserveAttempt(user.id);
-    if (!(await verifyPassword(user.passwordHash, body.password))) {
-      await recordFailure(req, user, attempt, 'password');
-      throw invalidCredentials();
-    }
-    await releaseAttempt(user.id, attempt);
-    if (user.status !== 'active' || user.organization.status !== 'active') {
-      throw forbidden('This account is suspended');
-    }
-    if (!user.emailVerifiedAt) {
-      throw new HttpError(403, 'email_not_verified', 'Verify your email address first');
-    }
-    // set by an admin (M2): no session until the emailed reset link is used
-    if (user.mustResetPassword) {
-      throw new HttpError(
-        403,
-        'password_reset_required',
-        'Set a new password using the link we emailed you, or use "Forgot password"',
-      );
-    }
+  const floor = env.AUTH_RESPONSE_FLOOR_MS;
 
-    if (mfaRequired(user)) {
-      const setup = !user.mfaEnabled;
-      const mfaToken = signMfaToken({ sub: user.id, setup }, env.JWT_REFRESH_SECRET);
-      res.json(setup ? { mfaSetupRequired: true, mfaToken } : { mfaRequired: true, mfaToken });
-      return;
-    }
-    res.json(await completeLogin(req, res, user.id));
-  });
+  r.post(
+    '/auth/login',
+    authLimit,
+    accountLimit,
+    withTimingFloor(floor, async (req, res) => {
+      const body = parse(
+        z.object({ email: Email, password: z.string().min(1).max(128) }),
+        req.body,
+      );
+      const user = await prisma.user.findUnique({
+        where: { email: body.email },
+        include: { organization: true, roles: { include: { role: true } } },
+      });
+      if (!user) {
+        await burnPasswordCheck(body.password);
+        throw invalidCredentials();
+      }
+      const attempt = await reserveAttempt(user.id);
+      if (!(await verifyPassword(user.passwordHash, body.password))) {
+        await recordFailure(req, user, attempt, 'password');
+        throw invalidCredentials();
+      }
+      await releaseAttempt(user.id, attempt);
+      if (user.status !== 'active' || user.organization.status !== 'active') {
+        throw forbidden('This account is suspended');
+      }
+      if (!user.emailVerifiedAt) {
+        throw new HttpError(403, 'email_not_verified', 'Verify your email address first');
+      }
+      // set by an admin (M2): no session until the emailed reset link is used
+      if (user.mustResetPassword) {
+        throw new HttpError(
+          403,
+          'password_reset_required',
+          'Set a new password using the link we emailed you, or use "Forgot password"',
+        );
+      }
+
+      if (mfaRequired(user)) {
+        const setup = !user.mfaEnabled;
+        const mfaToken = signMfaToken(
+          { sub: user.id, setup, at: Date.now() },
+          env.JWT_REFRESH_SECRET,
+        );
+        res.json(setup ? { mfaSetupRequired: true, mfaToken } : { mfaRequired: true, mfaToken });
+        return;
+      }
+      res.json(await completeLogin(req, res, user.id));
+    }),
+  );
+
+  const mfaStepExpired = () => unauthorized('invalid_token', 'MFA step expired, sign in again');
 
   /** MFA subject: an mfaToken from /auth/login, or a signed-in user enrolling voluntarily. */
   async function mfaSubject(
     req: Request,
-  ): Promise<{ userId: string; viaLogin: boolean; setup: boolean }> {
+  ): Promise<{ userId: string; viaLogin: boolean; setup: boolean; issuedAt: Date }> {
     const token = (req.body as { mfaToken?: unknown } | undefined)?.mfaToken;
     if (typeof token === 'string') {
       const claims = verifyToken<MfaClaims>(token, env.JWT_REFRESH_SECRET, 'mfa');
-      if (!claims) throw unauthorized('invalid_token', 'MFA step expired, sign in again');
-      return { userId: claims.sub, viaLogin: true, setup: claims.setup };
+      if (!claims || typeof claims.at !== 'number') throw mfaStepExpired();
+      return {
+        userId: claims.sub,
+        viaLogin: true,
+        setup: claims.setup,
+        issuedAt: new Date(claims.at),
+      };
     }
     const ctx = await resolveAuth(deps, req);
     req.auth = ctx;
-    return { userId: ctx.user.id, viaLogin: false, setup: true };
+    return { userId: ctx.user.id, viaLogin: false, setup: true, issuedAt: new Date() };
   }
 
-  r.post('/auth/mfa/setup', authLimit, async (req, res) => {
+  /**
+   * Spend an MFA step token (audit L8): only the first sign-in completed after it was issued wins.
+   * Atomic, so a replayed token, or two verifies racing with one token, get one session at most.
+   */
+  async function claimMfaStep(userId: string, issuedAt: Date) {
+    const claimed = await prisma.user.updateMany({
+      where: { id: userId, OR: [{ lastLoginAt: null }, { lastLoginAt: { lt: issuedAt } }] },
+      data: { lastLoginAt: new Date() },
+    });
+    if (claimed.count !== 1) throw mfaStepExpired();
+  }
+
+  r.post('/auth/mfa/setup', authLimit, accountLimit, async (req, res) => {
     const subject = await mfaSubject(req);
     const user = await prisma.user.findUniqueOrThrow({ where: { id: subject.userId } });
+    if (subject.viaLogin && user.lastLoginAt && user.lastLoginAt >= subject.issuedAt) {
+      throw mfaStepExpired();
+    }
     if (user.mfaEnabled) throw conflict('mfa_already_enabled', 'MFA is already enabled');
     if (!subject.setup) throw badRequest('mfa_setup_not_allowed', 'MFA setup is not pending');
     const secret = newTotpSecret();
@@ -207,13 +277,16 @@ export function authRouter(deps: Deps): Router {
     res.json({ otpauthUrl, qrDataUrl: await totpQrDataUrl(otpauthUrl), secret });
   });
 
-  r.post('/auth/mfa/verify', authLimit, async (req, res) => {
+  r.post('/auth/mfa/verify', authLimit, accountLimit, async (req, res) => {
     const subject = await mfaSubject(req);
     const { code } = parse(
       z.object({ code: z.string().regex(/^\d{6}$/), mfaToken: z.string().optional() }),
       req.body,
     );
     const user = await prisma.user.findUniqueOrThrow({ where: { id: subject.userId } });
+    if (subject.viaLogin && user.lastLoginAt && user.lastLoginAt >= subject.issuedAt) {
+      throw mfaStepExpired();
+    }
     if (!user.mfaSecret) throw badRequest('mfa_not_set_up', 'Set up MFA first');
     const attempt = await reserveAttempt(user.id);
     if (!verifyTotp(code, decrypt(user.mfaSecret, deps.phiKey))) {
@@ -221,6 +294,7 @@ export function authRouter(deps: Deps): Router {
       throw unauthorized('invalid_mfa_code', 'That code is not valid');
     }
     await releaseAttempt(user.id, attempt);
+    if (subject.viaLogin) await claimMfaStep(user.id, subject.issuedAt);
     if (!user.mfaEnabled) {
       await prisma.user.update({ where: { id: user.id }, data: { mfaEnabled: true } });
       await req.audit({
@@ -244,7 +318,9 @@ export function authRouter(deps: Deps): Router {
     if (!token) throw unauthorized('no_refresh_token', 'Not signed in');
     const session = await prisma.session.findUnique({
       where: { refreshTokenHash: sha256(token) },
-      include: { user: { include: { organization: true } } },
+      include: {
+        user: { include: { organization: true, roles: { include: { role: true } } } },
+      },
     });
     const now = new Date();
     if (!session) {
@@ -255,7 +331,7 @@ export function authRouter(deps: Deps): Router {
     const reuseDetected = async () => {
       await prisma.session.updateMany({
         where: { familyId: session.familyId, revokedAt: null },
-        data: { revokedAt: now },
+        data: revoked('reuse', now),
       });
       await req.audit({
         action: 'auth.refresh.reuse_detected',
@@ -267,17 +343,49 @@ export function authRouter(deps: Deps): Router {
       clearRefreshCookie(deps, res);
       return unauthorized('refresh_token_reused', 'Session ended for security, sign in again');
     };
-    if (session.revokedAt) throw await reuseDetected();
-    if (session.expiresAt < now || isIdle(session, now) || session.user.status !== 'active') {
-      await prisma.session.update({ where: { id: session.id }, data: { revokedAt: now } });
+    if (session.revokedAt) {
+      // Only a rotated (or already-flagged) token is a theft signal. One ended by logout, idle,
+      // expiry, password reset or revoke-all is just over: no alert, other devices untouched (L1).
+      if (isReuseSignal(session.revokedReason)) throw await reuseDetected();
+      clearRefreshCookie(deps, res);
+      throw unauthorized('session_revoked', 'Session has ended, sign in again');
+    }
+    const idle = isIdle(session, now);
+    if (
+      session.expiresAt < now ||
+      idle ||
+      session.user.status !== 'active' ||
+      session.user.organization.status !== 'active'
+    ) {
+      await prisma.session.update({
+        where: { id: session.id },
+        data: revoked(idle ? 'idle' : 'expired', now),
+      });
       clearRefreshCookie(deps, res);
       throw unauthorized('session_expired', 'Session has ended, sign in again');
+    }
+    // MFA policy may have changed since sign-in (internal role granted, org enforces MFA): a user
+    // who now needs MFA but hasn't enrolled must sign in again and enrol (audit M5).
+    if (mfaRequired(session.user) && !session.user.mfaEnabled) {
+      await prisma.session.updateMany({
+        where: { familyId: session.familyId, revokedAt: null },
+        data: revoked('mfa_required', now),
+      });
+      await req.audit({
+        action: 'auth.refresh.mfa_required',
+        entity: 'Session',
+        entityId: session.id,
+        actorId: session.userId,
+        organizationId: session.user.organizationId,
+      });
+      clearRefreshCookie(deps, res);
+      throw unauthorized('mfa_required', 'Your organization now requires MFA, sign in again');
     }
     // Claim the token atomically: of two concurrent refreshes with the same token, only one wins;
     // the loser is treated as reuse (audit finding M1).
     const claimed = await prisma.session.updateMany({
       where: { id: session.id, revokedAt: null },
-      data: { revokedAt: now },
+      data: revoked('rotated', now),
     });
     if (claimed.count !== 1) throw await reuseDetected();
     const { accessToken } = await issueSession(
@@ -285,7 +393,7 @@ export function authRouter(deps: Deps): Router {
       req,
       res,
       { id: session.userId, orgType: session.user.organization.type },
-      session.familyId,
+      { id: session.familyId, expiresAt: session.expiresAt },
     );
     res.json({ accessToken });
   });
@@ -297,7 +405,7 @@ export function authRouter(deps: Deps): Router {
         where: { refreshTokenHash: sha256(token) },
       });
       if (session && !session.revokedAt) {
-        await prisma.session.update({ where: { id: session.id }, data: { revokedAt: new Date() } });
+        await prisma.session.update({ where: { id: session.id }, data: revoked('logout') });
         await req.audit({
           action: 'auth.logout',
           entity: 'Session',
@@ -314,7 +422,7 @@ export function authRouter(deps: Deps): Router {
     const auth = requireAuth(req);
     const result = await prisma.session.updateMany({
       where: { userId: auth.user.id, revokedAt: null },
-      data: { revokedAt: new Date() },
+      data: revoked('revoke_all'),
     });
     await req.audit({
       action: 'auth.sessions.revoked_all',
@@ -358,77 +466,133 @@ export function authRouter(deps: Deps): Router {
     });
   });
 
+  const alreadyRegistered = (to: string) =>
+    mailer.send({
+      to,
+      subject: 'Datascribe sign-up attempt',
+      text: `Someone tried to register a Datascribe account with this email, but you already have one.\nSign in: ${env.APP_URL}/login\nForgot your password? ${env.APP_URL}/forgot-password`,
+    });
+
   // ── Self-registration (§5.2): creates Organization + first client_admin ──
-  r.post('/auth/register', publicLimit, async (req, res) => {
-    const body = parse(
-      z.object({
-        organizationName: z.string().trim().min(2).max(200),
-        name: z.string().trim().min(1).max(200),
-        email: Email,
-        password: PasswordSchema,
-      }),
-      req.body,
-    );
-    const existing = await prisma.user.findUnique({ where: { email: body.email } });
-    if (existing) {
-      // Same response either way, so the endpoint can't be used to discover accounts.
+  r.post(
+    '/auth/register',
+    publicLimit,
+    accountLimit,
+    withTimingFloor(floor, async (req, res) => {
+      const body = parse(
+        z.object({
+          organizationName: z.string().trim().min(2).max(200),
+          name: z.string().trim().min(1).max(200),
+          email: Email,
+          password: PasswordSchema,
+        }),
+        req.body,
+      );
+      // hashed on every path, so the argon2 cost doesn't reveal whether the address is taken (L9)
+      const passwordHash = await hashPassword(body.password);
+      const existing = await prisma.user.findUnique({
+        where: { email: body.email },
+        include: { organization: { include: { _count: { select: { users: true } } } } },
+      });
+      // An unverified sign-up proves nothing about who owns the address. Someone registering it
+      // again replaces that pending sign-up instead of being locked out (audit L3). Only the
+      // latest link works, and it activates the password chosen with it.
+      const pending =
+        existing &&
+        !existing.emailVerifiedAt &&
+        existing.organization.type === 'client' &&
+        existing.organization._count.users === 1;
+      if (existing && !pending) {
+        // Same response either way, so the endpoint can't be used to discover accounts.
+        await alreadyRegistered(body.email);
+        res.status(202).json({ status: 'check_email' });
+        return;
+      }
+      const role = await prisma.role.findUniqueOrThrow({ where: { key: 'client_admin' } });
+      const token = randomToken();
+      const user = await prisma.$transaction(async (tx) => {
+        if (existing) {
+          // Tokens first, then the user, the same lock order as /auth/verify-email: a verification
+          // that lands first makes the conditional update below match nothing.
+          await tx.userToken.updateMany({
+            where: { userId: existing.id, type: 'email_verify', usedAt: null },
+            data: { usedAt: new Date() },
+          });
+          const replaced = await tx.user.updateMany({
+            where: { id: existing.id, emailVerifiedAt: null },
+            data: { name: body.name, passwordHash, failedLoginCount: 0, lockedUntil: null },
+          });
+          if (replaced.count !== 1) return null;
+          await tx.organization.update({
+            where: { id: existing.organizationId },
+            data: { name: body.organizationName },
+          });
+          await tx.userToken.create({
+            data: {
+              userId: existing.id,
+              type: 'email_verify',
+              tokenHash: sha256(token),
+              expiresAt: new Date(Date.now() + VERIFY_TTL_MS),
+            },
+          });
+          return existing;
+        }
+        const org = await tx.organization.create({
+          data: { name: body.organizationName, type: 'client' },
+        });
+        const created = await tx.user.create({
+          data: {
+            organizationId: org.id,
+            name: body.name,
+            email: body.email,
+            passwordHash,
+            status: 'active',
+            roles: { create: { roleId: role.id } },
+          },
+        });
+        await tx.userToken.create({
+          data: {
+            userId: created.id,
+            type: 'email_verify',
+            tokenHash: sha256(token),
+            expiresAt: new Date(Date.now() + VERIFY_TTL_MS),
+          },
+        });
+        return created;
+      });
+      if (!user) {
+        // verified meanwhile: from now on it's an existing account
+        await alreadyRegistered(body.email);
+        res.status(202).json({ status: 'check_email' });
+        return;
+      }
+      await req.audit({
+        action: existing ? 'auth.register.replaced_unverified' : 'auth.register',
+        entity: 'Organization',
+        entityId: user.organizationId,
+        actorId: user.id,
+        organizationId: user.organizationId,
+      });
       await mailer.send({
-        to: body.email,
-        subject: 'Datascribe sign-up attempt',
-        text: `Someone tried to register a Datascribe account with this email, but you already have one.\nSign in: ${env.APP_URL}/login\nForgot your password? ${env.APP_URL}/forgot-password`,
+        to: user.email,
+        subject: 'Verify your Datascribe email',
+        text: `Welcome to Datascribe. Confirm your email address:\n${env.APP_URL}/verify-email?token=${token}\nThis link expires in 24 hours.`,
       });
       res.status(202).json({ status: 'check_email' });
-      return;
-    }
-    const role = await prisma.role.findUniqueOrThrow({ where: { key: 'client_admin' } });
-    const passwordHash = await hashPassword(body.password);
-    const token = randomToken();
-    const user = await prisma.$transaction(async (tx) => {
-      const org = await tx.organization.create({
-        data: { name: body.organizationName, type: 'client' },
-      });
-      const created = await tx.user.create({
-        data: {
-          organizationId: org.id,
-          name: body.name,
-          email: body.email,
-          passwordHash,
-          status: 'active',
-          roles: { create: { roleId: role.id } },
-        },
-      });
-      await tx.userToken.create({
-        data: {
-          userId: created.id,
-          type: 'email_verify',
-          tokenHash: sha256(token),
-          expiresAt: new Date(Date.now() + VERIFY_TTL_MS),
-        },
-      });
-      return created;
-    });
-    await req.audit({
-      action: 'auth.register',
-      entity: 'Organization',
-      entityId: user.organizationId,
-      actorId: user.id,
-      organizationId: user.organizationId,
-    });
-    await mailer.send({
-      to: user.email,
-      subject: 'Verify your Datascribe email',
-      text: `Welcome to Datascribe. Confirm your email address:\n${env.APP_URL}/verify-email?token=${token}\nThis link expires in 24 hours.`,
-    });
-    res.status(202).json({ status: 'check_email' });
-  });
+    }),
+  );
 
-  async function consumeToken(type: 'email_verify' | 'password_reset', token: string) {
-    const row = await prisma.userToken.findUnique({ where: { tokenHash: sha256(token) } });
+  async function consumeToken(
+    type: 'email_verify' | 'password_reset',
+    token: string,
+    db: Pick<typeof prisma, 'userToken'> = prisma,
+  ) {
+    const row = await db.userToken.findUnique({ where: { tokenHash: sha256(token) } });
     if (!row || row.type !== type || row.usedAt || row.expiresAt < new Date()) {
       throw badRequest('token_invalid', 'This link is invalid or has expired');
     }
     // Conditional update keeps the token single-use under concurrent requests.
-    const claimed = await prisma.userToken.updateMany({
+    const claimed = await db.userToken.updateMany({
       where: { id: row.id, usedAt: null },
       data: { usedAt: new Date() },
     });
@@ -439,10 +603,11 @@ export function authRouter(deps: Deps): Router {
 
   r.post('/auth/verify-email', publicLimit, async (req, res) => {
     const { token } = parse(z.object({ token: z.string().min(10).max(200) }), req.body);
-    const row = await consumeToken('email_verify', token);
-    const user = await prisma.user.update({
-      where: { id: row.userId },
-      data: { emailVerifiedAt: new Date() },
+    // One transaction, token before user: a re-registration replacing this pending sign-up
+    // (audit L3) either voids the token first or finds the user already verified.
+    const user = await prisma.$transaction(async (tx) => {
+      const row = await consumeToken('email_verify', token, tx);
+      return tx.user.update({ where: { id: row.userId }, data: { emailVerifiedAt: new Date() } });
     });
     await req.audit({
       action: 'auth.email.verified',
@@ -455,36 +620,41 @@ export function authRouter(deps: Deps): Router {
   });
 
   // ── Forgot / reset password ────────────────────────────────────────────
-  r.post('/auth/forgot', publicLimit, async (req, res) => {
-    const { email } = parse(z.object({ email: Email }), req.body);
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (user && user.status === 'active') {
-      const token = randomToken();
-      await prisma.userToken.create({
-        data: {
-          userId: user.id,
-          type: 'password_reset',
-          tokenHash: sha256(token),
-          expiresAt: new Date(Date.now() + RESET_TTL_MS),
-        },
-      });
-      await req.audit({
-        action: 'auth.password.reset_requested',
-        entity: 'User',
-        entityId: user.id,
-        actorId: user.id,
-        organizationId: user.organizationId,
-      });
-      await mailer.send({
-        to: user.email,
-        ...(await renderEmail(prisma, 'password_reset', {
-          name: user.name,
-          resetUrl: `${env.APP_URL}/reset-password?token=${token}`,
-        })),
-      });
-    }
-    res.status(202).json({ status: 'check_email' });
-  });
+  r.post(
+    '/auth/forgot',
+    publicLimit,
+    accountLimit,
+    withTimingFloor(floor, async (req, res) => {
+      const { email } = parse(z.object({ email: Email }), req.body);
+      const user = await prisma.user.findUnique({ where: { email } });
+      if (user && user.status === 'active') {
+        const token = randomToken();
+        await prisma.userToken.create({
+          data: {
+            userId: user.id,
+            type: 'password_reset',
+            tokenHash: sha256(token),
+            expiresAt: new Date(Date.now() + RESET_TTL_MS),
+          },
+        });
+        await req.audit({
+          action: 'auth.password.reset_requested',
+          entity: 'User',
+          entityId: user.id,
+          actorId: user.id,
+          organizationId: user.organizationId,
+        });
+        await mailer.send({
+          to: user.email,
+          ...(await renderEmail(prisma, 'password_reset', {
+            name: user.name,
+            resetUrl: `${env.APP_URL}/reset-password?token=${token}`,
+          })),
+        });
+      }
+      res.status(202).json({ status: 'check_email' });
+    }),
+  );
 
   r.post('/auth/reset', publicLimit, async (req, res) => {
     const body = parse(
@@ -503,7 +673,12 @@ export function authRouter(deps: Deps): Router {
     });
     await prisma.session.updateMany({
       where: { userId: user.id, revokedAt: null },
-      data: { revokedAt: new Date() },
+      data: revoked('password_reset'),
+    });
+    // Any other reset link still in an inbox would undo this reset (audit L2).
+    await prisma.userToken.updateMany({
+      where: { userId: user.id, type: 'password_reset', usedAt: null },
+      data: { usedAt: new Date() },
     });
     await req.audit({
       action: 'auth.password.reset',

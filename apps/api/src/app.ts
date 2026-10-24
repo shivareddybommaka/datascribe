@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { BillingError, GatewayError } from '@datascribe/billing';
+import { errorInfo } from '@datascribe/db';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express, { Router, type ErrorRequestHandler, type Express } from 'express';
@@ -41,7 +42,7 @@ export function createApp(deps: Deps): Express {
   const { env, logger } = deps;
   const app = express();
   app.disable('x-powered-by');
-  app.set('trust proxy', 1);
+  app.set('trust proxy', env.TRUST_PROXY);
 
   app.use(
     pinoHttp({
@@ -134,8 +135,8 @@ export function createApp(deps: Deps): Express {
         .json({ error: { code: 'bad_body', message: 'Invalid request body' } });
       return;
     }
-    // name + message only: never the request body or stack with data
-    req.log.error({ err: { name: e.name, message: e.message } }, 'unhandled error');
+    // never the request body, stack or a Prisma message (it quotes query values, audit L7)
+    req.log.error({ err: errorInfo(err) }, 'unhandled error');
     res.status(500).json({ error: { code: 'internal', message: 'Internal server error' } });
   };
   app.use(errorHandler);
