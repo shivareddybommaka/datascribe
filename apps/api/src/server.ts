@@ -1,6 +1,6 @@
 import { LocalObjectStore, createGateway, repoPath } from '@datascribe/billing';
 import { errorInfo, prisma } from '@datascribe/db';
-import { PrismaCacheStore, createMedicalData } from '@datascribe/medical-data';
+import { PrismaCacheStore, RedisUsageTracker, createMedicalData } from '@datascribe/medical-data';
 import { loadKey } from '@datascribe/shared';
 import { createApp } from './app';
 import { loadEnv } from './config/env';
@@ -8,6 +8,7 @@ import { DEFAULT_RATE_LIMITS } from './context';
 import { createLogger } from './lib/logger';
 import { createSmtpMailer } from './lib/mailer';
 import { MedicalSwitches } from './lib/medical-switches';
+import { RedisRateLimitStore, createRedis } from './lib/redis';
 import { S3DocumentStorage } from './lib/storage';
 import { encryptLegacyPhi } from './services/phi-backfill';
 
@@ -26,6 +27,19 @@ if (gateway.name === 'fake') {
 const medicalSwitches = new MedicalSwitches(prisma);
 medicalSwitches.load().catch((err: Error) => {
   logger.warn({ err: { name: err.name } }, 'medical switches not loaded yet');
+});
+// Rate-limit counters shared by every API process (D-111) and medical usage stats (D-112).
+// While Redis is down the limited routes answer 500 rather than skipping the limit.
+const redis = createRedis(env.REDIS_URL);
+let redisDown = false;
+redis.on('error', (err: Error) => {
+  if (!redisDown)
+    logger.error({ err: { name: err.name } }, 'redis unavailable; limited routes fail');
+  redisDown = true;
+});
+redis.on('ready', () => {
+  if (redisDown) logger.info('redis reconnected');
+  redisDown = false;
 });
 const storage = new S3DocumentStorage(env, [env.APP_URL, ...env.EXTRA_TRUSTED_ORIGINS]);
 
@@ -73,12 +87,21 @@ const app = createApp({
     publicPerWindow: env.RATE_LIMIT_PUBLIC,
     accountPerWindow: env.RATE_LIMIT_ACCOUNT,
   },
+  rateLimitStore: (limiter) => new RedisRateLimitStore(redis, limiter, env.REDIS_KEY_PREFIX),
   medical: createMedicalData({
     provider: env.MEDICAL_DATA_PROVIDER,
     openFdaApiKey: env.OPENFDA_API_KEY || undefined,
     cache: new PrismaCacheStore(prisma.medicalApiCache),
     logger,
     isEnabled: medicalSwitches.isEnabled,
+    // shared with the worker, so the admin page counts every process's calls (D-112)
+    usage: new RedisUsageTracker(redis, {
+      prefix: env.REDIS_KEY_PREFIX,
+      onError: (name) => {
+        // an outage is already logged once by the client's error handler
+        if (!redisDown) logger.warn({ err: { name } }, 'medical usage counter not written');
+      },
+    }),
   }),
   medicalSwitches,
   gateway,

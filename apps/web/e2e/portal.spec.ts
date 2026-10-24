@@ -1,7 +1,11 @@
 import { expect, test, type Browser, type Page } from '@playwright/test';
 import { authenticator } from 'otplib';
 import { TEST_PASSWORD, TEST_TOTP_SECRET } from '../../api/test/constants';
+import { TEST_S3 } from '../../api/test/s3';
 import { syntheticRecordPdf } from '../../api/test/synthetic-pdf';
+
+/** the S3 the API signs part URLs for (SeaweedFS on :9000 unless S3_ENDPOINT says otherwise) */
+const S3_PORT = new URL(TEST_S3.S3_ENDPOINT).port;
 
 const CLIENT_USER = 'client.user@acme.example';
 const CLIENT_ADMIN = 'client.admin@acme.example';
@@ -61,7 +65,7 @@ test('M4 DoD: client creates a case, uploads a 300-page PDF (interrupted, resume
 
   // ~12 MB → 3 parts of 5 MiB. Part 2 keeps failing until the "network" comes back.
   const pdf = await syntheticRecordPdf({ pages: 300, padBytes: 11 * 1024 * 1024 });
-  const isPart2 = (url: URL) => url.port === '9000' && url.searchParams.get('partNumber') === '2';
+  const isPart2 = (url: URL) => url.port === S3_PORT && url.searchParams.get('partNumber') === '2';
   await page.route(isPart2, (route) => route.abort('connectionreset'));
 
   await page.getByLabel('Add records').setInputFiles({
@@ -84,7 +88,8 @@ test('M4 DoD: client creates a case, uploads a 300-page PDF (interrupted, resume
   const sent: string[] = [];
   page.on('request', (r) => {
     const url = new URL(r.url());
-    if (r.method() === 'PUT' && url.port === '9000') sent.push(url.searchParams.get('partNumber')!);
+    if (r.method() === 'PUT' && url.port === S3_PORT)
+      sent.push(url.searchParams.get('partNumber')!);
   });
   await resume.click();
 

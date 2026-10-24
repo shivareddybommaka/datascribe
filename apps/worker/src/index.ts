@@ -5,6 +5,7 @@ import {
   createOcrProvider,
   createSummaryProvider,
   medicalDataConfigFromEnv,
+  RedisUsageTracker,
 } from '@datascribe/medical-data';
 import { createScanner, verifyDocument } from '@datascribe/scan';
 import { loadKey } from '@datascribe/shared';
@@ -59,7 +60,12 @@ const scanDocument = async (documentId: string): Promise<ScanOutcome> =>
   (await verifyDocument(scanDeps, documentId))?.scanStatus ?? 'pending';
 
 // ── M5 pipeline: one queue per stage, each finished stage enqueues the next ──
-const medical = createMedicalData(medicalDataConfigFromEnv(process.env));
+// usage counters shared with the API's admin page (D-112)
+const usage = RedisUsageTracker.connect(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+  prefix: process.env.REDIS_KEY_PREFIX ?? 'ds:',
+  onError: (name) => logger.warn({ err: { name } }, 'medical usage counter not written'),
+});
+const medical = createMedicalData({ ...medicalDataConfigFromEnv(process.env), usage });
 const pipelineDeps: PipelineDeps = {
   store: prismaPipelineStore(prisma),
   phiKey: loadKey(process.env.PHI_ENCRYPTION_KEY),
@@ -184,6 +190,7 @@ async function shutdown() {
   await billingQueue.close();
   await uploadScanQueue.close();
   await Promise.all([...pipelineQueues.values()].map((q) => q.close()));
+  await usage.close();
   await prisma.$disconnect();
   process.exit(0);
 }

@@ -30,10 +30,20 @@ jobs:
           --health-cmd "pg_isready -U datascribe"
           --health-interval 5s
           --health-retries 10
+      # Shared rate-limit store tests (D-111); pinned like docker-compose.yml
+      redis:
+        image: redis:7-alpine@sha256:57e4255cc971b1c8d6f8a6ca283ac01bc3ecdd914273ef6bfaede87aaecd6541
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-retries 10
     env:
       TURBO_TELEMETRY_DISABLED: '1'
       NEXT_TELEMETRY_DISABLED: '1'
       TEST_DATABASE_URL: postgresql://datascribe:datascribe@localhost:5433/datascribe_test
+      TEST_REDIS_URL: redis://localhost:6379/15
     steps:
       # Actions pinned to commit SHAs (audit L12): a moved tag can't run new code with repo access.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -58,3 +68,75 @@ jobs:
         run: timeout 90 bash -c 'until curl -s -o /dev/null http://127.0.0.1:9000; do sleep 2; done'
       - run: pnpm test
       - run: pnpm build
+
+  # Playwright suite (§13, D-113): the same `pnpm --filter @datascribe/web e2e` as locally. It
+  # starts its own API (:4100) and web (:3100), resets + seeds the *_e2e DB, reads mail from Mailpit
+  # and uses the runner's installed Google Chrome (channel "chrome"), so no browser download.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      # Throwaway DB, synthetic data only. Name must end in _e2e (global-setup refuses others).
+      postgres:
+        image: postgres:16-alpine@sha256:f4610795587492cd4fb887c2dc3de301b813278bb6f616992061141b5f15ac36
+        env:
+          POSTGRES_USER: datascribe
+          POSTGRES_PASSWORD: datascribe
+          POSTGRES_DB: datascribe_e2e
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U datascribe"
+          --health-interval 5s
+          --health-retries 10
+      # Rate-limit counters and usage stats (D-111, D-112)
+      redis:
+        image: redis:7-alpine@sha256:57e4255cc971b1c8d6f8a6ca283ac01bc3ecdd914273ef6bfaede87aaecd6541
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-retries 10
+      # Every email the suite sends lands here; nothing leaves the runner
+      mailpit:
+        image: axllent/mailpit:latest@sha256:0790692be935ea4420d085694f7985b1f692ca6a8771ab0e0bd8ba75ac180498
+        ports:
+          - 1025:1025
+          - 8025:8025
+    env:
+      TURBO_TELEMETRY_DISABLED: '1'
+      NEXT_TELEMETRY_DISABLED: '1'
+      E2E_DATABASE_URL: postgresql://datascribe:datascribe@localhost:5433/datascribe_e2e
+      E2E_REDIS_URL: redis://localhost:6379
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Start S3 (SeaweedFS)
+        run: >-
+          docker run -d --name s3 -p 127.0.0.1:9000:8333
+          -e AWS_ACCESS_KEY_ID=datascribe -e AWS_SECRET_ACCESS_KEY=datascribe-dev-secret
+          chrislusf/seaweedfs:latest@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+          server -dir=/data -s3 -s3.port=8333
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      # Playwright drives the preinstalled Chrome; fail early and clearly if the image lacks it
+      - name: Check Chrome
+        run: google-chrome --version
+      - name: Wait for S3 and Mailpit
+        run: |
+          timeout 90 bash -c 'until curl -s -o /dev/null http://127.0.0.1:9000; do sleep 2; done'
+          timeout 60 bash -c 'until curl -sf -o /dev/null http://127.0.0.1:8025/api/v1/info; do sleep 2; done'
+      - run: pnpm --filter @datascribe/web e2e
+      # Traces of failed tests only (synthetic data); kept briefly
+      - if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: playwright-traces
+          path: apps/web/test-results/
+          retention-days: 7
+          if-no-files-found: ignore

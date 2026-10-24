@@ -1,4 +1,5 @@
 import { getBillingSettings } from '@datascribe/billing';
+import { createMedicalData } from '@datascribe/medical-data';
 import { encrypt, type RoleKey } from '@datascribe/shared';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -508,6 +509,17 @@ describe('settings (super admin only)', () => {
       orderBy: { createdAt: 'desc' },
     });
     expect(audit?.metadata).toMatchObject({ disabled: ['openfda'] });
+  });
+
+  it('the medical settings still load when the shared usage counters are unavailable (D-112)', async () => {
+    const medical = createMedicalData({ provider: 'mock' });
+    medical.usageStats = async () => {
+      throw new Error('Connection is closed.');
+    };
+    const down = buildApp({ medical });
+    const get = await request(down.app).get('/api/v1/admin/settings/medical').set(as('super'));
+    expect(get.status).toBe(200);
+    expect(get.body).toMatchObject({ provider: 'mock', usage24h: [] });
   });
 });
 

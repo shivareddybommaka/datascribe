@@ -30,6 +30,13 @@ export const EnvSchema = z
       )
       .pipe(z.array(z.string().url())),
     DATABASE_URL: z.string().url(),
+    /** rate-limit counters (D-111) and medical usage stats (D-112), shared by every process */
+    REDIS_URL: z.string().url().default('redis://localhost:6379'),
+    /** namespaces those keys, so e2e runs and checkouts sharing a Redis DB don't mix counts */
+    REDIS_KEY_PREFIX: z
+      .string()
+      .regex(/^[A-Za-z0-9:_-]*$/)
+      .default('ds:'),
     JWT_ACCESS_SECRET: secret,
     JWT_REFRESH_SECRET: secret,
     PHI_ENCRYPTION_KEY: z.string().min(1),

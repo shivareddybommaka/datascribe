@@ -61,6 +61,7 @@ export function buildApp(
     medical?: Deps['medical'];
     envOverrides?: Record<string, string>;
     scanner?: VirusScanner;
+    rateLimitStore?: Deps['rateLimitStore'];
   } = {},
 ) {
   const mailer = new MemoryMailer();
@@ -77,6 +78,8 @@ export function buildApp(
     logger: createLogger('silent'),
     phiKey: testPhiKey,
     rateLimits: opts.rateLimits ?? GENEROUS,
+    // unset: in-memory counters per app; rate-limit-redis.test.ts covers the Redis store
+    rateLimitStore: opts.rateLimitStore,
     gateway,
     store,
     medical: opts.medical,

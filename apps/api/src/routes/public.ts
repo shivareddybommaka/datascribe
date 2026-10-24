@@ -11,7 +11,12 @@ import { Email, rateLimiter } from './auth';
 export function publicRouter(deps: Deps): Router {
   const { prisma, mailer, env } = deps;
   const r = Router();
-  const limit = rateLimiter(deps.rateLimits.windowMs, deps.rateLimits.publicPerWindow);
+  const limit = rateLimiter(
+    deps,
+    'public-leads',
+    deps.rateLimits.windowMs,
+    deps.rateLimits.publicPerWindow,
+  );
 
   r.post('/public/leads', limit, async (req, res) => {
     const body = parse(

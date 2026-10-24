@@ -9,7 +9,7 @@ import {
   withRetry,
   type RetryOptions,
 } from './retry';
-import type { CallOutcome, UsageTracker } from './usage';
+import type { CallOutcome, UsageStore } from './usage';
 
 export type FetchLike = (
   url: string,
@@ -26,7 +26,7 @@ export interface ProviderClientOptions {
   provider: string;
   fetch: FetchLike;
   cache: CacheStore;
-  usage: UsageTracker;
+  usage: UsageStore;
   rateLimit: RateLimitConfig;
   cacheTtlMs?: number;
   /** Per HTTP attempt (§8.4: 10 s). */

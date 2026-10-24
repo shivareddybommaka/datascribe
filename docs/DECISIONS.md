@@ -862,3 +862,69 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
   Switching staging/production is part of the IaC work (M10 part 3) and is Shiva's call.
 - The L5 backfill's `VALIDATE CONSTRAINT` needs the owner. It only runs while a constraint is
   unvalidated, so it must have run once (as owner) before the switch. The runbook checks this.
+
+## D-111 — Auth and form rate limits in Redis (M10 part 2a, 2026-10-24)
+
+- The per-IP and per-account limiters (D-017, D-101) counted in each API process's memory, so N
+  processes allowed N times the limit and a restart reset every count. They now count in Redis
+  (`RedisRateLimitStore`, `apps/api/src/lib/redis.ts`): one fixed window per key, `INCR` +
+  `PEXPIRE` on the first hit in one Lua script, so the window can't be left without an expiry.
+  Same limits, same `429 rate_limited` body and `RateLimit` headers as before.
+- `ioredis` (already in the lockfile through BullMQ) is now a direct API dependency. No new package.
+- Each limiter has a name (`auth`, `auth-public`, `account`, `public-leads`, `invite-accept`), so
+  counts stay separate as they were with one memory store per limiter. Keys are
+  `<REDIS_KEY_PREFIX>rl:<name>:<IP or sha256 account key>`; no email in clear (D-101).
+- **Fail closed.** If Redis is unreachable the limited routes answer 500 (the client gives up
+  after one retry) and the error is logged once. Skipping the limit (`passOnStoreError`) would turn
+  a Redis outage into unlimited password guessing. Routes without a limiter keep working.
+- New env: `REDIS_URL` is now read by the API, and `REDIS_KEY_PREFIX` (default `ds:`) separates
+  checkouts and e2e runs sharing a Redis DB. E2E uses a fresh prefix per run, so back-to-back runs
+  don't add up.
+- Tests: `buildApp` keeps express-rate-limit's memory store (no Redis needed).
+  `rate-limit-redis.test.ts` runs two apps against one Redis (`TEST_REDIS_URL`, default DB 15,
+  random key prefix per run) and checks the fail-closed path. Without Redis it skips with a warning
+  locally and fails in CI (`CI` set).
+
+## D-112 — Medical-data usage stats in Redis (M10 part 2a, 2026-10-24)
+
+- The §8.4 "last 24 h calls / error rate per upstream" counters lived in each process, so the
+  admin settings page showed only the API's own calls, never the worker's (where the coding stage
+  makes most of them), and a restart zeroed them.
+- `RedisUsageTracker` (`packages/medical-data/src/resilience/usage.ts`) keeps one hash per
+  upstream per minute (`<REDIS_KEY_PREFIX>usage:<upstream>:<minute>`: outcome counts, latency sum
+  and count) that expires 2 minutes after the 24 h window, plus a set of upstreams seen. Still no
+  search terms, only upstream, outcome and latency. Reads cover 24 × 60 buckets per upstream in
+  one pipeline (about 5,800 `HGETALL`s for four upstreams, a few ms on the admin page only).
+  Resolution is one minute: the oldest minute counts whole.
+- The API passes its Redis client; the worker uses `RedisUsageTracker.connect(REDIS_URL)`, which
+  honours the URL's DB number and password. Both use `REDIS_KEY_PREFIX` (default `ds:`) so they
+  meet on the same keys.
+- Counting never blocks or fails a lookup: writes are fire-and-forget, and failures are reported
+  at most once a minute (error name only). If Redis is down, the settings page still loads,
+  with an empty usage table and a warning in the log. `usageStats()` is now async.
+- The in-memory `UsageTracker` stays for tests and for callers that pass no store.
+- Not moved: the per-upstream token buckets and circuit breakers stay per process (the defaults
+  sit far enough under each provider's limit for a few processes, see factory.ts). Sharing them is
+  only worth doing if the worker count grows; noted for part 3.
+
+## D-113 — Playwright e2e job in CI (M10 part 2a, 2026-10-24)
+
+- New `e2e` job in `.github/workflows/ci.yml`, next to `check` (both run on every PR and push to
+  main). It runs exactly `pnpm --filter @datascribe/web e2e`, the local command, so the Playwright
+  config stays the single source: its own API (:4100) and web (:3100), never 3000.
+- Services: Postgres 16 (`datascribe_e2e` on 5433, reset and seeded by the global setup, which
+  refuses any other name), Redis (D-111/D-112), Mailpit (1025 SMTP, 8025 API: the reset and invite
+  specs read mail there). SeaweedFS runs via `docker run` as in `check` (it needs a command). All
+  images pinned by the same digests as `docker-compose.yml`, Actions by commit SHA
+  (`actions/upload-artifact` v4 = `ea165f8…`, a lightweight tag, `git ls-remote` on 2026-10-24).
+- Browser: GitHub's Ubuntu image ships Google Chrome, which the config already uses
+  (`channel: 'chrome'`). No `playwright install`, no browser download. A `google-chrome --version`
+  step fails early if a future runner image drops it.
+- On failure the job uploads `apps/web/test-results/` (traces of failed tests, synthetic data only)
+  for 7 days.
+- `apps/api/test/ci-workflow.test.ts` keeps the job and the Playwright config in step (command, DB
+  name and port, Mailpit ports, Chrome channel, no port 3000). The YAML was parsed locally with
+  js-yaml (from the store, not added as a dependency). The job hasn't run on GitHub yet: the agent
+  can't trigger or read Actions.
+- The portal spec simulated a dropped upload by matching S3 port 9000; it now takes the port from
+  `S3_ENDPOINT`, so the suite also runs against an S3 on another port.

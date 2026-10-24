@@ -18,6 +18,24 @@
   order, every entry citing a page of the upload. Pipeline status changes now appear on the case
   timeline (`case.status` audit rows).
 
+## M10 part 2a — Shared state in Redis, e2e in CI (2026-10-24, branch `sentinel/m10`)
+
+Design notes: D-111 to D-113.
+
+- **Rate limits in Redis** (D-111): the per-IP and per-account auth/form limiters count in Redis,
+  so every API process shares one count and a restart no longer resets it. Same limits, same 429
+  body. Fails closed: with Redis down, limited routes answer 500 instead of skipping the limit.
+- **Medical usage stats in Redis** (D-112): per-minute counters per upstream, written by the API
+  and the worker, so the admin settings page shows every process's last-24 h calls. The page still
+  loads if Redis is down.
+- **CI e2e job** (D-113): Postgres 16, Redis and Mailpit service containers (pinned by digest),
+  SeaweedFS, the runner's installed Chrome, own `datascribe_e2e` DB, failure traces kept 7 days.
+  Not run on GitHub yet (the agent can't trigger Actions). The check job also gets Redis.
+- The portal e2e spec takes the S3 port from `S3_ENDPOINT` (was hard-coded to 9000).
+- New env: `REDIS_KEY_PREFIX` (API and worker; the API now reads `REDIS_URL`); tests:
+  `TEST_REDIS_URL`; e2e: `E2E_REDIS_URL`. `ioredis` is now a direct dependency of the API and
+  `@datascribe/medical-data` (already in the lockfile via BullMQ).
+
 ## M10 part 1 — Open security findings (2026-10-24, branch `sentinel/m10`)
 
 Fixes for the datascribe-auditor's open M and L findings, one commit each with a regression test.

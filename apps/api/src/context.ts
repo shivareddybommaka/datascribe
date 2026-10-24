@@ -1,6 +1,7 @@
 import type { ObjectStore, PaymentGateway } from '@datascribe/billing';
 import type { PrismaClient } from '@datascribe/db';
 import type { MedicalData } from '@datascribe/medical-data';
+import type { Store } from 'express-rate-limit';
 import type { Logger } from 'pino';
 import type { Env } from './config/env';
 import type { Mailer } from './lib/mailer';
@@ -33,6 +34,11 @@ export interface Deps {
   logger: Logger;
   phiKey: Buffer;
   rateLimits: RateLimits;
+  /**
+   * Counter store per named limiter: Redis in the server, so every API process shares one count
+   * (D-111). Unset = express-rate-limit's in-process memory store (unit tests).
+   */
+  rateLimitStore?: (limiter: string) => Store;
   /** §8 adapters. Optional so tests default to the deterministic mocks. */
   medical?: MedicalData;
   /** admin on/off per medical upstream (M2 settings); the adapters read it on every call */
