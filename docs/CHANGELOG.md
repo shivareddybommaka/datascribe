@@ -27,6 +27,11 @@ Design notes: D-114.
   sequential probes showing login, refresh and forgot answer 429 at their limits. Prints
   p50/p95/p99, throughput and error counts only. Local laptop result: every route's p95 under
   75 ms at 50 connections, no errors. Manual only, not in tests or CI.
+- **§10 security checklist** (`docs/SECURITY-CHECKLIST.md`): every §10 item mapped to the code,
+  test or D-entry that enforces it, or marked open (TLS, KMS by default, RDS encryption, backups,
+  S3 versioning, retention job, 300-page timing, WCAG audit, Sentry, formal ASVS pass), plus the
+  audit findings: all fixed, L11 roles written but not applied. A test keeps the checklist's
+  sections and file references in step with REQUIREMENTS.md and the tree.
 
 ## M10 part 2a — Shared state in Redis, e2e in CI (2026-10-24, branch `sentinel/m10`)
 
