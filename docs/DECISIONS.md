@@ -1140,6 +1140,43 @@ queues.ts`) keeps them; the API and the usage tracker already pass the URL to io
   the build Mac is arm64), digest-pinned updates of `image_*` in tfvars or task definitions, the
   migrate task before the services roll, and an approval step for production.
 
+## D-117 — Production stores documents with SSE-KMS only (M10 part 4a, 2026-10-24)
+
+- Approved by Shiva (2026-10-24, "approve all", item 1). Production (`DEPLOY_ENV=production`, the
+  default for `NODE_ENV=production`) refuses to start unless `S3_SSE=aws:kms`. Unset (which means
+  AES256, S3-managed keys), `AES256` and `none` are all refused, so a missing variable can't quietly
+  fall back to keys nobody controls or audits. Terraform already sets `aws:kms` with the
+  environment's customer-managed key (D-115).
+- The rule lives in `productionViolations` in `packages/shared/src/deploy.ts`, next to the staging
+  rules (D-120), because both the API (env schema) and the worker read the deploy profile. The API's
+  older "production refuses `none`" check is folded into it. The worker's start-up checks moved to
+  `apps/worker/src/env.ts` (`workerEnvIssues` / `assertWorkerEnv`, also requiring ClamAV as before)
+  so they can be unit-tested; errors name variables, never values.
+- `S3_SSE_KMS_KEY_ID` stays optional: without it S3 uses the bucket's default KMS key, which
+  Terraform sets to the same key.
+- Staging (`DEPLOY_ENV=staging`: local SeaweedFS with `S3_SSE=none`, D-120) and local development
+  are unaffected; tests cover both.
+
+## D-118 — Automated WCAG 2.1 AA check with axe (M10 part 4a, 2026-10-24)
+
+- Approved by Shiva (2026-10-24, item 2): `@axe-core/playwright` as a dev dependency of
+  `apps/web`. `e2e/a11y.spec.ts` runs axe with the `wcag2a`, `wcag2aa`, `wcag21a`, `wcag21aa` tags on
+  the 7 public pages, the home page at 375 px, `/console/login`, `/portal/login`, the client portal
+  dashboard (`client.user`) and the ops console dashboard (`ops.manager`, with TOTP).
+- **Serious and critical violations fail**; moderate and minor ones are attached to the Playwright
+  report so they're visible without blocking. Each page must also report > 10 passing rules (a blank
+  or error page can't pass trivially), and a self-test injects an `<img>` without `alt` and expects
+  axe's critical `image-alt`, so a broken setup can't pass silently.
+- Next's dev overlay (`nextjs-portal`) is excluded: e2e runs `next dev`, and the overlay isn't
+  shipped.
+- **Result on first run: no violations of any impact.** axe reported colour contrast as
+  "incomplete" for the hero band (text on the `bg-brand-gradient` gradient, which axe can't
+  measure). Checked by hand against the lighter stop `#026cb8`: white 5.5:1, `brand-50` 5.1:1, both
+  above AA's 4.5:1; the navy end is darker still. The pricing page's check-mark glyphs are
+  `aria-hidden` decoration.
+- Limits: axe catches roughly a third of WCAG failures. Keyboard paths, focus order, and
+  screen-reader output still need a manual AA review (SECURITY-CHECKLIST, Accessibility).
+
 ## D-120 — Deploy profile: local, staging, production (launchpad, 2026-10-24)
 
 - Shiva asked (2026-10-24) for a staging copy on the Mac Studio at `https://datascribe.stayspot.app`

@@ -1,5 +1,20 @@
 # Changelog
 
+## M10 part 4a — KMS-only production storage, WCAG check (2026-10-24, branch `sentinel/m10`)
+
+Both approved by Shiva on 2026-10-24. Design notes: D-117, D-118.
+
+- **Production refuses to start unless `S3_SSE=aws:kms`** (D-117): the rule sits in the shared
+  deploy profile (`productionViolations`), so the API's env schema and the worker's new
+  `assertWorkerEnv` (`apps/worker/src/env.ts`) both apply it. Unset (= AES256), `AES256` and `none`
+  are refused; `S3_SSE_KMS_KEY_ID` stays optional. Staging (SeaweedFS, `S3_SSE=none`) and local
+  development are unchanged. Unit tests in `packages/shared`, `apps/api`, `apps/worker`.
+- **WCAG 2.1 AA check in e2e** (D-118): `@axe-core/playwright` (dev) and `apps/web/e2e/a11y.spec.ts`
+  run axe (wcag2a/aa, wcag21a/aa) on the 7 public pages, the home page at 375 px, staff and client
+  sign-in, the portal dashboard and the ops console dashboard. Serious/critical violations fail the
+  test. Found none; the hero band's contrast (axe can't measure text on a gradient) was checked by
+  hand: ≥ 5:1. A self-test proves the check fails on a missing `alt`.
+
 ## Local staging behind a Cloudflare tunnel (2026-10-24, branch `launchpad/staging`)
 
 Staging copy on the Mac Studio at `https://datascribe.stayspot.app` (Shiva's own tunnel to
