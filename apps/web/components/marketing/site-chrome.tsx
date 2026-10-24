@@ -2,6 +2,7 @@ import { PAGE_LABELS, PAGE_ROUTES, PAGE_SLUGS, type Site } from '@datascribe/sit
 import Link from 'next/link';
 import { Logo } from '@/components/logo';
 import { CookieSettingsButton } from './consent-analytics';
+import { LOGIN_LINKS } from './login-links';
 import { SiteNav } from './site-nav';
 
 export function MarketingHeader({ site }: { site: Site }) {
@@ -32,11 +33,13 @@ export function MarketingFooter({ site, cookieSettings }: { site: Site; cookieSe
                 </Link>
               </li>
             ))}
-            <li>
-              <Link href="/portal" className="hover:text-white hover:underline">
-                Client portal
-              </Link>
-            </li>
+            {LOGIN_LINKS.map((item) => (
+              <li key={item.href}>
+                <Link href={item.href} className="hover:text-white hover:underline">
+                  {item.label}
+                </Link>
+              </li>
+            ))}
           </ul>
         </nav>
       </div>
