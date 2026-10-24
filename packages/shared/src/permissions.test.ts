@@ -102,6 +102,17 @@ const MATRIX: Row[] = [
   ['qa_reviewer', 'edit', 'deliverables', assignedToMe, false],
   ['qa_reviewer', 'delete', 'qa_reviews', undefined, true],
 
+  // §9 medical lookups: staff who code or review (D-056, D-129)
+  ['super_admin', 'view', 'medical_lookups', undefined, true],
+  ['ops_manager', 'view', 'medical_lookups', undefined, true],
+  ['case_manager', 'view', 'medical_lookups', undefined, true],
+  ['summarizer', 'view', 'medical_lookups', undefined, true],
+  ['qa_reviewer', 'view', 'medical_lookups', undefined, true],
+  ['sales', 'view', 'medical_lookups', undefined, false],
+  ['finance', 'view', 'medical_lookups', undefined, false],
+  ['client_admin', 'view', 'medical_lookups', undefined, false],
+  ['client_user', 'view', 'medical_lookups', undefined, false],
+
   // sales: CRM yes, PHI never (§4.4)
   ['sales', 'delete', 'crm', undefined, true],
   ['sales', 'edit', 'cms', undefined, true],

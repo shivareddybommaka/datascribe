@@ -8,7 +8,9 @@ import {
 } from '@datascribe/medical-data';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { SEED, bearer, buildApp, login, prisma } from './helpers';
+import { hashPassword } from '../src/lib/password';
+import { TEST_PASSWORD } from './constants';
+import { SEED, bearer, buildApp, login, orgId, prisma, uniqueEmail } from './helpers';
 
 const { app } = buildApp(); // default deps → mock medical providers
 const tokens: Record<string, string> = {};
@@ -16,17 +18,49 @@ const get = (path: string, who: string) => request(app).get(path).set(bearer(tok
 
 const SUMM = SEED.internal('summarizer');
 const CM = SEED.internal('case_manager');
-const DENIED = [
-  SEED.internal('sales'),
-  SEED.internal('finance'),
-  SEED.internal('qa_reviewer'), // cases:view only
-  SEED.acmeAdmin,
-  SEED.acmeUser,
-];
+const QA = SEED.internal('qa_reviewer'); // medical_lookups:view, cases view-only (D-129)
+const DENIED = [SEED.internal('sales'), SEED.internal('finance'), SEED.acmeAdmin, SEED.acmeUser];
 
 beforeAll(async () => {
-  for (const email of [SUMM, CM, ...DENIED]) tokens[email] = (await login(app, email)).token;
+  for (const email of [SUMM, CM, QA, ...DENIED]) tokens[email] = (await login(app, email)).token;
 });
+
+/** An internal user on a new custom role holding exactly `keys` ("module:action:scope"). */
+async function customRoleToken(keys: string[]) {
+  const perms = await prisma.permission.findMany({
+    where: {
+      OR: keys.map((k) => {
+        const [module, action, scope] = k.split(':');
+        return { module, action, scope };
+      }),
+    },
+  });
+  expect(perms).toHaveLength(keys.length);
+  const role = await prisma.role.create({
+    data: {
+      key: `custom_lookup_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+      name: 'Custom lookup role',
+      isInternal: true,
+      permissions: { create: perms.map((p) => ({ permissionId: p.id })) },
+    },
+  });
+  // internal → MFA required; reuse the seeded users' test secret
+  const { mfaSecret } = await prisma.user.findUniqueOrThrow({ where: { email: SUMM } });
+  const email = uniqueEmail('lookup');
+  await prisma.user.create({
+    data: {
+      email,
+      name: 'Custom Lookup User',
+      organizationId: await orgId('internal'),
+      passwordHash: await hashPassword(TEST_PASSWORD),
+      emailVerifiedAt: new Date(),
+      mfaEnabled: true,
+      mfaSecret,
+      roles: { create: { roleId: role.id } },
+    },
+  });
+  return (await login(app, email)).token;
+}
 afterAll(() => prisma.$disconnect());
 
 const ROUTES = [
@@ -41,7 +75,7 @@ describe('access control (§9: staff only)', () => {
     for (const path of ROUTES) expect((await request(app).get(path)).status).toBe(401);
   });
 
-  it('sales, finance, QA reviewer and client users get 403 on every medical route', async () => {
+  it('sales, finance and client users get 403 on every medical route', async () => {
     for (const who of DENIED) {
       for (const path of ROUTES) {
         const res = await get(path, who);
@@ -50,10 +84,29 @@ describe('access control (§9: staff only)', () => {
     }
   });
 
-  it('summarizer and case manager can use every route', async () => {
-    for (const who of [SUMM, CM]) {
+  it('summarizer, case manager and QA reviewer can use every route', async () => {
+    for (const who of [SUMM, CM, QA]) {
       for (const path of ROUTES) expect((await get(path, who)).status, `${who} ${path}`).toBe(200);
     }
+  });
+
+  it('QA reviewer gets attributed, de-identified results like any coder', async () => {
+    const q = encodeURIComponent('Mr. John Smith lumbar radiculopathy');
+    const res = await get(`/api/v1/medical/icd10?q=${q}&limit=1`, QA);
+    expect(res.status).toBe(200);
+    expect(res.body.query).toBe('lumbar radiculopathy');
+    expect(res.body.items[0]).toMatchObject({ system: 'ICD10CM', code: 'M54.16' });
+    expect(res.body.attribution).toEqual(ATTRIBUTION.mock);
+  });
+
+  it('custom roles: medical_lookups:view or (legacy) cases:edit admits, neither is 403', async () => {
+    const path = ROUTES[0]!;
+    const lookupOnly = await customRoleToken(['medical_lookups:view:all']);
+    expect((await request(app).get(path).set(bearer(lookupOnly))).status).toBe(200);
+    const legacy = await customRoleToken(['cases:edit:assigned']);
+    expect((await request(app).get(path).set(bearer(legacy))).status).toBe(200);
+    const neither = await customRoleToken(['cases:view:all', 'qa_reviews:edit:all']);
+    expect((await request(app).get(path).set(bearer(neither))).status).toBe(403);
   });
 });
 

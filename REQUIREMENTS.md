@@ -141,6 +141,7 @@ Legend: F = full (view/create/edit/delete), E = view/create/edit, V = view, A = 
 | documents (medical records) | F | V | F | E (A) | V (A) | - | - | F (Firm) | E (own + shared) |
 | deliverables (index, chronology, summary) | F | V | E | E (A) | approve (A) | - | - | V (Firm) | V (own + shared) |
 | qa_reviews | F | V | V | - | F | - | - | - | - |
+| medical_lookups (§9 code / drug lookups, D-129) | F | V | V | V | V | - | - | - | - |
 | invoices and payments | F | V | - | - | - | V | F | V + pay (Firm) | - |
 | subscriptions | F | V | - | - | - | V | F | manage (Firm) | - |
 | users and roles | F | E (cannot touch super_admin) | - | - | - | - | - | E (Firm, client roles only) | - |

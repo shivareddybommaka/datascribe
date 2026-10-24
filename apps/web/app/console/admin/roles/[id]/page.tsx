@@ -24,6 +24,7 @@ const MODULE_LABEL: Record<Module, string> = {
   documents: 'Documents (medical records)',
   deliverables: 'Deliverables',
   qa_reviews: 'QA reviews',
+  medical_lookups: 'Medical code lookups (view)',
   invoices: 'Invoices',
   payments: 'Payments',
   subscriptions: 'Subscriptions',
