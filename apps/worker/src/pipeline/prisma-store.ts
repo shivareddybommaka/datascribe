@@ -178,7 +178,8 @@ export function prismaPipelineStore(prisma: PrismaClient): PipelineStore {
             where: { caseId, type },
             orderBy: { version: 'desc' },
           });
-          if (latest?.status === 'draft' && !latest.lockedAt) {
+          // a staff edit (D-086) is never overwritten: reprocessing then adds a version on top
+          if (latest?.status === 'draft' && !latest.lockedAt && !latest.editedById) {
             await tx.deliverable.update({
               where: { id: latest.id },
               data: { content: item.content },

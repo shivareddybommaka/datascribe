@@ -1,5 +1,18 @@
 # Changelog
 
+## M6 part 3a — Versioned deliverable edits, API (2026-10-25, master)
+
+Design notes: D-086.
+
+- **`PUT /cases/:id/deliverables/:type`** saves an edited index, chronology or summary as a new
+  version (optimistic lock on `baseVersion`, 409 on conflict), validated against the stage 6 shapes;
+  every citation must point to a page of the case's own files. Drafts only, case in review.
+- **`GET /cases/:id/deliverables/:type/versions`** and **`/versions/:version`** for history,
+  compare and restore. Workspace deliverables now include `editedBy`.
+- Migration `20261025070000_deliverable_edited_by` (`Deliverable.editedById`). The worker no longer
+  overwrites a staff-edited draft when a case is reprocessed.
+- Tests: workspace API +7 (16).
+
 ## M6 part 2b — Page images in the staff workspace (2026-10-25, master)
 
 Design notes: D-085.

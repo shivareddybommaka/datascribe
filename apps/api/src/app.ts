@@ -84,6 +84,8 @@ export function createApp(deps: Deps): Express {
   app.use('/api/v1/payments/webhook', express.raw({ type: () => true, limit: '1mb' }));
   // Staging's storage relay streams upload parts, so it comes before the JSON parser (D-122).
   if (env.S3_BROWSER_ACCESS === 'relay') app.use(RELAY_PATH, storageRelayRouter(deps));
+  // A whole edited deliverable is saved at once; long chronologies outgrow 1 MB (D-086).
+  app.put(/^\/api\/v1\/cases\/[^/]+\/deliverables\/[^/]+$/, express.json({ limit: '5mb' }));
   app.use(express.json({ limit: '1mb' }));
   app.use(cookieParser());
 

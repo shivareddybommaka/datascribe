@@ -210,6 +210,150 @@ describe('GET /cases/:id/workspace', () => {
   });
 });
 
+describe('versioned deliverable edits (D-086)', () => {
+  const save = (who: string, type: string, body: unknown) =>
+    request(app)
+      .put(`/api/v1/cases/${ids.case}/deliverables/${type}`)
+      .set(bearer(tokens[who]!))
+      .send(body as object);
+  const chronology = (description: string, pageNumber = 1, documentId = ids.doc) => ({
+    kind: 'chronology',
+    entries: [
+      {
+        date: '2026-03-01',
+        provider: null,
+        facility: 'Synthetic General',
+        eventType: 'er',
+        description,
+        codes: [{ system: 'ICD-10-CM', code: 'S39.012A', display: 'Lumbar strain' }],
+        citation: { documentId, fileName: 'synthetic-records.pdf', pageNumber },
+      },
+    ],
+  });
+
+  it('saves an edit as a new version, encrypted and audited without content', async () => {
+    const res = await save('sum', 'chronology', {
+      baseVersion: 2,
+      content: chronology('Edited synthetic ER visit'),
+    });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ type: 'chronology', version: 3, status: 'draft' });
+    expect(res.body.editedBy).toEqual({
+      id: users.sum!.id,
+      name: 'Synthetic Workspace Summarizer',
+    });
+
+    const row = await prisma.deliverable.findUniqueOrThrow({ where: { id: res.body.id } });
+    expect(row.content).not.toContain('Edited synthetic');
+    expect(row.editedById).toBe(users.sum!.id);
+    const v2 = await prisma.deliverable.findFirstOrThrow({
+      where: { caseId: ids.case, type: 'chronology', version: 2 },
+    });
+    expect(v2.content).toBeTruthy(); // the earlier version is kept
+
+    const audit = await prisma.auditLog.findFirst({
+      where: { action: 'deliverable.edit', entityId: res.body.id },
+    });
+    expect(audit?.metadata).toEqual({
+      caseId: ids.case,
+      type: 'chronology',
+      version: 3,
+      entries: 1,
+    });
+    expect(JSON.stringify(audit)).not.toContain('Edited synthetic');
+
+    const ws = await get('sum', `/cases/${ids.case}/workspace`);
+    const latest = (
+      ws.body.deliverables as { type: string; version: number; content: unknown }[]
+    )[0];
+    expect(latest).toMatchObject({ type: 'chronology', version: 3 });
+    expect(latest!.content).toEqual(chronology('Edited synthetic ER visit'));
+  });
+
+  it('rejects a stale base version with 409', async () => {
+    const res = await save('sum', 'chronology', { baseVersion: 2, content: chronology('Stale') });
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('version_conflict');
+  });
+
+  it('rejects citations outside the case or past the last page, and bad shapes', async () => {
+    const outside = await save('sum', 'chronology', {
+      baseVersion: 3,
+      content: chronology('x', 1, ids.other),
+    });
+    expect(outside.status).toBe(400);
+    const pastEnd = await save('sum', 'chronology', {
+      baseVersion: 3,
+      content: chronology('x', 3),
+    });
+    expect(pastEnd.status).toBe(400);
+    const uncited = chronology('x');
+    delete (uncited.entries[0] as Partial<(typeof uncited.entries)[0]>).citation;
+    expect((await save('sum', 'chronology', { baseVersion: 3, content: uncited })).status).toBe(
+      400,
+    );
+    expect(
+      (await save('sum', 'chronology', { baseVersion: 3, content: { kind: 'summary' } })).status,
+    ).toBe(400);
+    expect((await save('sum', 'report', { baseVersion: 1, content: {} })).status).toBe(404);
+  });
+
+  it('only lets staff who may edit the case save', async () => {
+    const body = { baseVersion: 3, content: chronology('Not allowed') };
+    expect((await save('qa', 'chronology', body)).status).toBe(403);
+    expect((await save('sum2', 'chronology', body)).status).toBe(404);
+    expect([403, 404]).toContain((await save('acmeAdmin', 'chronology', body)).status);
+  });
+
+  it('refuses edits once a version is with QA or the case left review', async () => {
+    const v3 = { caseId: ids.case, type: 'chronology' as const, version: 3 };
+    await prisma.deliverable.updateMany({ where: v3, data: { status: 'in_qa' } });
+    const locked = await save('sum', 'chronology', { baseVersion: 3, content: chronology('x') });
+    expect(locked.status).toBe(409);
+    await prisma.deliverable.updateMany({ where: v3, data: { status: 'draft' } });
+
+    await prisma.case.update({ where: { id: ids.case }, data: { status: 'qa' } });
+    const closed = await save('sum', 'chronology', { baseVersion: 3, content: chronology('x') });
+    expect(closed.status).toBe(409);
+    await prisma.case.update({ where: { id: ids.case }, data: { status: 'in_review' } });
+  });
+
+  it('saves summary paragraphs', async () => {
+    const content = {
+      kind: 'summary',
+      sections: [{ heading: 'Overview', paragraphs: ['Synthetic edited paragraph.'] }],
+      provider: 'template',
+    };
+    const res = await save('sum', 'summary', { baseVersion: 1, content });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ version: 2, content });
+  });
+
+  it('lists versions and returns an earlier version for compare / restore', async () => {
+    const list = await get('sum', `/cases/${ids.case}/deliverables/chronology/versions`);
+    expect(list.status).toBe(200);
+    const items = list.body.items as { version: number; editedBy: { id: string } | null }[];
+    expect(items.map((i) => i.version)).toEqual([3, 2, 1]);
+    expect(items[0]!.editedBy?.id).toBe(users.sum!.id);
+    expect(items[2]!.editedBy).toBeNull();
+
+    const v1 = await get('qa', `/cases/${ids.case}/deliverables/chronology/versions/1`);
+    expect(v1.status).toBe(200);
+    expect(v1.body.content).toEqual({ kind: 'chronology', entries: [{ description: 'v1' }] });
+    const audit = await prisma.auditLog.findFirst({
+      where: { action: 'deliverable.version_view', entityId: v1.body.id, actorId: users.qa!.id },
+    });
+    expect(audit?.metadata).toEqual({ caseId: ids.case, type: 'chronology', version: 1 });
+
+    expect((await get('sum', `/cases/${ids.case}/deliverables/chronology/versions/9`)).status).toBe(
+      404,
+    );
+    expect(
+      (await get('acmeAdmin', `/cases/${ids.case}/deliverables/chronology/versions`)).status,
+    ).toBe(404);
+  });
+});
+
 describe('GET /documents/:id/pages/:n', () => {
   it('returns the decrypted page text and audits the view', async () => {
     const res = await get('sum', `/documents/${ids.doc}/pages/2`);

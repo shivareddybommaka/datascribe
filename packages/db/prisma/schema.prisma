@@ -219,6 +219,7 @@ model User {
   caseShares      CaseShare[]
   uploads         Document[]
   editedEvents    ClinicalEvent[]
+  editedDeliverables Deliverable[]
   qaReviews       QaReview[]
   messages        Message[]
   notifications   Notification[]
@@ -589,10 +590,13 @@ model Deliverable {
   lockedAt   DateTime?
   pdfS3Key   String?
   docxS3Key  String?
+  /// staff member who saved this version; null = written by the pipeline (D-086)
+  editedById String?
   createdAt  DateTime          @default(now())
   updatedAt  DateTime          @updatedAt
 
   case      Case       @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  editedBy  User?      @relation(fields: [editedById], references: [id])
   qaReviews QaReview[]
 
   @@unique([caseId, type, version])

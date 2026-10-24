@@ -34,6 +34,16 @@ import {
   slaWhere,
   type AssignmentRole,
 } from '../services/cases';
+import {
+  EDITABLE_CASE_STATUSES,
+  EDITABLE_DELIVERABLE_STATUSES,
+  EDITABLE_TYPES,
+  SaveDeliverableBody,
+  citationProblem,
+  contentCounts,
+  contentSchema,
+  type EditableType,
+} from '../services/deliverables';
 import { serializeDocument } from './documents';
 
 const REQUESTABLE = ['index', 'chronology', 'summary'] as const;
@@ -688,6 +698,7 @@ export function casesRouter(deps: Deps): Router {
       prisma.deliverable.findMany({
         where: { caseId: c.id },
         orderBy: [{ type: 'asc' }, { version: 'desc' }],
+        include: { editedBy: staffRef },
       }),
       prisma.clinicalEvent.findMany({
         where: { caseId: c.id },
@@ -721,6 +732,7 @@ export function casesRouter(deps: Deps): Router {
         status: d.status,
         lockedAt: d.lockedAt,
         createdAt: d.createdAt,
+        editedBy: d.editedBy,
         content: JSON.parse(decrypt(d.content, phiKey)) as unknown,
       })),
       clinicalEvents: events.map((e) => ({
@@ -737,6 +749,163 @@ export function casesRouter(deps: Deps): Router {
       })),
     });
   });
+
+  // ── Versioned edits (M6 part 3, §5.4, D-086) ──────────────────────────
+  const editableType = (req: Request): EditableType => {
+    const t = String(req.params.type);
+    if (!(EDITABLE_TYPES as readonly string[]).includes(t)) throw notFound();
+    return t as EditableType;
+  };
+
+  /** Internal staff who may see the case's drafts (workspace rule, D-084). */
+  async function loadDraftCase(req: Request, action: Action) {
+    const auth = requireAuth(req);
+    if (auth.user.orgType !== 'internal') throw notFound();
+    const c = await loadCase(req, 'deliverables', action);
+    if (!canOnCase(auth, 'view', 'documents', c)) throw notFound();
+    return c;
+  }
+
+  r.get(
+    '/cases/:id/deliverables/:type/versions',
+    requirePermission('deliverables', 'view'),
+    async (req, res) => {
+      const type = editableType(req);
+      const c = await loadDraftCase(req, 'view');
+      const items = await prisma.deliverable.findMany({
+        where: { caseId: c.id, type },
+        orderBy: { version: 'desc' },
+        select: {
+          id: true,
+          version: true,
+          status: true,
+          lockedAt: true,
+          createdAt: true,
+          editedBy: staffRef,
+        },
+      });
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.json({ items });
+    },
+  );
+
+  r.get(
+    '/cases/:id/deliverables/:type/versions/:version',
+    requirePermission('deliverables', 'view'),
+    async (req, res) => {
+      const type = editableType(req);
+      const version = Number(req.params.version);
+      if (!Number.isInteger(version) || version < 1) throw badRequest('bad_version', 'Bad version');
+      const c = await loadDraftCase(req, 'view');
+      const d = await prisma.deliverable.findUnique({
+        where: { caseId_type_version: { caseId: c.id, type, version } },
+        include: { editedBy: staffRef },
+      });
+      if (!d) throw notFound();
+      await req.audit({
+        action: 'deliverable.version_view',
+        entity: 'Deliverable',
+        entityId: d.id,
+        organizationId: c.organizationId,
+        metadata: { caseId: c.id, type, version },
+      });
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.json({
+        id: d.id,
+        type: d.type,
+        version: d.version,
+        status: d.status,
+        lockedAt: d.lockedAt,
+        createdAt: d.createdAt,
+        editedBy: d.editedBy,
+        content: JSON.parse(decrypt(d.content, phiKey)) as unknown,
+      });
+    },
+  );
+
+  /**
+   * Save an edit as a new version. `baseVersion` must be the latest version (optimistic lock: a
+   * stale editor gets 409 and reloads). Only drafts of a case in review can change; QA-submitted,
+   * approved or locked versions are read-only. Earlier versions are kept, so an edit is undone by
+   * saving an older version's content again.
+   */
+  r.put(
+    '/cases/:id/deliverables/:type',
+    requirePermission('deliverables', 'edit'),
+    async (req, res) => {
+      const auth = requireAuth(req);
+      const type = editableType(req);
+      const body = parse(SaveDeliverableBody, req.body);
+      const content = parse(contentSchema(type), body.content);
+      const c = await loadDraftCase(req, 'edit');
+      if (!(EDITABLE_CASE_STATUSES as readonly string[]).includes(c.status)) {
+        throw conflict(
+          'case_not_editable',
+          'Deliverables can only be edited while the case is in review',
+        );
+      }
+      const docs = await prisma.document.findMany({
+        where: { caseId: c.id, organizationId: c.organizationId, uploadedAt: { not: null } },
+        select: { id: true, pageCount: true },
+      });
+      const problem = citationProblem(content, new Map(docs.map((d) => [d.id, d.pageCount])));
+      if (problem) throw badRequest('bad_citation', problem);
+
+      const saved = await prisma
+        .$transaction(async (tx) => {
+          const latest = await tx.deliverable.findFirst({
+            where: { caseId: c.id, type },
+            orderBy: { version: 'desc' },
+          });
+          if (!latest) throw notFound();
+          if (latest.version !== body.baseVersion) {
+            throw conflict('version_conflict', 'Someone saved a newer version; reload to continue');
+          }
+          if (
+            latest.lockedAt ||
+            !(EDITABLE_DELIVERABLE_STATUSES as readonly string[]).includes(latest.status)
+          ) {
+            throw conflict('deliverable_locked', 'This version is with QA or approved');
+          }
+          return tx.deliverable.create({
+            data: {
+              caseId: c.id,
+              type,
+              version: latest.version + 1,
+              status: 'draft',
+              content: encrypt(JSON.stringify(content), phiKey),
+              editedById: auth.user.id,
+            },
+            include: { editedBy: staffRef },
+          });
+        })
+        .catch((err: unknown) => {
+          // two saves on the same base: the unique (caseId, type, version) lets one win
+          if ((err as { code?: string }).code === 'P2002') {
+            throw conflict('version_conflict', 'Someone saved a newer version; reload to continue');
+          }
+          throw err;
+        });
+      await req.audit({
+        action: 'deliverable.edit',
+        entity: 'Deliverable',
+        entityId: saved.id,
+        organizationId: c.organizationId,
+        metadata: { caseId: c.id, type, version: saved.version, ...contentCounts(content) },
+      });
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.json({
+        id: saved.id,
+        type: saved.type,
+        version: saved.version,
+        status: saved.status,
+        lockedAt: saved.lockedAt,
+        createdAt: saved.createdAt,
+        editedBy: saved.editedBy,
+        content,
+      });
+    },
+  );
 
   // ── Sharing (CaseShare, same firm only) ───────────────────────────────
   r.get('/cases/:id/share-candidates', requirePermission('cases', 'edit'), async (req, res) => {

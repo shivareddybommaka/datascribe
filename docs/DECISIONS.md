@@ -1654,3 +1654,29 @@ inputs.apply`.
 - `terraform init -backend=false` + `validate` + `fmt -check` pass locally with Terraform 1.17.0 and
   AWS provider 5.100.0; `.terraform.lock.hcl` is committed (its `zh:` hashes cover the Linux
   runner). Never planned or applied.
+
+## D-086 — Versioned edits of draft deliverables (M6 part 3a, 2026-10-25)
+
+- **Every save is a new `Deliverable` row** (`version + 1`, status `draft`), using the existing
+  `@@unique([caseId, type, version])`; nothing is updated in place, so the history is the rows. New
+  nullable column `editedById` (FK `User`, `ON DELETE SET NULL`): who saved it; null = the pipeline.
+- **`PUT /cases/:id/deliverables/:type`** (`index` / `chronology` / `summary`), body
+  `{ baseVersion, content }`. The whole document is saved at once (no per-row patch API): the content
+  is one encrypted envelope and the UI edits it as a unit. Content is validated per type against the
+  stage 6 shapes (strict zod, size caps); chronology entries must keep a citation and every cited page
+  (chronology citation, index page range) must exist in one of the case's own uploaded documents
+  (≤ `pageCount`). Route-specific JSON limit 5 MB (global stays 1 MB).
+- **Optimistic lock**: `baseVersion` must be the latest version, else 409 `version_conflict`; two
+  concurrent saves on the same base collide on the unique index and the loser also gets 409.
+- **Who / when**: `deliverables:edit` on the case (assigned summarizer, case managers, super admin),
+  internal staff only, same documents rule as the workspace (D-084). Only while the case is
+  `in_review` or `changes_requested` (else 409 `case_not_editable`) and the latest version is `draft`
+  or `changes_requested` and not locked (else 409 `deliverable_locked`). QA reviewers read only.
+- **History**: `GET /cases/:id/deliverables/:type/versions` (metadata + editor) and
+  `.../versions/:version` (decrypted content, audited `deliverable.version_view`) for compare and
+  restore; restoring is saving an older version's content as a new version.
+- Audit `deliverable.edit` with case, type, version and item counts only, never content.
+- **Worker**: reprocessing still refreshes a pipeline-written draft in place, but never overwrites a
+  staff-edited version; it adds a version on top instead.
+- The console editor (inline edit of chronology entries, index rows and summary paragraphs, version
+  list, restore) is part 3b.
