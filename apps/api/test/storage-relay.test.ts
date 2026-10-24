@@ -116,6 +116,7 @@ describe('storage relay (D-122)', () => {
         NODE_ENV: 'production',
         CLAMAV_HOST: 'clamav',
         STRIPE_SECRET_KEY: 'sk_test_x',
+        S3_SSE: 'aws:kms',
         S3_BROWSER_ACCESS: 'relay',
       }),
     ).toThrow(/S3_BROWSER_ACCESS/);

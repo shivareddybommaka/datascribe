@@ -12,6 +12,7 @@ const staging = {
   S3_ENDPOINT: 'http://localhost:9000',
   CLAMAV_HOST: 'localhost',
 };
+const prod = { NODE_ENV: 'production', S3_SSE: 'aws:kms' };
 const paths = (env: Record<string, string | undefined>) =>
   deployProfileIssues(env).map((i) => i.path);
 
@@ -46,7 +47,27 @@ describe('staging on the open internet (D-125)', () => {
       'STAGING_ALLOW_SIGNUP',
       'STAGING_ALLOW_MOCK_SCAN',
     ]) {
-      expect(paths({ NODE_ENV: 'production', [key]: 'true' })).toEqual([key]);
+      expect(paths({ ...prod, [key]: 'true' })).toEqual([key]);
+    }
+  });
+});
+
+describe('production storage encryption (D-117)', () => {
+  it('refuses to start unless S3_SSE=aws:kms', () => {
+    expect(paths(prod)).toEqual([]);
+    expect(paths({ ...prod, S3_SSE: ' aws:kms ', S3_SSE_KMS_KEY_ID: 'arn:aws:kms:x' })).toEqual([]);
+    expect(paths({ ...prod, DEPLOY_ENV: 'production' })).toEqual([]);
+    for (const sse of [undefined, '', 'AES256', 'none', 'aws:kms:dsse']) {
+      expect(paths({ ...prod, S3_SSE: sse }), String(sse)).toEqual(['S3_SSE']);
+    }
+  });
+
+  it('leaves staging and local development alone', () => {
+    expect(paths(staging)).toEqual([]);
+    expect(paths({ ...staging, S3_SSE: 'AES256', S3_ENDPOINT: '' })).toEqual([]);
+    for (const NODE_ENV of ['development', 'test', undefined]) {
+      expect(paths({ NODE_ENV, S3_SSE: 'none' })).toEqual([]);
+      expect(paths({ NODE_ENV, S3_SSE: 'AES256' })).toEqual([]);
     }
   });
 });
@@ -66,7 +87,7 @@ describe('deploy profile (D-120)', () => {
     expect(paths({ NODE_ENV: 'test', DEPLOY_ENV: 'production' })).toEqual(['DEPLOY_ENV']);
     expect(paths({ NODE_ENV: 'production', DEPLOY_ENV: 'qa' })).toEqual(['DEPLOY_ENV']);
     expect(paths({ NODE_ENV: 'development', DEPLOY_ENV: 'local' })).toEqual([]);
-    expect(paths({ NODE_ENV: 'production', DEPLOY_ENV: 'production' })).toEqual([]);
+    expect(paths({ ...prod, DEPLOY_ENV: 'production' })).toEqual([]);
   });
 
   it('accepts the documented staging setup', () => {
@@ -128,13 +149,11 @@ describe('deploy profile (D-120)', () => {
   });
 
   it('refuses the smoke flag in production and ignores staging rules there', () => {
-    expect(paths({ NODE_ENV: 'production', STAGING_ALLOW_HTTP_FOR_SMOKE: '1' })).toEqual([
+    expect(paths({ ...prod, STAGING_ALLOW_HTTP_FOR_SMOKE: '1' })).toEqual([
       'STAGING_ALLOW_HTTP_FOR_SMOKE',
     ]);
     // production has its own refusals in the API schema; the staging list never applies
-    expect(paths({ NODE_ENV: 'production', DATABASE_URL: 'postgresql://x@db:5432/prod' })).toEqual(
-      [],
-    );
+    expect(paths({ ...prod, DATABASE_URL: 'postgresql://x@db:5432/prod' })).toEqual([]);
   });
 
   it('local development is untouched', () => {

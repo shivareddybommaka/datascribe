@@ -150,18 +150,34 @@ const STAGING_ONLY = [
   'STAGING_ALLOW_MOCK_SCAN',
 ] as const;
 
+/**
+ * What production refuses here (the API schema adds its own rules):
+ * - the staging-only switches, so they can't be left on by mistake;
+ * - any S3_SSE but aws:kms (D-117). Documents are PHI, so production writes them with the
+ *   customer-managed KMS key Terraform creates; the default AES256 (S3-managed keys) is refused
+ *   as well as none. S3_SSE_KMS_KEY_ID stays optional (the bucket's default key otherwise).
+ */
+export function productionViolations(env: Raw): DeployIssue[] {
+  const on = (v: string | undefined) => v?.trim() === 'true' || v?.trim() === '1';
+  const issues: DeployIssue[] = STAGING_ONLY.filter((key) => on(env[key])).map((path) => ({
+    path,
+    message: 'is for staging only; not allowed in production',
+  }));
+  if ((env.S3_SSE?.trim() || 'AES256') !== 'aws:kms') {
+    issues.push({
+      path: 'S3_SSE',
+      message: 'production stores documents with S3_SSE=aws:kms only',
+    });
+  }
+  return issues;
+}
+
 /** Every deploy-profile problem for this environment (empty = fine). */
 export function deployProfileIssues(env: Raw): DeployIssue[] {
   const issues = deployEnvIssues(env);
   if (issues.length) return issues;
   const profile = resolveDeployEnv(env);
   if (profile === 'staging') return stagingViolations(env);
-  if (profile === 'production') {
-    const on = (v: string | undefined) => v?.trim() === 'true' || v?.trim() === '1';
-    return STAGING_ONLY.filter((key) => on(env[key])).map((path) => ({
-      path,
-      message: 'is for staging only; not allowed in production',
-    }));
-  }
+  if (profile === 'production') return productionViolations(env);
   return [];
 }

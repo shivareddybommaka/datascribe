@@ -17,11 +17,12 @@ import {
   TesseractOcrProvider,
 } from '@datascribe/medical-data';
 import { createScanner, verifyDocument } from '@datascribe/scan';
-import { deployProfileIssues, loadKey, resolveDeployEnv } from '@datascribe/shared';
+import { loadKey, resolveDeployEnv } from '@datascribe/shared';
 import { Queue, Worker } from 'bullmq';
 import nodemailer from 'nodemailer';
 import { pino } from 'pino';
 import { BILLING_QUEUE, BILLING_SCHEDULES, processBillingJob } from './billing';
+import { assertWorkerEnv } from './env';
 import {
   NOTIFICATIONS_QUEUE,
   NOTIFICATION_SCHEDULES,
@@ -52,20 +53,11 @@ const connection = redisConnection(process.env.REDIS_URL ?? 'redis://localhost:6
 const prefix = process.env.QUEUE_PREFIX || 'bull';
 const queueOpts = { connection, prefix };
 
-// Same deploy profile as the API (D-120): staging refuses real third parties and databases.
-const deployIssues = deployProfileIssues(process.env);
-if (deployIssues.length) {
-  // variable names only, never values
-  throw new Error(
-    `Invalid environment: ${deployIssues.map((i) => `${i.path}: ${i.message}`).join('; ')}`,
-  );
-}
+// Same deploy profile as the API (D-120, D-117); production also needs ClamAV.
+assertWorkerEnv(process.env);
 const deployEnv = resolveDeployEnv(process.env);
 
 // ── §7 stage 1: virus scan (D-072, moved from the API in D-081); staging may use the mock ──
-if (deployEnv === 'production' && !process.env.CLAMAV_HOST) {
-  throw new Error('production needs a real virus scanner (set CLAMAV_HOST)');
-}
 const scanner = createScanner({
   CLAMAV_HOST: process.env.CLAMAV_HOST || undefined,
   CLAMAV_PORT: Number(process.env.CLAMAV_PORT || 3310),

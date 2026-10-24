@@ -62,6 +62,7 @@ describe('env validation', () => {
       NODE_ENV: 'production',
       STRIPE_SECRET_KEY: 'sk_test_x',
       CLAMAV_HOST: 'clamav',
+      S3_SSE: 'aws:kms',
     };
     expect(() => loadEnv({ ...prod, SUMMARY_PROVIDER: 'anthropic' })).toThrow(
       /PHI_LLM_BAA_CONFIRMED/,
@@ -77,23 +78,31 @@ describe('env validation', () => {
       /STRIPE_SECRET_KEY/,
     );
     expect(loadEnv({ ...baseEnv, STRIPE_SECRET_KEY: '' }).STRIPE_SECRET_KEY).toBeUndefined();
-    const prod = { ...baseEnv, NODE_ENV: 'production', CLAMAV_HOST: 'clamav' };
+    const prod = { ...baseEnv, NODE_ENV: 'production', CLAMAV_HOST: 'clamav', S3_SSE: 'aws:kms' };
     expect(() => loadEnv(prod)).toThrow(/PAYMENT_GATEWAY/);
     expect(() => loadEnv({ ...prod, PAYMENT_GATEWAY: 'fake' })).toThrow(/PAYMENT_GATEWAY/);
     expect(() => loadEnv({ ...prod, STRIPE_SECRET_KEY: 'sk_test_abc' })).not.toThrow();
   });
 
-  it('requires encrypted buckets and a real virus scanner in production (§10)', () => {
+  it('requires KMS-encrypted buckets and a real virus scanner in production (§10, D-117)', () => {
     const prod = {
       ...baseEnv,
       NODE_ENV: 'production',
       STRIPE_SECRET_KEY: 'sk_test_abc',
       CLAMAV_HOST: 'clamav',
+      S3_SSE: 'aws:kms',
     };
-    expect(() => loadEnv(prod)).not.toThrow();
-    expect(loadEnv(prod).S3_SSE).toBe('AES256');
+    expect(loadEnv(prod).S3_SSE).toBe('aws:kms');
+    expect(loadEnv({ ...prod, S3_SSE_KMS_KEY_ID: 'arn:aws:kms:x' }).S3_SSE_KMS_KEY_ID).toBe(
+      'arn:aws:kms:x',
+    );
+    // unset means AES256 (S3-managed keys): refused in production like none
+    expect(() => loadEnv({ ...prod, S3_SSE: undefined })).toThrow(/S3_SSE=aws:kms/);
+    expect(() => loadEnv({ ...prod, S3_SSE: 'AES256' })).toThrow(/S3_SSE/);
     expect(() => loadEnv({ ...prod, S3_SSE: 'none' })).toThrow(/S3_SSE/);
     expect(() => loadEnv({ ...prod, CLAMAV_HOST: '' })).toThrow(/CLAMAV_HOST/);
+    // local development keeps AES256 / none
+    expect(loadEnv(baseEnv).S3_SSE).toBe('AES256');
     expect(loadEnv({ ...baseEnv, S3_SSE: 'none' }).S3_SSE).toBe('none');
   });
 
@@ -113,6 +122,7 @@ describe('env validation', () => {
       NODE_ENV: 'production',
       STRIPE_SECRET_KEY: 'sk_test_abc',
       CLAMAV_HOST: 'clamav',
+      S3_SSE: 'aws:kms',
     };
     const staging = {
       ...baseEnv,
