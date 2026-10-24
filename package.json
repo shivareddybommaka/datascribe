@@ -18,6 +18,13 @@
     "db:migrate": "pnpm --filter @datascribe/db migrate:dev",
     "db:seed": "pnpm --filter @datascribe/db seed",
     "db:seed:demo": "pnpm --filter @datascribe/db seed:demo",
+    "staging:check": "node scripts/staging.mjs check",
+    "staging:db:reset": "node scripts/staging.mjs db:reset",
+    "staging:db:migrate": "node scripts/staging.mjs db:migrate",
+    "staging:build": "node scripts/staging.mjs build",
+    "staging:start": "node scripts/staging.mjs start",
+    "staging:stop": "node scripts/staging.mjs stop",
+    "staging:smoke": "node scripts/staging-smoke.mjs",
     "infra:up": "docker-compose up -d --wait",
     "infra:down": "docker-compose down"
   },

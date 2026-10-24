@@ -71,6 +71,13 @@ export function createApp(deps: Deps): Express {
     }),
   );
   app.use(helmet());
+  // Staging is never indexed (D-123). Next's headers() don't reach responses it proxies to us.
+  if (env.DEPLOY_ENV === 'staging') {
+    app.use((_req, res, next) => {
+      res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
+      next();
+    });
+  }
   app.use(cors({ origin: [env.APP_URL, ...env.EXTRA_TRUSTED_ORIGINS], credentials: true }));
   // Payment webhooks are verified against the exact bytes received, so they get the raw body
   // (express.json then skips them).

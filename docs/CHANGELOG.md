@@ -19,6 +19,11 @@ Staging copy on the Mac Studio at `https://datascribe.stayspot.app` (Shiva's own
 - **Web guard rails** (D-123): fixed staging banner on every page, `X-Robots-Tag: noindex`,
   noindex metadata and a disallow-all `robots.txt`, no GA/GTM in staging; `ENV_FILE` for
   `next.config.ts`.
+- **Runner, runbook, smoke** (D-124): `.env.staging.example` (web 3020 / API 4020,
+  `datascribe_staging` + `_cms`, Redis /5, Mailpit), `pnpm staging:check | db:reset | db:migrate |
+build | start | stop | smoke`, `docs/STAGING.md` (DB, tunnel and Access setup, running
+  cloudflared with a token from an env var, stopping), launchd and cloudflared templates in
+  `infra/staging/` (not installed). The smoke test passes against the production-built stack.
 
 ## M9 part 1 — Notifications (2026-10-24, branch `herald/m9`)
 

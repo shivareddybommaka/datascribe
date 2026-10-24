@@ -1182,3 +1182,45 @@ queues.ts`) keeps them; the API and the usage tracker already pass the URL to io
   (analytics IDs, CMS URL) leaks into the staging build.
 - Vitest for the web app now compiles JSX with the automatic runtime (as Next does) so layout and
   banner can be rendered in unit tests.
+- Next applies `headers()` only to what it serves itself, not to rewrites it proxies, so the API
+  sets `X-Robots-Tag` on its own responses in staging (found by the smoke test).
+
+## D-124 — Staging runner, runbook and smoke test (launchpad, 2026-10-24)
+
+- **One Node script, no new packages**: `scripts/staging.mjs` (`check`, `db:reset`,
+  `db:migrate`, `db:seed`, `build`, `start`, `stop`) on `scripts/staging-lib.mjs`, wired as
+  `pnpm staging:*`. Each process gets the `.env.staging` values on top of a minimal shell
+  environment (PATH, HOME, ...) plus `NODE_ENV=production`, `DEPLOY_ENV=staging`,
+  `API_HOST=127.0.0.1`. Nothing from dev's `.env` or the caller's shell leaks in. Errors name
+  variables, never values.
+- **The script's own refusals** come on top of the app's: web port must be 3020 (3000, 3010 and 5432
+  are always refused), API port distinct and matching `API_URL`, `DATABASE_URL` /
+  `CMS_DATABASE_URL` on a port other than 5432 with `staging` in the name, required secrets
+  present, and no `STAGING_ALLOW_HTTP_FOR_SMOKE` outside the smoke test.
+- **Processes**: Next is a real `next build` into `apps/web/.next-staging`, stamped with
+  `APP_URL`; `start` refuses an unstamped build or one made for another URL. It runs as
+  `next start --hostname 127.0.0.1 --port 3020`. API and worker run from source with `tsx` under
+  `NODE_ENV=production`, because their tsup bundles keep the workspace packages external and those
+  are TypeScript source (D-002); bundling them comes with the Dockerfiles. The supervisor stops
+  all three if one exits, and stops them on SIGINT/SIGTERM (`staging:stop` signals it via
+  `.data/staging/staging.pid`).
+- **Database reset** mirrors the test setup: `CREATE DATABASE` if missing, drop and re-create the
+  `public` schema, `prisma migrate deploy`, then the synthetic seed and the demo leads (run with
+  `NODE_ENV=development`, which the seed scripts require). `prisma migrate reset` isn't used.
+- **No CMS process**: the web app falls back to the bundled copy (`CMS_URL=none` now skips the
+  fetch entirely). CMS media would be served from localhost, which visitors behind the tunnel
+  can't load.
+- `next build` rewrites `tsconfig.json` / `next-env.d.ts` for its dist dir; the build step
+  restores both files afterwards.
+- **Tunnel**: created by Shiva in the dashboard (token-based, remotely managed, public hostname
+  `datascribe.stayspot.app` → `http://localhost:3020`). Run with
+  `cloudflared --config infra/staging/cloudflared.yml tunnel run --token "$VAR"` or with
+  `TUNNEL_TOKEN`. The repo config file keeps cloudflared away from `~/.cloudflared` (StaySpot).
+  launchd templates under `infra/staging/` (not installed) read the token from the login Keychain.
+  Cloudflare Access goes in front before the hostname is added.
+- **Smoke test** (`pnpm staging:smoke`): the production-built stack on 3901 / 4901 against a
+  throwaway `*_staging_smoke` DB, with `STAGING_ALLOW_HTTP_FOR_SMOKE=1` and the relay on.
+  Playwright (`apps/web/playwright.staging-smoke.config.ts`, `apps/web/smoke/`) checks the banner,
+  noindex, robots.txt, no analytics, console sign-in with MFA enrolment and Secure / HttpOnly /
+  Strict cookie, portal case creation, and an upload plus download through the relay. Not part of
+  `pnpm e2e` or CI.

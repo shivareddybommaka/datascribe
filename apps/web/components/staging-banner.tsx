@@ -12,7 +12,8 @@ export function StagingBanner() {
   return (
     <>
       <div
-        role="alert"
+        role="region"
+        aria-label="Staging notice"
         data-testid="staging-banner"
         className={`${box} fixed inset-x-0 top-0 z-[1000] border-red-900 bg-red-700 text-white shadow-md`}
       >

@@ -71,6 +71,10 @@ describe('staging behind the tunnel (D-121)', () => {
     expect(res.headers['x-content-type-options']).toBe('nosniff');
     expect(res.headers['x-frame-options']).toBe('SAMEORIGIN');
     expect(res.headers['x-powered-by']).toBeUndefined();
+    // never indexed (D-123); not set outside staging
+    expect(res.headers['x-robots-tag']).toBe('noindex, nofollow, noarchive');
+    const local = await request(buildApp().app).get('/api/v1/health');
+    expect(local.headers['x-robots-tag']).toBeUndefined();
   });
 
   it('per-IP limits key on the last X-Forwarded-For entry (Cloudflare appends the real IP)', async () => {
