@@ -2,8 +2,7 @@
 
 import type { ContactFormCopy } from '@datascribe/site-content';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useSearchParams } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Button, ErrorText, Field, Input, Select, Textarea } from '@/components/ui';
@@ -20,19 +19,31 @@ const Schema = z.object({
 });
 type Values = z.infer<typeof Schema>;
 
-/** Labels and messages come from the CMS (Contact page → "Contact form copy"). */
+/**
+ * Labels and messages come from the CMS (Contact page → "Contact form copy"). The form is in the
+ * static HTML (no useSearchParams bailout, which shifted the page: Lighthouse CLS 0.4, D-127);
+ * `?kind=demo` is applied after hydration, and Send stays disabled until then so the browser never
+ * submits the fields natively into the URL.
+ */
 export function ContactForm({ copy }: { copy: ContactFormCopy }) {
-  const params = useSearchParams();
+  const [hydrated, setHydrated] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const {
     register,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<Values>({
     resolver: zodResolver(Schema),
-    defaultValues: { kind: params.get('kind') === 'demo' ? 'demo' : 'contact', website: '' },
+    defaultValues: { kind: 'contact', website: '' },
   });
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('kind') === 'demo')
+      setValue('kind', 'demo');
+    setHydrated(true);
+  }, [setValue]);
 
   if (sent) {
     return (
@@ -99,7 +110,7 @@ export function ContactForm({ copy }: { copy: ContactFormCopy }) {
         <input id="website" tabIndex={-1} autoComplete="off" {...register('website')} />
       </div>
       <ErrorText error={error} />
-      <Button type="submit" disabled={isSubmitting}>
+      <Button type="submit" disabled={!hydrated || isSubmitting}>
         {isSubmitting ? copy.sendingLabel : copy.submitLabel}
       </Button>
     </form>

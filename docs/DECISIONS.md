@@ -1454,3 +1454,27 @@ queues.ts`) keeps them; the API and the usage tracker already pass the URL to io
   logs don't contain the token, and the config sets `loglevel: info`.
 - The tunnel is an optional, separate step from `staging:start`; `staging:stop` stops both (pid
   files under `.data/staging/`).
+
+## D-127 — Lighthouse on the public pages (M10 part 5, 2026-10-24)
+
+- Approved by Shiva (2026-10-24, item 6): `lighthouse` (13.5) as a dev dependency of `apps/web`,
+  driven by its CLI from `apps/web/scripts/lighthouse.mjs` (the web package's `lighthouse` script).
+  It uses the installed Google Chrome through chrome-launcher; puppeteer-core comes
+  along as a dependency but downloads no browser. `@lhci/cli` was not used: its server and
+  assertion features aren't needed for one local report.
+- Measures the 7 public M3 pages (`/`, services, pricing, about, contact, ai-medical-summary,
+  resources), mobile preset (Lighthouse's default simulated throttling), performance + SEO only,
+  against a production build (`next build` into `.next-lighthouse`, `next start` on :3800). Not
+  `next dev`, whose unminified bundles would score far lower than what ships. Median of 3 runs per
+  page, by performance score. `CMS_URL=none` by default so the run doesn't depend on a CMS.
+- The script writes the table into `docs/LIGHTHOUSE.md` between markers and exits 1 if a page is
+  below 90. It isn't in CI or turbo: scores depend on the machine, and a build plus 21 Lighthouse
+  runs takes about 3 minutes. Run it after layout changes to the marketing pages.
+- `next build` adds the dist dir to `tsconfig.json` and rewrites `next-env.d.ts`; the script restores
+  both files afterwards.
+- First run: everything 100 / 100 except `/contact` at 80 performance, from CLS 0.40. The form called
+  `useSearchParams` inside a `<Suspense>` without a fallback, so the static HTML had no form and the
+  page jumped when it rendered on the client. Now the form is in the static HTML and `?kind=demo` is
+  read from `window.location` after hydration. Send stays disabled until hydration, so a click before
+  that can't submit the fields natively as a GET query string (name and email in the URL and logs).
+  Re-run: 99, CLS 0.

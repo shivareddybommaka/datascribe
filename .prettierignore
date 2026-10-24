@@ -3,6 +3,7 @@ dist
 .next
 .next-dev
 .next-e2e-*
+.next-lighthouse
 .turbo
 coverage
 pnpm-lock.yaml

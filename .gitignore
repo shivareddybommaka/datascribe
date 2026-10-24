@@ -4,6 +4,7 @@ dist/
 .next-dev/
 .next-e2e-*/
 .next-staging*/
+.next-lighthouse/
 .turbo/
 coverage/
 *.log
