@@ -317,8 +317,26 @@ export interface CaseSummary {
   priority: Priority;
   status: CaseStatus;
   dueAt: string | null;
+  /** §5.4 SLA flag: red = overdue, amber = due in under 24 h (D-083) */
+  sla: 'red' | 'amber' | null;
   submittedAt: string | null;
   createdAt: string;
+}
+
+// ── Staff case queue (M6) ──
+
+export type AssignmentRole = 'case_manager' | 'summarizer' | 'qa_reviewer';
+
+export interface StaffCaseRow extends CaseSummary {
+  organization: { id: string; name: string };
+  caseManager: { id: string; name: string } | null;
+  summarizer: { id: string; name: string } | null;
+  qaReviewer: { id: string; name: string } | null;
+}
+
+export interface AssignableStaff {
+  role: AssignmentRole;
+  items: { id: string; name: string; email: string; openCases: number }[];
 }
 
 export interface CaseDetail extends CaseSummary {
@@ -340,7 +358,12 @@ export interface CaseDetail extends CaseSummary {
     deleteDocuments: boolean;
     message: boolean;
     internalMessages: boolean;
+    assign?: boolean;
+    reassignAny?: boolean;
   };
+  caseManagerId?: string | null;
+  summarizerId?: string | null;
+  qaReviewerId?: string | null;
 }
 
 export type ScanStatus = 'pending' | 'clean' | 'infected' | 'error';

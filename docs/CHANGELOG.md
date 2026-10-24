@@ -11,7 +11,10 @@ Design notes: D-083.
   claim an unmanaged one); ops managers reassign anything. Eligibility by permission, four-eyes
   rule, compare-and-set, `case.assign` audit rows, `assigned_to_you` notifications (M9 event now
   live). `GET /cases/assignable-staff?role=` for the picker.
-- Tests: `apps/api/test/case-queue.test.ts` (11).
+- **Console `/console/cases`** (new Cases section): queue table with search, status, assignee
+  (me / no case manager / no summarizer / no QA), SLA, priority filters and sort; Overdue / Due soon
+  badges; Assign dialog with the three pickers and each person's open-case count.
+- Tests: `apps/api/test/case-queue.test.ts` (11), e2e `apps/web/e2e/cases.spec.ts`.
 
 ## M10 part 5 — Lighthouse on the public pages (2026-10-24, branch `sentinel/m10`)
 

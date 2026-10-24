@@ -22,6 +22,12 @@ interface NavItem {
 /** Console sections; `modules` is a UI hint for who sees the tab (the API enforces access). */
 const SECTIONS: { label: string; href: string; modules: string[]; items: NavItem[] }[] = [
   {
+    label: 'Cases',
+    href: '/console/cases',
+    modules: ['cases'],
+    items: [{ href: '/console/cases', label: 'Queue', exact: true }],
+  },
+  {
     label: 'CRM',
     href: '/console/crm',
     modules: ['crm'],

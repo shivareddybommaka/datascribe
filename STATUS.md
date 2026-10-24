@@ -6,23 +6,23 @@ Remote: https://github.com/shivareddybommaka/datascribe (private, deploy key, ho
 `github-datascribe`). Infra on Colima, all bound to 127.0.0.1: Postgres 16 (:5433; :5432 is Shiva's
 existing CRM, never touch), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025). CMS DB `datascribe_cms`.
 
-| Milestone                     | State                              | Notes                                                                                                                                                                    |
-| ----------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| M0 Foundation                 | done                               |                                                                                                                                                                          |
-| M1 Auth + RBAC                | done                               | security fixes from the audit applied                                                                                                                                    |
-| M2 Admin console              | done (merged from `admin/m2`)      | custom role takes effect without restart; audit M2 + M4 fixed; D-060..D-064                                                                                              |
-| M3 Website + CMS              | done (merged from `storefront/m3`) | Lighthouse (mobile) performance 99–100, SEO 100 on all 7 public pages (D-127, `docs/LIGHTHOUSE.md`)                                                                      |
-| M4 Portal cases + uploads     | done (merged from `portal/m4`)     | DoD test green (300-page PDF, interrupted + resumed); D-070..D-077                                                                                                       |
-| M5 Pipeline                   | done (master)                      | DoD e2e green (upload → 7 stages → in_review, all cited); notify; Tesseract OCR (D-082)                                                                                  |
-| M6 Workspace + QA + delivery  | **next (master)**                  |                                                                                                                                                                          |
-| M7 CRM                        | done                               |                                                                                                                                                                          |
-| M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen built in M4; Stripe test key needed for the manual test-card demo                                                                              |
-| M9 Notifications + dashboards | done except 4 events blocked on M6 | 7/11 §5.8 events + 4 dashboards; part 3 merged (editable notification emails, demo, D-096/D-097); assigned / QA / approved / delivered need M6 to call the ready helpers |
-| M10 Hardening                 | in progress (`sentinel/m10`)       | parts 1–5 merged (D-100..D-127: Dockerfiles, KMS-only prod, axe WCAG, Sentry, Lighthouse); part 6 retention / hard-delete job spawned 2026-10-25 01:10                   |
+| Milestone                     | State                              | Notes                                                                                                                                                                         |
+| ----------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M0 Foundation                 | done                               |                                                                                                                                                                               |
+| M1 Auth + RBAC                | done                               | security fixes from the audit applied                                                                                                                                         |
+| M2 Admin console              | done (merged from `admin/m2`)      | custom role takes effect without restart; audit M2 + M4 fixed; D-060..D-064                                                                                                   |
+| M3 Website + CMS              | done (merged from `storefront/m3`) | Lighthouse (mobile) performance 99–100, SEO 100 on all 7 public pages (D-127, `docs/LIGHTHOUSE.md`)                                                                           |
+| M4 Portal cases + uploads     | done (merged from `portal/m4`)     | DoD test green (300-page PDF, interrupted + resumed); D-070..D-077                                                                                                            |
+| M5 Pipeline                   | done (master)                      | DoD e2e green (upload → 7 stages → in_review, all cited); notify; Tesseract OCR (D-082)                                                                                       |
+| M6 Workspace + QA + delivery  | **in progress (master)**           | part 1 done: case queue (filters, SLA flags) + assignment API and console page, `assigned_to_you` live (D-083)                                                                |
+| M7 CRM                        | done                               |                                                                                                                                                                               |
+| M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen built in M4; Stripe test key needed for the manual test-card demo                                                                                   |
+| M9 Notifications + dashboards | done except 3 events blocked on M6 | 8/11 §5.8 events + 4 dashboards; part 3 merged (editable notification emails, demo, D-096/D-097); `assigned_to_you` wired by M6 part 1; QA / approved / delivered wait for M6 |
+| M10 Hardening                 | in progress (`sentinel/m10`)       | parts 1–5 merged (D-100..D-127: Dockerfiles, KMS-only prod, axe WCAG, Sentry, Lighthouse); part 6 retention / hard-delete job spawned 2026-10-25 01:10                        |
 
-Tests on `main` (2026-10-25 01:05, after merging M10 part 5): format, lint, typecheck, unit/API tests
-and build green, 36/36 turbo tasks; Playwright e2e 31/31 (run on `E2E_WEB_PORT=3150` /
-`E2E_API_PORT=4150`: port 3100 was taken by another project's server). Staging (still running
+Tests on `main` (2026-10-25 01:30, after M10 part 5 merge + M6 part 1): format, lint, typecheck,
+unit/API tests and build green, 36/36 turbo tasks (API 388, web 68); Playwright e2e 32/32 (run on
+`E2E_WEB_PORT=3150` / `E2E_API_PORT=4150`: port 3100 was taken by another project's server). Staging (still running
 `155a8e5` code) not restarted: Shiva was testing sign-in; restart with `pnpm staging:stop` /
 `staging:build` / `staging:start` when convenient.
 
@@ -38,6 +38,13 @@ completed uploads and submitted cases ✅ (D-081) · 5 stage 7 `in_review` ✅ +
 case manager on hold ✅ · 6 M5 DoD e2e (synthetic
 six-record PDF → deliverables, every chronology entry cited, status timeline) ✅ · 7 tesseract OCR
 provider + page renderer ✅ (D-082: tesseract.js WASM, no system install; `OCR_PROVIDER=tesseract`).
+
+M6 plan (master, in order): 1 case queue + SLA flags + assignment (API + `/console/cases`) ✅ (D-083) ·
+2 case workspace page: PDF viewer with page thumbnails, extracted data / draft deliverables, chronology
+entry → source page · 3 versioned edits of chronology entries, index rows and summary paragraphs ·
+4 submit for QA, QA approve / request changes (citations required, approval locks the version),
+`notifyQaDecision` · 5 final report PDF + DOCX from templates to S3, `delivered`, usage record,
+`notifyDelivered`, client download · 6 M6 DoD e2e (summarizer edits, QA approves, client downloads).
 
 Running the app locally now needs the worker too (`pnpm --filter @datascribe/worker dev`): without
 it uploads stay "Scanning" and submitted cases aren't processed. SeaweedFS volume limit raised to
@@ -99,6 +106,11 @@ staging must disable self sign-up, use real ClamAV, use its own seed password, a
 rate limits, lockout and MFA. Run mode: on demand.
 
 ## Waiting on Shiva
+
+- M6 step 5 (final report): OK to add the `docx` npm package (MIT, no native deps) to the worker
+  for the DOCX report? The PDF uses the existing `pdf-lib`. Steps 1–4 don't need it. For the
+  workspace PDF viewer (step 2), the plan is server-rendered page images from the existing worker
+  renderer (no new web dependency) unless Shiva prefers `pdfjs-dist` in the browser.
 
 - Telegram control: create a Telegram group with the bot (bot as admin or privacy off), send a
   message, send the group id (forward to @RawDataBot). Then the binding is proposed via OpenClaw.
