@@ -265,6 +265,14 @@ resource "aws_ecs_task_definition" "api" {
     secrets          = local.secrets_for.api
     logConfiguration = local.log_options.api
     linuxParameters  = { initProcessEnabled = true }
+    # ECS ignores the Dockerfile HEALTHCHECK, so the same probe is repeated here (apps/api/Dockerfile).
+    healthCheck = {
+      command     = ["CMD", "node", "-e", "fetch('http://127.0.0.1:${local.api_port}/api/v1/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval    = 30
+      timeout     = 5
+      retries     = 3
+      startPeriod = 20
+    }
   }])
 }
 
@@ -336,7 +344,7 @@ resource "aws_ecs_task_definition" "worker" {
   ])
 }
 
-# Run once per release before the services roll (docs/INFRA.md): API image, migrator role.
+# Run once per release before the services roll (docs/INFRA.md): migrate image, migrator role.
 resource "aws_ecs_task_definition" "migrate" {
   family                   = "${local.name}-migrate"
   requires_compatibilities = ["FARGATE"]
@@ -353,7 +361,7 @@ resource "aws_ecs_task_definition" "migrate" {
 
   container_definitions = jsonencode([{
     name             = "migrate"
-    image            = var.image_api
+    image            = var.image_migrate
     essential        = true
     command          = var.migrate_command
     environment      = [{ name = "NODE_ENV", value = "production" }]

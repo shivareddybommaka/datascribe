@@ -25,9 +25,10 @@ redis_replicas  = 1
 bucket_prefix           = "<company>-datascribe-production"
 noncurrent_version_days = 30
 
-image_api    = "<account id>.dkr.ecr.ap-south-1.amazonaws.com/datascribe-production/api@sha256:<64 hex digest>"
-image_web    = "<account id>.dkr.ecr.ap-south-1.amazonaws.com/datascribe-production/web@sha256:<64 hex digest>"
-image_worker = "<account id>.dkr.ecr.ap-south-1.amazonaws.com/datascribe-production/worker@sha256:<64 hex digest>"
+image_api     = "<account id>.dkr.ecr.ap-south-1.amazonaws.com/datascribe-production/api@sha256:<64 hex digest>"
+image_web     = "<account id>.dkr.ecr.ap-south-1.amazonaws.com/datascribe-production/web@sha256:<64 hex digest>"
+image_worker  = "<account id>.dkr.ecr.ap-south-1.amazonaws.com/datascribe-production/worker@sha256:<64 hex digest>"
+image_migrate = "<account id>.dkr.ecr.ap-south-1.amazonaws.com/datascribe-production/migrate@sha256:<64 hex digest>"
 
 # 0 on the first apply, until every secret has a value.
 api_desired_count    = 0
