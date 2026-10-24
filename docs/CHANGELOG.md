@@ -20,6 +20,14 @@
   `/portal/notifications` with preferences. Read-only while impersonating.
 - **Tests**: API and unit tests for the catalog, dispatcher and routes; Playwright e2e for the bell.
 
+## M9 part 2 — Dashboards (in progress, branch `herald/m9`)
+
+§5.9. Design notes: D-092.
+
+- **Sales dashboard** (`GET /dashboards/sales`, `/console/dashboards/sales`): pipeline value by
+  stage (per currency), conversion and win rate for a 30 / 90 / 365-day window, leads by source.
+  Sales and ops managers only. Ops, finance and client dashboards are next.
+
 ## M5b — Processing pipeline (in progress, `main`)
 
 - Stages 3–6 as pure modules (D-078) and stage 2 text extraction with pdf.js (D-079).

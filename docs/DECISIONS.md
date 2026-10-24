@@ -754,6 +754,18 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
 - The bell polls the unread count every 30 s (no websocket yet) and loads the latest items only when
   opened; the full list is a cursor-paged centre page in console and portal.
 
+## D-092 — Dashboards: aggregates per module, sales first (M9 part 2, 2026-10-24)
+
+- One endpoint per dashboard under `/dashboards/*`, each gated by its own module (D-005), staff
+  only. Responses are counts and sums, never rows, so a dashboard grant shows no contact or case
+  details.
+- Sales (`dashboard_sales`, sales + ops_manager): pipeline count and value per stage over all
+  leads, summed per currency (leads aren't converted); conversion = won ÷ leads created in the window
+  (`days`, default 90, max 730) next to win rate = won ÷ (won + lost); leads by source in the window.
+- It sits beside the CRM overview's `/pipeline/summary` (needs only `crm:view`, so finance and case
+  managers see it) rather than replacing it.
+- Ops, finance and client dashboards follow with their own scopes (ops: `assigned` / `own`).
+
 ## D-100 — Absolute session lifetime and MFA re-check on refresh (audit M5, M10, 2026-10-24)
 
 - Replaces D-017's "7 days sliding". A rotated session copies its family's `expiresAt`, so a sign-in
