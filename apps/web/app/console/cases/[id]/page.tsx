@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CaseStatusBadge } from '@/components/portal/labels';
 import { Badge, Card, Empty, ErrorText, Select, cn } from '@/components/ui';
 import { api } from '@/lib/api';
@@ -14,6 +14,7 @@ import type {
   DocumentPageText,
   WorkspaceDeliverable,
 } from '@/lib/types';
+import { useObjectUrl } from '@/lib/use-object-url';
 
 type Tab = 'chronology' | 'index' | 'summary';
 const TABS: { key: Tab; label: string }[] = [
@@ -30,6 +31,7 @@ interface PageRef {
 /**
  * §5.4 staff workspace (M6 part 2, D-084): source documents on the left, extracted data and the
  * draft deliverables on the right; a chronology entry or index row jumps to its source page.
+ * Pages show as images with thumbnails (part 2b, D-085), or as extracted text.
  */
 export default function CaseWorkspacePage() {
   const { id } = useParams<{ id: string }>();
@@ -120,6 +122,11 @@ function DocumentViewer({
     enabled: !!current && doc?.state === 'clean',
   });
   const pages = Array.from({ length: doc?.pageCount ?? 0 }, (_, i) => i + 1);
+  const [view, setView] = useState<'image' | 'text'>('image');
+  const base = current ? `/documents/${current.documentId}/pages/${current.pageNumber}` : null;
+  const image = useObjectUrl(base && `${base}/image`, doc?.state === 'clean' && view === 'image');
+  // no rendered image (TIFF, previews off, older case): the text is all there is
+  const showText = view === 'text' || image.status === 'missing' || image.status === 'error';
 
   return (
     <Card className="min-w-0 space-y-4">
@@ -148,29 +155,40 @@ function DocumentViewer({
             >
               {pages.map((n) => (
                 <li key={n}>
-                  <button
-                    type="button"
-                    aria-current={n === current?.pageNumber ? 'page' : undefined}
-                    aria-label={`Page ${n}`}
-                    onClick={() => onPick({ documentId: doc!.id, pageNumber: n })}
-                    className={cn(
-                      'flex h-20 w-full items-center justify-center rounded border text-sm',
-                      n === current?.pageNumber
-                        ? 'border-brand-600 bg-brand-100 text-brand-800'
-                        : 'border-line bg-surface text-muted hover:border-brand-600',
-                    )}
-                  >
-                    {n}
-                  </button>
+                  <PageThumb
+                    documentId={doc!.id}
+                    pageNumber={n}
+                    selected={n === current?.pageNumber}
+                    onPick={() => onPick({ documentId: doc!.id, pageNumber: n })}
+                  />
                 </li>
               ))}
             </ol>
-            <section aria-label="Page text" className="min-w-0 flex-1 space-y-2">
+            <section
+              aria-label={showText ? 'Page text' : 'Page image'}
+              className="min-w-0 flex-1 space-y-2"
+            >
               <div className="flex flex-wrap items-center gap-2 text-sm text-muted">
                 <span className="font-medium text-ink">
                   Page {current?.pageNumber ?? '—'}
                   {doc?.pageCount ? ` of ${doc.pageCount}` : ''}
                 </span>
+                <div role="group" aria-label="Page view" className="flex gap-1">
+                  {(['image', 'text'] as const).map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      aria-pressed={view === v}
+                      onClick={() => setView(v)}
+                      className={cn(
+                        'rounded px-2 py-0.5 text-xs font-medium',
+                        view === v ? 'bg-brand-100 text-brand-800' : 'hover:bg-surface',
+                      )}
+                    >
+                      {v === 'image' ? 'Image' : 'Text'}
+                    </button>
+                  ))}
+                </div>
                 {page.data?.recordType && <Badge tone="neutral">{page.data.recordType}</Badge>}
                 {page.data?.ocrConfidence != null && (
                   <Badge tone={page.data.ocrConfidence < 0.7 ? 'amber' : 'green'}>
@@ -179,14 +197,97 @@ function DocumentViewer({
                 )}
               </div>
               <ErrorText error={page.error} />
-              <pre className="max-h-[32rem] overflow-y-auto whitespace-pre-wrap rounded border border-line bg-surface p-3 text-sm text-ink">
-                {page.isLoading ? 'Loading…' : (page.data?.text ?? 'No text on this page.')}
-              </pre>
+              {showText ? (
+                <>
+                  {view === 'image' && (
+                    <p className="text-xs text-muted">
+                      No page image for this file; showing the extracted text.
+                    </p>
+                  )}
+                  <pre className="max-h-[32rem] overflow-y-auto whitespace-pre-wrap rounded border border-line bg-surface p-3 text-sm text-ink">
+                    {page.isLoading ? 'Loading…' : (page.data?.text ?? 'No text on this page.')}
+                  </pre>
+                </>
+              ) : (
+                <div className="max-h-[32rem] overflow-auto rounded border border-line bg-white">
+                  {image.status === 'ready' ? (
+                    // a blob URL (fetched with the bearer token), so not next/image
+                    <img
+                      src={image.url}
+                      alt={`Page ${current?.pageNumber} of ${doc?.fileName ?? 'the document'}`}
+                      className="w-full"
+                    />
+                  ) : (
+                    <p className="p-3 text-sm text-muted">Loading…</p>
+                  )}
+                </div>
+              )}
             </section>
           </div>
         </>
       )}
     </Card>
+  );
+}
+
+/** A page button with its thumbnail, fetched only once it scrolls into view (300-page files). */
+function PageThumb({
+  documentId,
+  pageNumber,
+  selected,
+  onPick,
+}: {
+  documentId: string;
+  pageNumber: number;
+  selected: boolean;
+  onPick: () => void;
+}) {
+  const ref = useRef<HTMLButtonElement>(null);
+  const [seen, setSeen] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || seen) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setSeen(true);
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) setSeen(true);
+      },
+      { rootMargin: '200px' },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [seen]);
+  const thumb = useObjectUrl(`/documents/${documentId}/pages/${pageNumber}/thumb`, seen);
+
+  return (
+    <button
+      ref={ref}
+      type="button"
+      aria-current={selected ? 'page' : undefined}
+      aria-label={`Page ${pageNumber}`}
+      onClick={onPick}
+      className={cn(
+        'relative flex h-20 w-full items-center justify-center overflow-hidden rounded border text-sm',
+        selected
+          ? 'border-brand-600 bg-brand-100 text-brand-800'
+          : 'border-line bg-surface text-muted hover:border-brand-600',
+      )}
+    >
+      {thumb.status === 'ready' && (
+        <img src={thumb.url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+      )}
+      <span
+        className={cn(
+          'relative',
+          thumb.status === 'ready' && 'rounded bg-white/90 px-1 text-xs font-medium text-ink',
+        )}
+      >
+        {pageNumber}
+      </span>
+    </button>
   );
 }
 

@@ -1,10 +1,10 @@
-// Real Tesseract + page renderer on a synthetic "scanned" page (D-082): no mocks, no network.
-import { createCanvas } from '@napi-rs/canvas';
+// Real Tesseract + page renderer on a synthetic "scanned" page (D-082, D-085): no mocks, no network.
+import { createCanvas, loadImage } from '@napi-rs/canvas';
 import { TesseractOcrProvider } from '@datascribe/medical-data';
 import { PDFDocument } from 'pdf-lib';
 import { afterAll, describe, expect, it } from 'vitest';
 import { extractImagePage, extractPdfPages } from './extract-text';
-import { renderPdfPage } from './render-page';
+import { PREVIEW_WIDTH, THUMB_WIDTH, renderPagePreview, renderPdfPage } from './render-page';
 
 const LINES = ['DISCHARGE SUMMARY', 'Patient: Test Synthetic', 'Diagnosis: Pneumonia'];
 
@@ -50,5 +50,27 @@ describe('tesseract OCR', () => {
   it('reads an image upload directly', { timeout: 60_000 }, async () => {
     const result = await extractImagePage(scannedImage(), ocr);
     expect(words(result.pages[0]!.text)).toContain('DISCHARGE SUMMARY');
+  });
+});
+
+describe('viewer page preview (D-085)', () => {
+  it('renders a JPEG at viewer width and a thumbnail of every page', async () => {
+    const previews: { n: number; image: Buffer; thumb: Buffer }[] = [];
+    await extractPdfPages(await scannedPdf(), {
+      ocr,
+      onPage: async (n, page) => {
+        previews.push({ n, ...(await renderPagePreview(page)) });
+      },
+    });
+    expect(previews.map((p) => p.n)).toEqual([1]);
+    const { image, thumb } = previews[0]!;
+    const jpeg = (b: Buffer) => b.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]));
+    expect(jpeg(image) && jpeg(thumb)).toBe(true);
+    const full = await loadImage(image);
+    const small = await loadImage(thumb);
+    expect(full.width).toBe(PREVIEW_WIDTH);
+    expect(full.height).toBe(Math.round(PREVIEW_WIDTH / 3)); // the 6in x 2in page keeps its shape
+    expect(small.width).toBe(THUMB_WIDTH);
+    expect(thumb.length).toBeLessThan(image.length);
   });
 });

@@ -264,6 +264,27 @@ describe('pipeline runner', () => {
     expect(store.deliverables.map((d) => d.version)).toEqual([1, 1, 1]);
   });
 
+  it('stage 2 stores a viewer preview of every PDF page; a failed preview never fails it', async () => {
+    const { deps, log } = setup({ status: 'processing' });
+    const saved: [string, number][] = [];
+    deps.savePagePreview = async (s3Key, n) => {
+      saved.push([s3Key, n]);
+    };
+    const ok = await runStage('extract', { caseId: 'case1' }, once, deps);
+    expect(saved).toEqual([['k/a', 1]]); // the PNG upload is its own image
+    expect(ok.stats).toMatchObject({ pages: 2, previews: 1, previewErrors: 0 });
+
+    deps.savePagePreview = async () => {
+      throw new Error('S3 down');
+    };
+    const failed = await runStage('extract', { caseId: 'case1' }, once, deps);
+    expect(failed).toMatchObject({ next: 'classify', stats: { previews: 0, previewErrors: 1 } });
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ documentId: 'docA', err: { name: 'Error' } }),
+      'page preview not stored',
+    );
+  });
+
   it('builds the index and chronology even when only a summary was ordered', () => {
     expect(requestedDeliverables(['summary'])).toEqual(['index', 'chronology', 'summary']);
     expect(requestedDeliverables(null)).toEqual(['index', 'chronology']);

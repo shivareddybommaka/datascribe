@@ -3,16 +3,32 @@ import {
   AbortMultipartUploadCommand,
   CopyObjectCommand,
   DeleteObjectCommand,
+  DeleteObjectsCommand,
   GetObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
   S3Client,
   type ServerSideEncryption,
 } from '@aws-sdk/client-s3';
 import type { ScanStorage } from '@datascribe/scan';
 import type { Readable } from 'node:stream';
 
+/**
+ * Staff viewer images of a document's pages live next to its object (D-085):
+ * `<s3Key>.pages/<n>.jpg` and `<s3Key>.pages/<n>.thumb.jpg`. The API reads them by the same rule.
+ */
+export const pageImagePrefix = (s3Key: string) => `${s3Key}.pages/`;
+export const pageImageKey = (s3Key: string, pageNumber: number, thumb = false) =>
+  `${pageImagePrefix(s3Key)}${pageNumber}${thumb ? '.thumb' : ''}.jpg`;
+
 export interface DocumentObjects extends ScanStorage {
   read(key: string): Promise<Uint8Array>;
-  /** Retention (D-128): delete the object, or abort an unfinished upload. Missing keys are fine. */
+  /** stores a JPEG with the bucket's encryption */
+  putJpeg(key: string, body: Buffer): Promise<void>;
+  /**
+   * Retention (D-128): delete the object and its page images (D-085), or abort an unfinished
+   * upload. Missing keys are fine.
+   */
   remove(doc: { s3Key: string; uploadId: string | null }): Promise<void>;
 }
 
@@ -53,6 +69,17 @@ export function s3DocumentObjects(env: Record<string, string | undefined>): Docu
     async stream(key) {
       return (await get(key)) as Readable;
     },
+    async putJpeg(key, body) {
+      await s3.send(
+        new PutObjectCommand({
+          Bucket: bucket,
+          Key: key,
+          Body: body,
+          ContentType: 'image/jpeg',
+          ...sse,
+        }),
+      );
+    },
     async move(from, to) {
       await s3.send(
         new CopyObjectCommand({ Bucket: bucket, Key: to, CopySource: `${bucket}/${from}`, ...sse }),
@@ -71,6 +98,24 @@ export function s3DocumentObjects(env: Record<string, string | undefined>): Docu
         }
       }
       await s3.send(new DeleteObjectCommand({ Bucket: bucket, Key: s3Key }));
+      // page images go too (one page of keys per call; a 1000+ page document loops)
+      let token: string | undefined;
+      do {
+        const list = await s3.send(
+          new ListObjectsV2Command({
+            Bucket: bucket,
+            Prefix: pageImagePrefix(s3Key),
+            ContinuationToken: token,
+          }),
+        );
+        const keys = (list.Contents ?? []).flatMap((o) => (o.Key ? [{ Key: o.Key }] : []));
+        if (keys.length > 0) {
+          await s3.send(
+            new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: keys, Quiet: true } }),
+          );
+        }
+        token = list.IsTruncated ? list.NextContinuationToken : undefined;
+      } while (token);
     },
   };
 }

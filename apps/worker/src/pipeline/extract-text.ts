@@ -23,6 +23,8 @@ export interface ExtractOptions {
   ocr: OcrProvider;
   /** renders a 1-based PDF page to an image for OCR; null = can't render */
   renderPage?: (pageNumber: number, page: PDFPageProxy) => Promise<Buffer | null>;
+  /** called once for every page while it is open (viewer images, D-085) */
+  onPage?: (pageNumber: number, page: PDFPageProxy) => Promise<void>;
 }
 
 export interface ExtractResult {
@@ -48,6 +50,14 @@ export async function extractPdfPages(
   try {
     for (let n = 1; n <= pdf.numPages; n++) {
       const page = await pdf.getPage(n);
+      if (opts.onPage) {
+        try {
+          await opts.onPage(n, page);
+        } catch (err) {
+          page.cleanup();
+          throw err;
+        }
+      }
       const content = await page.getTextContent();
       let text = '';
       for (const item of content.items) {

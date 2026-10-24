@@ -1,6 +1,8 @@
 import type { Prisma } from '@datascribe/db';
 import { verifyDocument } from '@datascribe/scan';
-import { Router, type Request } from 'express';
+import { Router, type Request, type Response } from 'express';
+import type { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { z } from 'zod';
 import { authenticate, requireAuth, requirePermission } from '../auth/middleware';
 import { canOnCase, caseScopeWhere } from '../auth/scoping';
@@ -15,6 +17,7 @@ import {
   detectFileType,
 } from '../lib/filetype';
 import { decryptOptional } from '../lib/phi';
+import { isMissing, pageImageKey } from '../lib/storage';
 import { parse } from '../lib/validate';
 import { UPLOADABLE_STATUSES } from '../services/cases';
 import { documentKey, partCountFor, partSizeFor } from '../services/documents';
@@ -53,6 +56,8 @@ export function serializeDocument(d: DocRow, env: Pick<Env, 'UPLOAD_PART_SIZE_MB
 }
 
 const PageNumber = z.coerce.number().int().min(1).max(100_000);
+/** uploads a browser can show as they are (the viewer's page 1) */
+const IMAGE_MIMES = new Set(['image/png', 'image/jpeg']);
 
 const NewUpload = z.object({
   fileName: z.string().min(1).max(500),
@@ -356,6 +361,49 @@ export function documentsRouter(deps: Deps): Router {
       recordType: page.recordType,
     });
   });
+
+  /**
+   * Page image or thumbnail for the staff viewer (M6 part 2b, D-085): JPEGs the worker rendered in
+   * stage 2, streamed through the API so the browser never gets an S3 URL. A PNG/JPEG upload is
+   * its own one-page image. 404 when there is no image (TIFF, PAGE_PREVIEWS=off, older cases): the
+   * viewer then shows the page text. Full images are audited; thumbnails (160 px) are not.
+   */
+  const pageImage = (thumb: boolean) =>
+    async function (req: Request, res: Response) {
+      const auth = requireAuth(req);
+      if (auth.user.orgType !== 'internal') throw notFound();
+      const pageNumber = parse(PageNumber, req.params.n);
+      const doc = await loadDocument(req, 'view');
+      if (doc.purgedAt) {
+        throw new HttpError(410, 'purged', 'This file was deleted by the retention policy');
+      }
+      if (!doc.uploadedAt || doc.scanStatus !== 'clean') throw notFound();
+      const own = IMAGE_MIMES.has(doc.mimeType);
+      if (own ? pageNumber !== 1 : doc.mimeType !== 'application/pdf') throw notFound();
+      let body: Readable;
+      try {
+        body = await storage.stream(own ? doc.s3Key : pageImageKey(doc.s3Key, pageNumber, thumb));
+      } catch (err) {
+        if (isMissing(err)) throw notFound();
+        throw err;
+      }
+      if (!thumb) await audit(req, 'document.page_image_view', doc, { pageNumber });
+      res.setHeader('Content-Type', own ? doc.mimeType : 'image/jpeg');
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      try {
+        await pipeline(body, res);
+      } catch (err) {
+        // the viewer aborts a superseded page fetch: not an error, just stop reading from S3
+        if (res.destroyed || req.destroyed) {
+          body.destroy();
+          return;
+        }
+        throw err;
+      }
+    };
+  r.get('/documents/:id/pages/:n/image', requirePermission('documents', 'view'), pageImage(false));
+  r.get('/documents/:id/pages/:n/thumb', requirePermission('documents', 'view'), pageImage(true));
 
   return r;
 }

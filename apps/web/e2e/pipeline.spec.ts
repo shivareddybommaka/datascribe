@@ -114,10 +114,20 @@ test('M5 DoD: an uploaded case runs through the pipeline to review, every chrono
   await expect(
     staff.getByRole('button', { name: `Page ${target.citation.pageNumber}`, exact: true }),
   ).toHaveAttribute('aria-current', 'page');
-  const text = staff.getByRole('region', { name: 'Page text' });
-  await expect(text).toContainText(
-    `Page ${target.citation.pageNumber} of ${SYNTHETIC_CASE_PAGES.length}`,
+  // part 2b (D-085): the page the worker rendered, with thumbnails, and the text view on demand
+  const pageLabel = `Page ${target.citation.pageNumber} of ${SYNTHETIC_CASE_PAGES.length}`;
+  const pictured = staff.getByRole('region', { name: 'Page image' });
+  await expect(pictured).toContainText(pageLabel);
+  const img = pictured.getByRole('img', { name: `Page ${target.citation.pageNumber} of ${FILE}` });
+  await expect(img).toBeVisible();
+  expect(await img.evaluate((el: HTMLImageElement) => el.naturalWidth)).toBe(1100);
+  await expect(staff.getByRole('list', { name: 'Pages' }).locator('img').first()).toHaveJSProperty(
+    'complete',
+    true,
   );
+  await staff.getByRole('button', { name: 'Text', exact: true }).click();
+  const text = staff.getByRole('region', { name: 'Page text' });
+  await expect(text).toContainText(pageLabel);
   await expect(text.locator('pre')).not.toHaveText(/Loading…|No text on this page\./);
   await staff.getByRole('tab', { name: 'Index' }).click();
   await expect(staff.getByRole('tabpanel', { name: 'Index' })).toContainText(FILE);

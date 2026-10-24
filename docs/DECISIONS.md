@@ -1524,6 +1524,30 @@ queues.ts`) keeps them; the API and the usage tracker already pass the URL to io
 - **Page images are part 2b.** The left pane shows the extracted page text for now. The planned
   viewer renders page images server-side with the worker's existing pdf.js + `@napi-rs/canvas`
   renderer (D-082), no new web dependency, unless Shiva prefers `pdfjs-dist` in the browser.
+  Built in part 2b (D-085).
+
+## D-085 — Staff viewer page images (M6 part 2b, 2026-10-25)
+
+- **Rendered once, in stage 2.** While the extractor has each PDF page open it calls an `onPage`
+  hook; the worker draws the page with the D-082 pdf.js + `@napi-rs/canvas` renderer at 1100 px wide
+  and scales that to a 160 px thumbnail, both JPEG q80 (pixel budget capped like OCR). The PDF is
+  parsed once; no new dependency anywhere, nothing renders in the browser. `PAGE_PREVIEWS=off`
+  skips it. A failed preview is logged (error class only) and counted; it never fails the stage.
+- **Stored next to the source object**, same bucket and SSE: `<s3Key>.pages/<n>.jpg` and
+  `<s3Key>.pages/<n>.thumb.jpg`. No schema change: the API derives the key and a missing image is a 404. Retention (D-128) deletes the prefix together with the object (`DocumentObjects.remove`
+  lists and deletes it), so page images never outlive the source file. Quarantined files never
+  reach stage 2, so they have no images.
+- **`GET /documents/:id/pages/:n/image` and `/thumb`** stream the JPEG through the API (the browser
+  never gets an S3 URL). Same rules as the page text: internal staff only (clients 404), case
+  assignment via `documents:view`, clean finished uploads only, 410 once purged,
+  `Cache-Control: private, no-store`, `nosniff`. A PNG/JPEG upload is served as its own page 1;
+  TIFF has no image (the viewer shows text).
+- **Audit:** a full image is audited as `document.page_image_view` with the page number; thumbnails
+  (160 px, not legible) are not, so scrolling a 300-page file doesn't write 300 rows.
+- **Console:** the page list shows thumbnails, fetched only when they scroll into view; the page pane
+  shows the image with an Image / Text toggle and falls back to the text when there is no image.
+  Images are fetched with the bearer token as blob URLs and revoked when the page changes.
+- Cases processed before this change have no images until their stage 2 re-runs; they show text.
 
 ## D-128 — Retention / hard-delete job (M10 part 6, 2026-10-25)
 

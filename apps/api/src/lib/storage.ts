@@ -74,10 +74,17 @@ export function contentDisposition(fileName: string): string {
   return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(fileName)}`;
 }
 
-const isMissing = (err: unknown) => {
+export const isMissing = (err: unknown) => {
   const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
   return e.name === 'NotFound' || e.name === 'NoSuchKey' || e.$metadata?.httpStatusCode === 404;
 };
+
+/**
+ * The worker stores the staff viewer's page images next to the document's object (D-085); same
+ * rule as `pageImageKey` in apps/worker/src/pipeline/s3.ts.
+ */
+export const pageImageKey = (s3Key: string, pageNumber: number, thumb = false) =>
+  `${s3Key}.pages/${pageNumber}${thumb ? '.thumb' : ''}.jpg`;
 
 export class S3DocumentStorage implements DocumentStorage {
   private readonly s3: S3Client;

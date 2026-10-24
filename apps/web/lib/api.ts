@@ -124,6 +124,24 @@ export async function downloadFile(path: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Fetch an image with the bearer token (an <img src> can't send it) as an object URL; null when the
+ * API has none (404). The caller revokes the URL.
+ */
+export async function fetchObjectUrl(path: string, signal?: AbortSignal): Promise<string | null> {
+  const send = () =>
+    fetch(`/api/v1${path}`, {
+      headers: accessToken ? { authorization: `Bearer ${accessToken}` } : {},
+      credentials: 'same-origin',
+      signal,
+    });
+  let res = await send();
+  if (res.status === 401 && (await refreshSession())) res = await send();
+  if (res.status === 404) return null;
+  if (!res.ok) throw await toError(res);
+  return URL.createObjectURL(await res.blob());
+}
+
 /** Download a CSV export with the bearer token (a plain link can't send it). */
 export async function downloadCsv(path: string, filename: string) {
   const text = await api<string>(path, { raw: true });

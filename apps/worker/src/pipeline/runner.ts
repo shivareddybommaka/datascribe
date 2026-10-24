@@ -146,6 +146,11 @@ export interface PipelineDeps {
   ocr: OcrProvider;
   /** renders a low-text PDF page for OCR (`renderPdfPage`, D-082); absent = count it in needsOcr */
   renderPage?: (page: PDFPageProxy) => Promise<Buffer | null>;
+  /**
+   * stores the staff viewer's image + thumbnail of a PDF page next to the source object (D-085);
+   * absent = the workspace shows page text only. A failure never fails the stage.
+   */
+  savePagePreview?: (s3Key: string, pageNumber: number, page: PDFPageProxy) => Promise<void>;
   coders: Coders;
   summary: SummaryProvider;
   log: PipelineLogger;
@@ -224,14 +229,38 @@ const PROCESSORS: Record<RunnerStage, Processor> = {
   },
 
   async extract(c, deps) {
-    const stats = { documents: 0, pages: 0, ocrPages: 0, needsOcr: 0 };
+    const stats = {
+      documents: 0,
+      pages: 0,
+      ocrPages: 0,
+      needsOcr: 0,
+      previews: 0,
+      previewErrors: 0,
+    };
     for (const doc of await deps.store.listDocuments(c.id)) {
       const data = await deps.readObject(doc.s3Key);
       let result: ExtractResult;
       if (doc.mimeType === 'application/pdf') {
+        const savePreview = deps.savePagePreview;
         result = await extractPdfPages(data, {
           ocr: deps.ocr,
           renderPage: deps.renderPage ? (_n, page) => deps.renderPage!(page) : undefined,
+          onPage: savePreview
+            ? async (n, page) => {
+                try {
+                  await savePreview(doc.s3Key, n, page);
+                  stats.previews++;
+                } catch (err) {
+                  // the viewer falls back to page text; log the class only, never content
+                  if (stats.previewErrors++ === 0) {
+                    deps.log.warn(
+                      { caseId: c.id, documentId: doc.id, err: { name: (err as Error).name } },
+                      'page preview not stored',
+                    );
+                  }
+                }
+              }
+            : undefined,
         });
       } else if (IMAGE_TYPES.has(doc.mimeType)) {
         result = await extractImagePage(Buffer.from(data), deps.ocr);

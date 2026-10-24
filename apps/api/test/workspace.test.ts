@@ -1,19 +1,34 @@
+import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { encrypt, type RoleKey } from '@datascribe/shared';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hashPassword } from '../src/lib/password';
+import { pageImageKey } from '../src/lib/storage';
 import { TEST_PASSWORD, TEST_TOTP_SECRET, testPhiKey } from './constants';
 import { SEED, bearer, buildApp, login, orgId, prisma, uniqueEmail } from './helpers';
+import { TEST_S3 } from './s3';
 
-/** M6 part 2 (§5.4, D-084): workspace read API and page text. Synthetic data only. */
-const { app } = buildApp();
+/** M6 part 2 (§5.4, D-084/D-085): workspace read API, page text and images. Synthetic data only. */
+const { app, storageReady } = buildApp();
 const tokens: Record<string, string> = {};
 const get = (who: string, path: string) =>
   request(app).get(`/api/v1${path}`).set(bearer(tokens[who]!));
 
+const s3 = new S3Client({
+  region: 'us-east-1',
+  endpoint: TEST_S3.S3_ENDPOINT,
+  forcePathStyle: true,
+  credentials: {
+    accessKeyId: TEST_S3.S3_ACCESS_KEY_ID,
+    secretAccessKey: TEST_S3.S3_SECRET_ACCESS_KEY,
+  },
+});
+const put = (key: string, body: Buffer) =>
+  s3.send(new PutObjectCommand({ Bucket: TEST_S3.S3_BUCKET_DOCUMENTS, Key: key, Body: body }));
+
 const STAMP = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const users: Record<string, { id: string; email: string }> = {};
-const ids = { case: '', other: '', doc: '', purged: '' };
+const ids = { case: '', other: '', doc: '', purged: '', png: '' };
 
 async function makeStaff(role: RoleKey, name: string) {
   const email = uniqueEmail(role.replace(/_/g, '-'));
@@ -79,6 +94,14 @@ beforeAll(async () => {
     });
   ids.doc = (await doc('records')).id;
   ids.purged = (await doc('purged', { purgedAt: new Date() })).id;
+  ids.png = (
+    await doc('scan', {
+      fileName: 'synthetic-scan.png',
+      s3Key: `test/workspace/${STAMP}/scan.png`,
+      mimeType: 'image/png',
+      pageCount: 1,
+    })
+  ).id;
   await doc('unfinished', { uploadedAt: null, uploadId: 'synthetic-upload' });
   await prisma.documentPage.createMany({
     data: [
@@ -147,8 +170,8 @@ describe('GET /cases/:id/workspace', () => {
     expect(res.body.case.patientName).toBe('Riley Synthetic');
 
     const docs = res.body.documents as { id: string; state: string }[];
-    expect(docs.map((d) => d.state)).toEqual(['clean', 'purged']);
-    expect(docs[0]!.id).toBe(ids.doc);
+    expect(docs.map((d) => d.state).sort()).toEqual(['clean', 'clean', 'purged']);
+    expect(docs.map((d) => d.id)).toContain(ids.doc);
 
     const dels = res.body.deliverables as { type: string; version: number; content: unknown }[];
     expect(dels.map((d) => [d.type, d.version])).toEqual([
@@ -171,7 +194,7 @@ describe('GET /cases/:id/workspace', () => {
     const audit = await prisma.auditLog.findFirst({
       where: { action: 'case.workspace_view', entityId: ids.case, actorId: users.sum!.id },
     });
-    expect(audit?.metadata).toEqual({ documents: 2, deliverables: 2, events: 2 });
+    expect(audit?.metadata).toEqual({ documents: 3, deliverables: 2, events: 2 });
   });
 
   it('works for the assigned QA reviewer and ops manager', async () => {
@@ -214,5 +237,65 @@ describe('GET /documents/:id/pages/:n', () => {
   it('is staff only and follows case assignment', async () => {
     expect((await get('acmeAdmin', `/documents/${ids.doc}/pages/1`)).status).toBe(404);
     expect((await get('sum2', `/documents/${ids.doc}/pages/1`)).status).toBe(404);
+  });
+});
+
+describe('GET /documents/:id/pages/:n/image and /thumb (D-085)', () => {
+  // synthetic bytes: the route streams whatever the worker stored, it never decodes them
+  const JPEG = Buffer.from('\xff\xd8\xff synthetic page image', 'latin1');
+  const THUMB = Buffer.from('\xff\xd8\xff synthetic thumb', 'latin1');
+  const PNG = Buffer.from('\x89PNG synthetic scan', 'latin1');
+  const fetchBytes = (who: string, path: string) =>
+    get(who, path)
+      .buffer(true)
+      .parse((res, cb) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () => cb(null, Buffer.concat(chunks)));
+      });
+
+  beforeAll(async () => {
+    await storageReady;
+    const records = await prisma.document.findUniqueOrThrow({ where: { id: ids.doc } });
+    await put(pageImageKey(records.s3Key, 1), JPEG);
+    await put(pageImageKey(records.s3Key, 1, true), THUMB);
+    await put(`test/workspace/${STAMP}/scan.png`, PNG);
+  });
+
+  it('streams the page image and audits it, and the thumbnail without an audit row', async () => {
+    const res = await fetchBytes('sum', `/documents/${ids.doc}/pages/1/image`);
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe('image/jpeg');
+    expect(res.headers['cache-control']).toBe('private, no-store');
+    expect(Buffer.compare(res.body as Buffer, JPEG)).toBe(0);
+    const audit = await prisma.auditLog.findFirst({
+      where: { action: 'document.page_image_view', entityId: ids.doc, actorId: users.sum!.id },
+    });
+    expect(audit?.metadata).toEqual({ caseId: ids.case, pageNumber: 1 });
+
+    const thumb = await fetchBytes('qa', `/documents/${ids.doc}/pages/1/thumb`);
+    expect(thumb.status).toBe(200);
+    expect(Buffer.compare(thumb.body as Buffer, THUMB)).toBe(0);
+    expect(
+      await prisma.auditLog.count({
+        where: { action: 'document.page_image_view', entityId: ids.doc, actorId: users.qa!.id },
+      }),
+    ).toBe(0);
+  });
+
+  it('serves a PNG upload as its own page 1', async () => {
+    const res = await fetchBytes('sum', `/documents/${ids.png}/pages/1/image`);
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toBe('image/png');
+    expect(Buffer.compare(res.body as Buffer, PNG)).toBe(0);
+    expect((await get('sum', `/documents/${ids.png}/pages/2/image`)).status).toBe(404);
+  });
+
+  it('404s without a stored image, 410s once purged, and is staff only', async () => {
+    expect((await get('sum', `/documents/${ids.doc}/pages/2/image`)).status).toBe(404);
+    expect((await get('sum', `/documents/${ids.purged}/pages/1/thumb`)).status).toBe(410);
+    expect((await get('sum', `/documents/${ids.doc}/pages/0/image`)).status).toBe(400);
+    expect((await get('acmeAdmin', `/documents/${ids.doc}/pages/1/image`)).status).toBe(404);
+    expect((await get('sum2', `/documents/${ids.doc}/pages/1/thumb`)).status).toBe(404);
   });
 });

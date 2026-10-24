@@ -44,14 +44,14 @@ import {
   type PipelineJobData,
   type ScanOutcome,
 } from './pipeline/runner';
-import { renderPdfPage } from './pipeline/render-page';
+import { renderPagePreview, renderPdfPage } from './pipeline/render-page';
 import {
   RETENTION_QUEUE,
   RETENTION_SCHEDULES,
   processRetentionJob,
   retentionConfigFromEnv,
 } from './retention';
-import { s3DocumentObjects } from './pipeline/s3';
+import { pageImageKey, s3DocumentObjects } from './pipeline/s3';
 import { DEFAULT_JOB_OPTIONS, PIPELINE_QUEUES, redisConnection } from './queues';
 import { closeSentry, initSentry, isFinalAttempt } from './sentry';
 
@@ -98,6 +98,15 @@ const pipelineDeps: PipelineDeps = {
   ocr,
   // scanned PDF pages need an image; the mock OCR keeps them counted in needsOcr instead (D-082)
   renderPage: ocrKind === 'mock' ? undefined : (page) => renderPdfPage(page),
+  // staff viewer images (D-085); PAGE_PREVIEWS=off leaves the workspace on page text
+  savePagePreview:
+    process.env.PAGE_PREVIEWS === 'off'
+      ? undefined
+      : async (s3Key, n, page) => {
+          const { image, thumb } = await renderPagePreview(page);
+          await objects.putJpeg(pageImageKey(s3Key, n), image);
+          await objects.putJpeg(pageImageKey(s3Key, n, true), thumb);
+        },
   coders: medical,
   summary: createSummaryProvider(
     (process.env.SUMMARY_PROVIDER || 'mock') as Parameters<typeof createSummaryProvider>[0],

@@ -1,5 +1,21 @@
 # Changelog
 
+## M6 part 2b — Page images in the staff workspace (2026-10-25, master)
+
+Design notes: D-085.
+
+- **Worker stage 2** renders every PDF page once more while it is open: a 1100 px JPEG and a 160 px
+  thumbnail, stored next to the source object (`<s3Key>.pages/<n>[.thumb].jpg`, same bucket and
+  SSE). `PAGE_PREVIEWS=off` turns it off; a failed preview never fails the stage.
+- **Retention** now deletes a document's page images with its object.
+- **`GET /documents/:id/pages/:n/image`** and **`/thumb`**: stream the JPEG (or a PNG/JPEG upload
+  itself). Staff only, case-scoped, 410 after retention; full images audited
+  `document.page_image_view`.
+- **Console workspace**: page thumbnails (loaded as they scroll into view), the page image with an
+  Image / Text toggle, text fallback when a file has no image.
+- Tests: workspace API +3 (9), worker runner +1, renderer +1, real-S3 retention removal +1; the M5
+  DoD e2e checks the rendered page and a thumbnail, then the text view.
+
 ## M6 part 2a — Staff workspace read side (2026-10-25, master)
 
 Design notes: D-084.
