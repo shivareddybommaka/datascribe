@@ -70,7 +70,9 @@ ledger D-040+, pipeline D-050+, herald D-090+, sentinel D-100+.
   e2e job.
 - M10 (sentinel): should production refuse to start unless `S3_SSE=aws:kms`? May we add
   `@axe-core/playwright` (WCAG check) and the Sentry SDKs? Build the retention / hard-delete job next?
-- Terraform CLI (Homebrew, admin) to `terraform validate` the M10 IaC files; nothing will be applied.
+- ~~Terraform CLI~~ installed by Shiva 2026-10-24 (`/opt/homebrew/bin/terraform` 1.17.0, works as
+  nova): run `terraform init -backend=false` + `terraform validate` on `infra/terraform`; never apply.
+  Native `tesseract` 5.5.3 is also installed (optional; OCR uses tesseract.js, D-082).
 - IaC (`infra/terraform`, `docs/INFRA.md`, D-115) is written, never applied. Going further needs AWS
   accounts (staging, production) with a BAA, a state bucket, domain + ACM certificate, SES and secret
   values; a CI staging deploy also needs Dockerfiles and a GitHub OIDC role.
