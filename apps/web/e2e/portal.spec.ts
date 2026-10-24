@@ -7,6 +7,8 @@ const CLIENT_USER = 'client.user@acme.example';
 const CLIENT_ADMIN = 'client.admin@acme.example';
 const MATTER = `Jacobs v. Riverside Logistics (synthetic ${Date.now()})`;
 const FILE = 'synthetic-records-300p.pdf';
+/** a submitted case, wherever the pipeline has got to by then */
+const PAST_SUBMIT = /Submitted|Processing|In review/;
 
 // Signed in once per account (the per-IP auth rate limit is shared with the other specs).
 test.describe.configure({ mode: 'serial' });
@@ -117,7 +119,8 @@ test('portal: the case list finds the case; the dashboard counts it', async () =
   await page.getByLabel('Search matter, reference or case number').fill('ACME-PI-E2E');
   await page.getByRole('button', { name: 'Search' }).click();
   const row = page.getByRole('row').filter({ hasText: MATTER });
-  await expect(row).toContainText('Submitted');
+  // the worker's pipeline may already have moved it on (M5)
+  await expect(row).toContainText(PAST_SUBMIT);
   await page.getByLabel('Status').selectOption('draft');
   await expect(page.getByRole('row').filter({ hasText: MATTER })).toHaveCount(0);
 
@@ -125,7 +128,7 @@ test('portal: the case list finds the case; the dashboard counts it', async () =
     .getByRole('navigation', { name: 'Portal' })
     .getByRole('link', { name: 'Dashboard' })
     .click();
-  await expect(page.getByRole('list', { name: 'Open cases by status' })).toContainText('Submitted');
+  await expect(page.getByRole('list', { name: 'Open cases by status' })).toContainText(PAST_SUBMIT);
 });
 
 test('portal: client admin sees the case, invites a colleague and pays an invoice by card', async ({

@@ -42,3 +42,54 @@ export async function syntheticRecordPdf(opts: { pages: number; padBytes?: numbe
   const bytes = await pdf.save({ useObjectStreams: false });
   return { bytes, sha256: createHash('sha256').update(bytes).digest('hex') };
 }
+
+/**
+ * SYNTHETIC case file for the M5 DoD (upload → pipeline → review): one page per record type, with
+ * dates of service, providers and coded terms the mock adapters know. The billing page carries no
+ * clinical event. Invented names and facilities only.
+ */
+export const SYNTHETIC_CASE_PAGES: string[][] = [
+  [
+    'EMERGENCY DEPARTMENT RECORD',
+    'Facility: Lakeside General Hospital (synthetic)',
+    'Patient: Ramiro608 Jacobs452   DOB: 07/19/1984',
+    'Date of Service: 01/05/2025',
+    'Attending: Dr. Maya Synthetic, MD',
+    'Chief complaint: low back pain after motor vehicle collision.',
+    'Diagnosis: lumbar radiculopathy',
+  ],
+  ['LABORATORY RESULTS', 'Collected: 2025-02-01', 'Hemoglobin A1c 5.4 %  reference range 4.0-5.6'],
+  [
+    'RADIOLOGY REPORT - MRI LUMBAR SPINE',
+    'Facility: Lakeside Imaging Center (synthetic)',
+    'Date of Service: 02/10/2025',
+    'Impression: L4-L5 disc herniation with lumbar radiculopathy.',
+  ],
+  [
+    'OFFICE VISIT - RIVERSIDE ORTHOPAEDICS',
+    'Facility: Riverside Orthopaedic Clinic',
+    'Date of Service: 03/14/2025',
+    'Seen by: Dr. Alan Synthetic, MD',
+    'Diagnoses: 1. Lumbar radiculopathy 2. Essential hypertension',
+    'Medications: gabapentin 300 mg',
+  ],
+  [
+    'PHYSICAL THERAPY PROGRESS NOTE',
+    'Date of Service: 04/02/2025',
+    'Therapist: Sam Synthetic, PT',
+    'Lumbar stabilisation exercises; pain improved.',
+  ],
+  ['ITEMIZED STATEMENT OF CHARGES', 'Account SYN-0001', 'Total charges: $1,234.00', 'Amount due'],
+];
+
+export async function syntheticCasePdf() {
+  const pdf = await PDFDocument.create();
+  pdf.setTitle('Synthetic case records (test data)');
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  for (const lines of SYNTHETIC_CASE_PAGES) {
+    const page = pdf.addPage([612, 792]);
+    page.drawText('SYNTHETIC TEST RECORD - NOT A REAL PATIENT', { x: 50, y: 760, size: 9, font });
+    lines.forEach((line, i) => page.drawText(line, { x: 50, y: 730 - i * 18, size: 11, font }));
+  }
+  return pdf.save({ useObjectStreams: false });
+}

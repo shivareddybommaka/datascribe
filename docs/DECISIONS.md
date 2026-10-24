@@ -721,9 +721,13 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
   production check "needs `CLAMAV_HOST`" now also runs in the worker (the API keeps its check since
   both read the same env).
 - E2E runs the worker too (Playwright waits for "worker started"): Redis DB 1, prefix
-  `e2e-<apiPort>`, no Prisma statement cache (global setup drops the schema after servers start),
-  `PIPELINE_START_CASES=false` so the portal specs still see "Submitted"; the M5 DoD spec (step 6)
-  runs the whole pipeline.
+  `e2e-<apiPort>`, no Prisma statement cache (global setup drops the schema after servers start).
+  The whole pipeline runs there: `pipeline.spec.ts` is the M5 DoD (upload → scan → all stages →
+  `in_review`, every chronology entry citing a page of the upload; it reads the stored, encrypted
+  deliverables through `apps/api/test/pipeline-check.ts`). `PIPELINE_START_CASES=false` stays as a
+  switch to run scans only.
+- Pipeline status changes write `case.status` system audit rows (`{ from, to, by: 'pipeline' }`) in
+  the same transaction as the compare-and-set, so the portal timeline shows Processing / In review.
 
 ## D-100 — Absolute session lifetime and MFA re-check on refresh (audit M5, M10, 2026-10-24)
 

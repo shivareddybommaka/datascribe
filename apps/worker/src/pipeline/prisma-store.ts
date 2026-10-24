@@ -192,11 +192,29 @@ export function prismaPipelineStore(prisma: PrismaClient): PipelineStore {
     },
 
     async transitionCase(caseId, from, to) {
-      const r = await prisma.case.updateMany({
-        where: { id: caseId, status: { in: [...from] } },
-        data: { status: to },
+      return prisma.$transaction(async (tx) => {
+        const c = await tx.case.findUnique({
+          where: { id: caseId },
+          select: { status: true, organizationId: true },
+        });
+        if (!c || !from.includes(c.status as CaseState)) return false;
+        const r = await tx.case.updateMany({
+          where: { id: caseId, status: c.status },
+          data: { status: to },
+        });
+        if (r.count !== 1) return false;
+        // the case's status timeline is built from these rows (D-073); no actor: the system did it
+        await tx.auditLog.create({
+          data: {
+            action: 'case.status',
+            entity: 'Case',
+            entityId: caseId,
+            organizationId: c.organizationId,
+            metadata: { from: c.status, to, by: 'pipeline' },
+          },
+        });
+        return true;
       });
-      return r.count === 1;
     },
   };
 }

@@ -33,7 +33,7 @@ export const caseJobId = (caseId: string, updatedAt: Date) =>
   `case-${caseId}-${updatedAt.getTime()}`;
 
 export interface DispatchOptions {
-  /** start the pipeline for submitted cases (off only in the portal e2e, D-081) */
+  /** start the pipeline for submitted cases (`PIPELINE_START_CASES=false`: scan uploads only) */
   startCases: boolean;
   batch?: number;
 }

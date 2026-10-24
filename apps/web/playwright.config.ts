@@ -25,7 +25,9 @@ const webUrl = `http://localhost:${E2E.webPort}`;
 const workerDbUrl = new URL(E2E.dbUrl);
 workerDbUrl.searchParams.set('statement_cache_size', '0');
 
-const PHI_KEY = Buffer.alloc(32, 7).toString('base64');
+/** e2e-only PHI key; the pipeline spec decrypts the stored deliverables with it */
+export const E2E_PHI_KEY = Buffer.alloc(32, 7);
+const PHI_KEY = E2E_PHI_KEY.toString('base64');
 // local SeaweedFS with buckets of its own (created at API startup), 5 MiB parts
 const S3_ENV = {
   ...TEST_S3,
@@ -91,8 +93,6 @@ export default defineConfig({
         SMTP_PORT: '1025',
         LOG_LEVEL: 'info',
         DISPATCH_INTERVAL_MS: '500',
-        // the portal specs check the "Submitted" state; the M5 DoD spec runs the whole pipeline
-        PIPELINE_START_CASES: 'false',
         ...S3_ENV,
       },
     },

@@ -13,6 +13,10 @@
   `submitted → processing`. A DB-to-queue dispatcher replaces the API's background scan and its
   startup resume. E2E now starts the worker. New env: `QUEUE_PREFIX`, `DISPATCH_INTERVAL_MS`,
   `PIPELINE_START_CASES`; the worker honours the DB index in `REDIS_URL`.
+- **M5 DoD e2e** (`e2e/pipeline.spec.ts`): a synthetic six-record PDF goes upload → scan → all
+  stages → `in_review`; index, chronology and summary are stored encrypted, chronology dated and in
+  order, every entry citing a page of the upload. Pipeline status changes now appear on the case
+  timeline (`case.status` audit rows).
 
 ## M10 part 1 — Open security findings (2026-10-24, branch `sentinel/m10`)
 
