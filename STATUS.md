@@ -6,19 +6,19 @@ Remote: https://github.com/shivareddybommaka/datascribe (private, deploy key, ho
 `github-datascribe`). Infra on Colima, all bound to 127.0.0.1: Postgres 16 (:5433; :5432 is Shiva's
 existing CRM, never touch), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025). CMS DB `datascribe_cms`.
 
-| Milestone                     | State                              | Notes                                                                                           |
-| ----------------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------------- |
-| M0 Foundation                 | done                               |                                                                                                 |
-| M1 Auth + RBAC                | done                               | security fixes from the audit applied                                                           |
-| M2 Admin console              | done (merged from `admin/m2`)      | custom role takes effect without restart; audit M2 + M4 fixed; D-060..D-064                     |
-| M3 Website + CMS              | done (merged from `storefront/m3`) | Lighthouse ≥ 90 not measured yet (needs Lighthouse install)                                     |
-| M4 Portal cases + uploads     | done (merged from `portal/m4`)     | DoD test green (300-page PDF, interrupted + resumed); D-070..D-077                              |
-| M5 Pipeline                   | done (master)                      | DoD e2e green (upload → 7 stages → in_review, all cited); notify; Tesseract OCR (D-082)         |
-| M6 Workspace + QA + delivery  | **next (master)**                  |                                                                                                 |
-| M7 CRM                        | done                               |                                                                                                 |
-| M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen built in M4; Stripe test key needed for the manual test-card demo     |
-| M9 Notifications + dashboards | in progress (`herald/m9`)          | part 1 + sales, ops, finance dashboards merged (`f72c63a`, D-090..D-094); client dashboard next |
-| M10 Hardening                 | in progress (`sentinel/m10`)       | parts 1, 2a, 2b, 3a merged (D-100..D-115; Terraform files in `infra/terraform`, not applied)    |
+| Milestone                     | State                              | Notes                                                                                                      |
+| ----------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| M0 Foundation                 | done                               |                                                                                                            |
+| M1 Auth + RBAC                | done                               | security fixes from the audit applied                                                                      |
+| M2 Admin console              | done (merged from `admin/m2`)      | custom role takes effect without restart; audit M2 + M4 fixed; D-060..D-064                                |
+| M3 Website + CMS              | done (merged from `storefront/m3`) | Lighthouse ≥ 90 not measured yet (needs Lighthouse install)                                                |
+| M4 Portal cases + uploads     | done (merged from `portal/m4`)     | DoD test green (300-page PDF, interrupted + resumed); D-070..D-077                                         |
+| M5 Pipeline                   | done (master)                      | DoD e2e green (upload → 7 stages → in_review, all cited); notify; Tesseract OCR (D-082)                    |
+| M6 Workspace + QA + delivery  | **next (master)**                  |                                                                                                            |
+| M7 CRM                        | done                               |                                                                                                            |
+| M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen built in M4; Stripe test key needed for the manual test-card demo                |
+| M9 Notifications + dashboards | in progress (`herald/m9`)          | part 1 + sales, ops, finance dashboards merged (`f72c63a`, D-090..D-094); client dashboard next            |
+| M10 Hardening                 | in progress (`sentinel/m10`)       | parts 1–3a merged; on branch: 3b Dockerfiles (D-116), 4a KMS-only prod + axe WCAG (D-117/118); Sentry next |
 
 Tests on `main` (2026-10-24 17:10, after the M9 ops/finance + M10 part 3a merges and M5b step 7):
 format, lint, typecheck, unit/API tests and build green (API 322, worker 57, web 57, scan 6);
@@ -61,8 +61,9 @@ ledger D-040+, pipeline D-050+, herald D-090+, sentinel D-100+.
 
 ## Approved by Shiva (2026-10-24, "approve all"), to build
 
-1. Production refuses to start unless `S3_SSE=aws:kms` (sentinel).
-2. Add `@axe-core/playwright` (dev) and a WCAG check in the e2e suite (sentinel).
+1. Production refuses to start unless `S3_SSE=aws:kms` (sentinel). ✅ part 4a on `sentinel/m10` (D-117)
+2. Add `@axe-core/playwright` (dev) and a WCAG check in the e2e suite (sentinel). ✅ part 4a on
+   `sentinel/m10` (D-118): no violations found on the checked pages.
 3. Add the Sentry SDKs (API, worker, web): off unless `SENTRY_DSN` is set; scrub PHI fields, request
    bodies, cookies and auth headers in `beforeSend` (sentinel).
 4. Retention / hard-delete job per §4.4, audited, synthetic data only locally (master, after M6
@@ -101,7 +102,10 @@ rate limits, lockout and MFA. Run mode: on demand.
 - CI result on GitHub Actions after the format fix (agent can't read Actions with the deploy key).
 - IaC (`infra/terraform`, `docs/INFRA.md`, D-115) is written, never applied. Going further needs AWS
   accounts (staging, production) with a BAA, a state bucket, domain + ACM certificate, SES and secret
-  values; a CI staging deploy also needs Dockerfiles and a GitHub OIDC role.
+  values; a CI staging deploy also needs a GitHub OIDC role per account (Dockerfiles done, D-116).
+- M10 (sentinel) part 3b: OK to build images in CI for X86_64 (the Terraform default) or switch
+  Fargate to ARM64 to match the build Mac? Shrink images (drop the auto-installed Prisma CLI peer,
+  ~150 MB) now or later?
 - M9 finance dashboard (D-094): should MRR count trialing / past-due subscriptions (matches the
   existing finance overview now)? OK to show client firm names in "revenue by client"?
 - Next's e2e run rewrites `apps/web/next-env.d.ts` / `tsconfig.json` with the port: master fixes this
@@ -132,4 +136,6 @@ IaC work and Shiva's call. New env with safe defaults: `RATE_LIMIT_ACCOUNT`, `TR
 - Ask Datascribe for an SVG logo.
 - App gaps found by the IaC work (D-115): mailer has no SMTP login (SES), invoice PDFs are written to
   local disk (lost on Fargate), API still requires `CLAMAV_HOST` in production though the worker scans,
-  API and Terraform describe bucket encryption differently, no Dockerfiles yet.
+  API and Terraform describe bucket encryption differently (production now needs `aws:kms`, D-117).
+- WCAG: axe covers the public pages, sign-in and one portal + one console page (D-118); extend it to
+  the other app pages and do a manual AA review (keyboard, focus order, screen reader).

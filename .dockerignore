@@ -1,0 +1,54 @@
+# Build context for apps/*/Dockerfile (D-116). Secrets, local state and build output never enter it.
+
+# Secrets and local environment
+**/.env
+**/.env.*
+!.env.example
+**/*.pem
+**/*.key
+**/*.p12
+
+# Version control, other worktrees, agent and editor state
+.git
+.worktrees
+.claude
+.vscode
+.idea
+
+# Dependencies and build output (rebuilt inside the image)
+**/node_modules
+**/dist
+**/.next
+**/.next-dev
+**/.next-e2e-*
+**/.turbo
+**/*.tsbuildinfo
+packages/db/generated
+
+# Tests and their artifacts (Next type-checks every .ts under apps/web, and the e2e specs import
+# API test helpers that need dev-only packages)
+apps/*/test
+apps/web/e2e
+apps/web/playwright.config.ts
+apps/api/load
+**/vitest.config.ts
+**/coverage
+**/test-results
+**/playwright-report
+**/blob-report
+
+# Local data
+.data
+apps/cms/media
+
+# Infrastructure state and per-environment settings
+infra/terraform/.terraform
+**/*.tfstate
+**/*.tfstate.*
+**/*.tfvars
+**/*.tfplan
+**/*.backend.hcl
+
+# Misc
+**/*.log
+**/.DS_Store

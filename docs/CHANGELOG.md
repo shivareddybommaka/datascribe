@@ -1,5 +1,20 @@
 # Changelog
 
+## M10 part 4a — KMS-only production storage, WCAG check (2026-10-24, branch `sentinel/m10`)
+
+Both approved by Shiva on 2026-10-24. Design notes: D-117, D-118.
+
+- **Production refuses to start unless `S3_SSE=aws:kms`** (D-117): the rule sits in the shared
+  deploy profile (`productionViolations`), so the API's env schema and the worker's new
+  `assertWorkerEnv` (`apps/worker/src/env.ts`) both apply it. Unset (= AES256), `AES256` and `none`
+  are refused; `S3_SSE_KMS_KEY_ID` stays optional. Staging (SeaweedFS, `S3_SSE=none`) and local
+  development are unchanged. Unit tests in `packages/shared`, `apps/api`, `apps/worker`.
+- **WCAG 2.1 AA check in e2e** (D-118): `@axe-core/playwright` (dev) and `apps/web/e2e/a11y.spec.ts`
+  run axe (wcag2a/aa, wcag21a/aa) on the 7 public pages, the home page at 375 px, staff and client
+  sign-in, the portal dashboard and the ops console dashboard. Serious/critical violations fail the
+  test. Found none; the hero band's contrast (axe can't measure text on a gradient) was checked by
+  hand: ≥ 5:1. A self-test proves the check fails on a missing `alt`.
+
 ## Local staging behind a Cloudflare tunnel (2026-10-24, branch `launchpad/staging`)
 
 Staging copy on the Mac Studio at `https://datascribe.stayspot.app` (Shiva's own tunnel to
@@ -95,6 +110,22 @@ infra/staging/cloudflared.yml run --token-file .env.tunnel-token` (token file gi
   via `@tesseract.js-data/eng`, nothing downloaded at runtime); scanned PDF pages are rendered at
   200 dpi with pdf.js on `@napi-rs/canvas`. `OCR_PROVIDER=mock` (the default) keeps low-text pages
   counted in `needsOcr`. A test OCRs a synthetic scanned PDF page and an image upload for real.
+
+## M10 part 3b — Container images (2026-10-24, branch `sentinel/m10`)
+
+Design notes: D-116. **Built locally only: nothing pushed or deployed.**
+
+- **Dockerfiles** for api, web and worker (`apps/*/Dockerfile`) and a root `.dockerignore`:
+  multi-stage, Node 22 slim pinned by digest, production files only, non-root `node` user, no
+  secrets; api on 4000 with a `HEALTHCHECK` on `/api/v1/health`, web on 3010 (Next standalone),
+  worker with no port. A `migrate` target (Prisma CLI + migrations) for the one-off migration task.
+- `pnpm build` for api and worker now makes a bundle that runs on plain Node (`tsup.node.ts`:
+  workspace packages inlined, npm packages and the Prisma client external); before, `dist/` still
+  imported TypeScript source. Web builds with `output: 'standalone'`.
+- Terraform: migration task on its own `image_migrate` (ECR repo `migrate`) with
+  `prisma migrate deploy`; the API task definition repeats the image's health check.
+- `apps/api/test/infra-docker.test.ts`: non-root user, no secret-like `ENV`/`ARG`, no port 3000 /
+  5432, `.dockerignore` entries, ports / commands / health path / migrate command match Terraform.
 
 ## M10 part 3a — Infrastructure as code (2026-10-24, branch `sentinel/m10`)
 

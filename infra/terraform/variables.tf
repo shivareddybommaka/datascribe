@@ -156,6 +156,15 @@ variable "image_worker" {
   }
 }
 
+variable "image_migrate" {
+  description = "Migration image (apps/api/Dockerfile --target migrate: Prisma CLI + migrations), pinned by digest."
+  type        = string
+  validation {
+    condition     = can(regex("@sha256:[0-9a-f]{64}$", var.image_migrate))
+    error_message = "Pin images by digest (audit L12)."
+  }
+}
+
 variable "image_clamav" {
   description = "ClamAV sidecar for the worker's virus scan stage (same digest as docker-compose.yml)."
   type        = string
@@ -220,9 +229,9 @@ variable "worker_memory" {
 }
 
 variable "migrate_command" {
-  description = "Command of the one-off migration task (API image, migrator DB role, D-110)."
+  description = "Command of the one-off migration task (migrate image, migrator DB role, D-110). Same as the image's CMD."
   type        = list(string)
-  default     = ["pnpm", "--filter", "@datascribe/db", "migrate:deploy"]
+  default     = ["/app/node_modules/.bin/prisma", "migrate", "deploy"]
 }
 
 variable "enable_ecs_exec" {

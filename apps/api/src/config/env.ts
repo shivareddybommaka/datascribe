@@ -192,15 +192,9 @@ export const EnvSchema = z
         message: 'A real SUMMARY_PROVIDER in production requires PHI_LLM_BAA_CONFIRMED=true',
       });
     }
-    // §10: documents are encrypted at rest and virus-scanned for real in production. Staging
-    // (synthetic data on the Mac) may use local SeaweedFS without SSE and the mock scanner.
-    if (production && env.S3_SSE === 'none') {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['S3_SSE'],
-        message: 'production needs server-side encryption (AES256 or aws:kms)',
-      });
-    }
+    // §10: documents are encrypted at rest (S3_SSE=aws:kms only, D-117, checked by
+    // deployProfileIssues above for the worker too) and virus-scanned for real in production.
+    // Staging (synthetic data on the Mac) may use local SeaweedFS without SSE and the mock scanner.
     if (production && !env.CLAMAV_HOST) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

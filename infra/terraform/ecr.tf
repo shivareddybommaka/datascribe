@@ -1,7 +1,7 @@
 # Image repositories CI pushes to. Tags are immutable and images are referenced by digest anyway.
 
 resource "aws_ecr_repository" "app" {
-  for_each             = toset(["api", "web", "worker"])
+  for_each             = toset(["api", "web", "worker", "migrate"])
   name                 = "${local.name}/${each.key}"
   image_tag_mutability = "IMMUTABLE"
 

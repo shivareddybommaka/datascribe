@@ -19,7 +19,7 @@ run before the first apply.
 | `redis.tf`   | ElastiCache Redis 7, TLS required in transit, KMS at rest, `noeviction` (BullMQ), failover when `redis_replicas > 0`.                                                                       |
 | `s3.tf`      | `<prefix>-documents` and `<prefix>-deliverables`: SSE-KMS by default, versioning, all public access blocked, no ACLs, TLS-only policy, old versions expire. ALB access-log bucket.          |
 | `secrets.tf` | Empty Secrets Manager entries for every app secret. Terraform never holds a value.                                                                                                          |
-| `ecr.tf`     | Image repositories for api, web, worker (immutable tags, scan on push).                                                                                                                     |
+| `ecr.tf`     | Image repositories for api, web, worker, migrate (immutable tags, scan on push).                                                                                                            |
 | `alb.tf`     | Internet-facing ALB: HTTPS 443 with the ACM certificate (TLS 1.3/1.2 policy), HTTP 80 redirects. `/api/v1/*` to the API, the rest to Next.                                                  |
 | `ecs.tf`     | Fargate cluster; services api (:4000), web (:3010), worker (+ ClamAV sidecar); a one-off `migrate` task. Private subnets, no public IPs, least-privilege task roles.                        |
 | `logs.tf`    | CloudWatch log groups per service, KMS-encrypted, `log_retention_days`.                                                                                                                     |
@@ -64,8 +64,9 @@ Edit both copied files first (every `<placeholder>`). They are git-ignored. Comm
 First apply: keep `*_desired_count = 0`. It creates the network, data stores, empty secrets and the
 repositories. Then:
 
-1. CI builds and pushes the three images to the ECR URLs in the outputs; put their digests in the
-   tfvars (`image_api`, `image_web`, `image_worker`).
+1. CI builds and pushes the four images (see [Container images](#container-images)) to the ECR URLs
+   in the outputs; put their digests in the tfvars (`image_api`, `image_web`, `image_worker`,
+   `image_migrate`).
 2. Create the D-110 roles: run `packages/db/sql/app-roles.sql` as the RDS master user (credentials in
    the secret from the `db_master_secret_arn` output), following `docs/DB-ROLES.md`. Needs a host
    inside the VPC (for example a task with `enable_ecs_exec = true`), since the database has no
@@ -88,9 +89,37 @@ repositories. Then:
 5. Set the desired counts (1 or more) and apply again. Point `app_domain` at the `alb_dns_name`
    output.
 
-Each release: push images, run the migration task with the new API image, update the digests,
-`plan`, `apply`. A staging deploy from CI (§12 M10 DoD) is the next part and needs the Dockerfiles and
-an AWS role for GitHub Actions (OIDC), both Shiva's call.
+Each release: push images, run the migration task with the new migrate image, update the digests,
+`plan`, `apply`. A staging deploy from CI (§12 M10 DoD) is the next part and needs an AWS role for
+GitHub Actions (OIDC), Shiva's call.
+
+## Container images
+
+Design notes: D-116. Built from the repo root (`.dockerignore` keeps `.env*`, `.git`, worktrees,
+`node_modules`, build output, test artifacts and Terraform state out of the context). Each final
+stage runs as the unprivileged `node` user with production files only and no secrets.
+
+| Image   | Dockerfile                             | Runs                                     | Port | Health                  |
+| ------- | -------------------------------------- | ---------------------------------------- | ---- | ----------------------- |
+| api     | `apps/api/Dockerfile`                  | `node dist/server.js` (tsup bundle)      | 4000 | `GET /api/v1/health`    |
+| web     | `apps/web/Dockerfile`                  | `node apps/web/server.js` (standalone)   | 3010 | none (ALB checks `/`)   |
+| worker  | `apps/worker/Dockerfile`               | `node dist/index.js` (tsup bundle)       | none | none (ClamAV sidecar)   |
+| migrate | `apps/api/Dockerfile --target migrate` | `prisma migrate deploy` (`DATABASE_URL`) | none | one-off task, exit code |
+
+Build locally (account `nova`, repo root, Colima running; needs network for the base image, apt,
+npm and Prisma engines; nothing is pushed):
+
+```
+docker build -f apps/api/Dockerfile -t datascribe-api:local .
+docker build -f apps/api/Dockerfile --target migrate -t datascribe-migrate:local .
+docker build -f apps/worker/Dockerfile -t datascribe-worker:local .
+docker build -f apps/web/Dockerfile --build-arg API_URL=http://localhost:4000 -t datascribe-web:local .
+```
+
+The web image bakes `API_URL` into Next's `/api/v1` rewrite at build time; CI should pass the
+environment's `https://<app_domain>`. Images run on the build machine's architecture; build for
+`cpu_architecture` (X86_64 by default) in CI. `apps/api/test/infra-docker.test.ts` checks the
+Dockerfiles against the task definitions in every test run.
 
 ## Destroying
 

@@ -181,7 +181,7 @@ describe('staging behind the tunnel (D-121)', () => {
     const production = {
       ...staging,
       DEPLOY_ENV: 'production',
-      S3_SSE: 'AES256',
+      S3_SSE: 'aws:kms',
       CLAMAV_HOST: 'localhost',
       PAYMENT_GATEWAY: 'stripe',
       STRIPE_SECRET_KEY: 'sk_test_x',
