@@ -1,6 +1,15 @@
-import { redirect } from 'next/navigation';
+'use client';
 
-/** Only the sales dashboard so far (M9 part 2); ops, finance and client follow. */
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
+import { useCan } from '@/components/auth';
+
+/** Opens the first dashboard the user may see (ops, then sales); finance and client follow. */
 export default function Dashboards() {
-  redirect('/console/dashboards/sales');
+  const router = useRouter();
+  const ops = useCan('dashboard_ops:view');
+  useEffect(() => {
+    router.replace(ops ? '/console/dashboards/ops' : '/console/dashboards/sales');
+  }, [ops, router]);
+  return null;
 }
