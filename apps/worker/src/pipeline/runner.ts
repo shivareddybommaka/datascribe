@@ -22,10 +22,13 @@ import {
 import { extractEvent } from './extract-events';
 import { extractImagePage, extractPdfPages, type ExtractResult } from './extract-text';
 
-/** Stages this runner processes. `scan` stays in the API until step 4 (D-072). */
-export type RunnerStage = Exclude<PipelineQueue, 'scan'>;
-export const RUNNER_STAGES = PIPELINE_QUEUES.filter((q): q is RunnerStage => q !== 'scan');
-export const FIRST_RUNNER_STAGE: RunnerStage = 'extract';
+/** Every §7 stage, stage 1 (scan) included (D-081). */
+export type RunnerStage = PipelineQueue;
+export const RUNNER_STAGES: readonly RunnerStage[] = PIPELINE_QUEUES;
+export const FIRST_RUNNER_STAGE: RunnerStage = 'scan';
+
+/** Outcome of scanning one document (Document.scanStatus after the scan). */
+export type ScanOutcome = 'pending' | 'clean' | 'infected' | 'error';
 
 export type CaseState =
   | 'draft'
@@ -42,6 +45,13 @@ export type CaseState =
 
 /** Case states in which pipeline stages run; anything else (cancelled, on_hold…) stops the chain. */
 export const RUNNABLE_STATES: readonly CaseState[] = ['submitted', 'processing'];
+
+/**
+ * Stage 1 only starts a submitted case and claims it (`submitted → processing`), so a duplicate
+ * scan job for a case that is already being processed ends there instead of starting a second chain.
+ */
+const runnableIn = (stage: RunnerStage): readonly CaseState[] =>
+  stage === 'scan' ? ['submitted'] : RUNNABLE_STATES;
 
 export const DELIVERABLE_TYPES = ['index', 'chronology', 'summary'] as const;
 export type PipelineDeliverable = (typeof DELIVERABLE_TYPES)[number];
@@ -95,6 +105,8 @@ export interface PipelineStore {
   getCase(caseId: string): Promise<CaseRecord | null>;
   /** uploaded, clean documents of the case, in upload order */
   listDocuments(caseId: string): Promise<DocumentRecord[]>;
+  /** ids of the case's uploaded documents still waiting for their virus scan */
+  listUnscanned(caseId: string): Promise<string[]>;
   startJob(caseId: string, stage: PipelineQueue, attempt: number): Promise<string>;
   finishJob(jobId: string, outcome: { ok: true } | { ok: false; error: string }): Promise<void>;
   /** replaces the document's pages and sets its page count */
@@ -127,6 +139,8 @@ export interface PipelineLogger {
 export interface PipelineDeps {
   store: PipelineStore;
   phiKey: Buffer;
+  /** stage 1 for one document: hash, page count, virus scan, quarantine (`@datascribe/scan`) */
+  scanDocument(documentId: string): Promise<ScanOutcome>;
   readObject(s3Key: string): Promise<Uint8Array>;
   ocr: OcrProvider;
   renderPage?: (data: Uint8Array, pageNumber: number) => Promise<Buffer | null>;
@@ -169,9 +183,27 @@ const asRecordType = (v: string | null): RecordType =>
 type Processor = (c: CaseRecord, deps: PipelineDeps) => Promise<Record<string, number>>;
 
 const PROCESSORS: Record<RunnerStage, Processor> = {
+  async scan(c, deps) {
+    // Uploads are normally scanned as they complete (the dispatcher); this catches any left over.
+    const stats = { scanned: 0, clean: 0, infected: 0, failed: 0, busy: 0 };
+    for (const id of await deps.store.listUnscanned(c.id)) {
+      const outcome = await deps.scanDocument(id);
+      stats.scanned++;
+      if (outcome === 'clean') stats.clean++;
+      else if (outcome === 'infected') stats.infected++;
+      else if (outcome === 'error') stats.failed++;
+      else stats.busy++;
+    }
+    // a scan of the same file is still running (its upload job): retry rather than leave it out
+    if (stats.busy > 0) throw new Error('Documents are still being scanned');
+    // Infected or unscannable files are left out (never processed); nothing clean left = a failure.
+    if ((await deps.store.listDocuments(c.id)).length === 0) {
+      throw new Error('No clean documents to process');
+    }
+    return stats;
+  },
+
   async extract(c, deps) {
-    // Step 4 moves this to the scan stage; until then the first stage starts processing.
-    await deps.store.transitionCase(c.id, ['submitted'], 'processing');
     const stats = { documents: 0, pages: 0, ocrPages: 0, needsOcr: 0 };
     for (const doc of await deps.store.listDocuments(c.id)) {
       const data = await deps.readObject(doc.s3Key);
@@ -311,7 +343,7 @@ export async function runStage(
   deps: PipelineDeps,
 ): Promise<StageResult> {
   const c = await deps.store.getCase(data.caseId);
-  if (!c || !RUNNABLE_STATES.includes(c.status)) {
+  if (!c || !runnableIn(stage).includes(c.status)) {
     deps.log.info(
       { stage, caseId: data.caseId, status: c?.status ?? 'missing' },
       'pipeline stage skipped',
@@ -321,9 +353,12 @@ export async function runStage(
   const jobId = await deps.store.startJob(c.id, stage, ctx.attempt);
   try {
     const stats = await PROCESSORS[stage](c, deps);
+    const claimed =
+      stage !== 'scan' || (await deps.store.transitionCase(c.id, ['submitted'], 'processing'));
     await deps.store.finishJob(jobId, { ok: true });
     deps.log.info({ stage, caseId: c.id, attempt: ctx.attempt, ...stats }, 'pipeline stage done');
-    return { next: nextStage(stage) as RunnerStage | null, stats };
+    if (!claimed) return { next: null, skipped: true, stats };
+    return { next: nextStage(stage), stats };
   } catch (err) {
     const error = jobError(err);
     await deps.store.finishJob(jobId, { ok: false, error });

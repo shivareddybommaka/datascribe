@@ -32,26 +32,6 @@ export function detectFileType(bytes: Uint8Array): UploadMime | null {
   return null;
 }
 
-/** Count TIFF pages by walking the IFD chain. Returns null for malformed files. */
-export function tiffPageCount(b: Uint8Array): number | null {
-  if (b.length < 8) return null;
-  const view = new DataView(b.buffer, b.byteOffset, b.byteLength);
-  const le = b[0] === 0x49;
-  let offset = view.getUint32(4, le);
-  let pages = 0;
-  const seen = new Set<number>();
-  while (offset !== 0) {
-    if (offset + 2 > b.length || seen.has(offset) || pages > 100_000) return null;
-    seen.add(offset);
-    const entries = view.getUint16(offset, le);
-    const next = offset + 2 + entries * 12;
-    if (next + 4 > b.length) return null;
-    pages += 1;
-    offset = view.getUint32(next, le);
-  }
-  return pages;
-}
-
 /**
  * A display name safe to store and show: no path parts, no control characters, bounded length.
  * File names may contain PHI (e.g. a patient name), so they are never logged or audited.

@@ -24,6 +24,9 @@ that area).
   `CMS_DATABASE_URL`, D-030); shared content types/defaults in `packages/site-content`.
 - Parallel E2E: set `E2E_API_PORT`, `E2E_WEB_PORT`, `E2E_DATABASE_URL` (5433, `datascribe_<tree>_e2e`).
 - `packages/db` Prisma schema, migrations, `prisma/seed-lib.ts`. `packages/shared` permissions, CASL, crypto.
+- `apps/worker` BullMQ: pipeline stages in `src/pipeline` (stage 1 virus scan via `packages/scan`),
+  a dispatcher that queues completed uploads and submitted cases from the DB (D-081), billing jobs.
+  E2E starts it too (`E2E_REDIS_URL`, default Redis DB 1, queue prefix `e2e-<apiPort>`).
 
 ## Rules that always apply
 

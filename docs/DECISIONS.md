@@ -581,6 +581,7 @@ encrypted as well (audit L5, D-075).
   failed"). Each result is a system `document.scan` audit row with the scanner and signature names.
 - Until the M5b worker takes this over as pipeline stage 1, the API runs it in the background after
   `/complete` (inline in tests, `Deps.verifyUploads`) and re-runs anything left `pending` at startup.
+  Superseded by D-081: the worker scans, the API only inline in tests.
 - `GET /documents/:id/download-url`: presigned GET, **5 minutes**, `Content-Disposition: attachment`
   (RFC 6266, non-ASCII safe), `Cache-Control: private, no-store`, clean documents only (409
   `scan_pending` / `quarantined` / `scan_failed`), audited `document.download`.
@@ -695,8 +696,34 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
   overwritten while it is an unlocked draft, otherwise a new version is added (QA history stays).
 - The index and chronology are always built, even if the client ordered only a summary: review and
   QA work from them. The summary is built only when ordered.
-- Until step 4 moves scanning into the worker, the extract stage moves the case
-  `submitted → processing` and only clean, uploaded documents are processed.
+- Only clean, uploaded documents are processed. Stage 1 (scan) claims the case (D-081).
+
+## D-081 — Virus scan as pipeline stage 1 in the worker; DB-to-queue dispatcher (M5b, 2026-10-24)
+
+- Scanner, page counting and `verifyDocument` moved from the API to `packages/scan`
+  (`@datascribe/scan`), unchanged in behaviour (D-072: one pass, fails closed, quarantine, audit
+  `document.scan`). The worker runs it; the API calls it only in its tests (`Deps.inlineScan`), so
+  upload tests stay deterministic.
+- **The API writes rows, the worker queues them.** A dispatcher in the worker polls every
+  `DISPATCH_INTERVAL_MS` (2 s) for uploaded `pending` documents → `scan-upload` queue, and
+  `submitted` cases → stage 1 (`scan`). Job ids are deterministic (`upload-<docId>`,
+  `case-<caseId>-<updatedAt ms>`), so a row is never queued twice and nothing is lost when Redis was
+  down at upload/submit time (no API → Redis dependency, no dual write). Startup "resume pending
+  checks" in the API is gone: the dispatcher covers restarts.
+- Uploads are still scanned as they complete (portal shows Ready / Infected before submit). Stage 1
+  scans whatever is still pending, retries while another scan of the same file is running, leaves
+  infected / failed files out, fails with no clean file (→ `on_hold` after the last attempt), and then
+  claims the case `submitted → processing` by compare-and-set. It only starts on `submitted` cases,
+  and a lost claim ends the chain, so duplicate jobs never start a second pipeline.
+- Re-submission (e.g. staff resume an on-hold case to `submitted`) changes `updatedAt`, so it gets a
+  new job. Documents uploaded after the claim are scanned but not in that run; M6 re-runs cover them.
+- Worker Redis: honours the DB index in `REDIS_URL` and a `QUEUE_PREFIX` (default `bull`). The
+  production check "needs `CLAMAV_HOST`" now also runs in the worker (the API keeps its check since
+  both read the same env).
+- E2E runs the worker too (Playwright waits for "worker started"): Redis DB 1, prefix
+  `e2e-<apiPort>`, no Prisma statement cache (global setup drops the schema after servers start),
+  `PIPELINE_START_CASES=false` so the portal specs still see "Submitted"; the M5 DoD spec (step 6)
+  runs the whole pipeline.
 
 ## D-100 — Absolute session lifetime and MFA re-check on refresh (audit M5, M10, 2026-10-24)
 

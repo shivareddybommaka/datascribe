@@ -1,4 +1,5 @@
-import { errorInfo, type Prisma } from '@datascribe/db';
+import type { Prisma } from '@datascribe/db';
+import { verifyDocument } from '@datascribe/scan';
 import { Router, type Request } from 'express';
 import { z } from 'zod';
 import { authenticate, requireAuth, requirePermission } from '../auth/middleware';
@@ -15,7 +16,7 @@ import {
 } from '../lib/filetype';
 import { parse } from '../lib/validate';
 import { UPLOADABLE_STATUSES } from '../services/cases';
-import { documentKey, partCountFor, partSizeFor, verifyDocument } from '../services/documents';
+import { documentKey, partCountFor, partSizeFor } from '../services/documents';
 
 /** §2: signed download URLs live 5 minutes. Part URLs get longer: a slow link uploads 8 MiB. */
 export const DOWNLOAD_URL_TTL_S = 5 * 60;
@@ -248,12 +249,9 @@ export function documentsRouter(deps: Deps): Router {
       ...(detected !== doc.mimeType ? { declaredMimeType: doc.mimeType } : {}),
     });
 
-    if (deps.verifyUploads === 'inline') {
-      await verifyDocument(deps, doc.id);
-    } else {
-      void verifyDocument(deps, doc.id).catch((err: unknown) =>
-        deps.logger.error({ err: errorInfo(err) }, 'verify failed'),
-      );
+    // The worker's scan stage picks up uploaded, pending documents (D-081); tests scan inline.
+    if (deps.inlineScan) {
+      await verifyDocument({ ...deps, scanner: deps.inlineScan }, doc.id);
     }
     const fresh = await prisma.document.findUniqueOrThrow({
       where: { id: doc.id },

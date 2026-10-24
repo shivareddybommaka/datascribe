@@ -17,6 +17,7 @@ import {
   type PipelineDeps,
   type PipelineStore,
   type RunnerStage,
+  type ScanOutcome,
 } from './runner';
 
 // Synthetic records only.
@@ -59,6 +60,8 @@ class MemoryStore implements PipelineStore {
   events: EventRecord[] = [];
   jobs: Job[] = [];
   deliverables: { type: string; version: number; status: string; content: string }[] = [];
+  /** uploaded documents not scanned yet (by id); `docs` holds the clean ones */
+  unscanned: string[] = [];
   private seq = 0;
 
   constructor(
@@ -71,6 +74,9 @@ class MemoryStore implements PipelineStore {
   }
   async listDocuments() {
     return this.docs;
+  }
+  async listUnscanned() {
+    return [...this.unscanned];
   }
   async startJob(caseId: string, stage: string, attempt: number) {
     const id = `job${++this.seq}`;
@@ -164,9 +170,18 @@ function setup(opts: { status?: CaseState; requested?: unknown } = {}) {
   const medical = createMedicalData({ provider: 'mock' });
   const objects: Record<string, Uint8Array> = { 'k/b': new TextEncoder().encode(LAB) };
   const log = { info: vi.fn(), warn: vi.fn() };
+  /** what the scanner reports per document id (default clean) */
+  const scanResults: Record<string, ScanOutcome> = {};
   const deps: PipelineDeps = {
     store,
     phiKey,
+    scanDocument: async (id) => {
+      const outcome = scanResults[id] ?? 'clean';
+      if (outcome === 'pending') return outcome;
+      store.unscanned = store.unscanned.filter((u) => u !== id);
+      if (outcome !== 'clean') store.docs = store.docs.filter((d) => d.id !== id);
+      return outcome;
+    },
     readObject: async (key) => {
       if (key === 'k/a') return syntheticPdf();
       const data = objects[key];
@@ -178,13 +193,13 @@ function setup(opts: { status?: CaseState; requested?: unknown } = {}) {
     summary: new MockSummaryProvider(),
     log,
   };
-  return { store, deps, log };
+  return { store, deps, log, scanResults };
 }
 
 const once = { attempt: 1, maxAttempts: 3 };
 
-async function runAll(deps: PipelineDeps) {
-  let stage: RunnerStage | null = 'extract';
+async function runAll(deps: PipelineDeps, from: RunnerStage = 'scan') {
+  let stage: RunnerStage | null = from;
   const seen: RunnerStage[] = [];
   while (stage) {
     seen.push(stage);
@@ -244,7 +259,7 @@ describe('pipeline runner', () => {
     const { store, deps } = setup();
     await runAll(deps);
     store.kase.status = 'processing';
-    await runAll(deps);
+    await runAll(deps, 'extract');
     expect(store.events).toHaveLength(2);
     expect(store.deliverables.map((d) => d.version)).toEqual([1, 1, 1]);
   });
@@ -266,8 +281,46 @@ describe('pipeline runner', () => {
     });
   });
 
+  it('stage 1 scans what is left, claims the case and leaves infected files out', async () => {
+    const { store, deps, scanResults } = setup();
+    store.unscanned = ['docA', 'docB'];
+    scanResults.docB = 'infected';
+    const r = await runStage('scan', { caseId: 'case1' }, once, deps);
+    expect(r).toMatchObject({ next: 'extract', stats: { scanned: 2, clean: 1, infected: 1 } });
+    expect(store.kase.status).toBe('processing');
+    await runAll(deps, 'extract');
+    expect(store.pages.map((p) => p.documentId)).toEqual(['docA']);
+    expect(store.kase.status).toBe('in_review');
+  });
+
+  it('a duplicate stage-1 job for a case already processing starts no second chain', async () => {
+    const { store, deps } = setup({ status: 'processing' });
+    expect(await runStage('scan', { caseId: 'case1' }, once, deps)).toEqual({
+      next: null,
+      skipped: true,
+    });
+    expect(store.jobs).toHaveLength(0);
+  });
+
+  it('stage 1 retries while a file is still being scanned and fails with nothing clean', async () => {
+    const { store, deps, scanResults } = setup();
+    store.unscanned = ['docA'];
+    scanResults.docA = 'pending';
+    await expect(runStage('scan', { caseId: 'case1' }, once, deps)).rejects.toThrow(
+      /still being scanned/,
+    );
+    expect(store.kase.status).toBe('submitted');
+
+    scanResults.docA = 'error';
+    store.docs = store.docs.filter((d) => d.id === 'docA');
+    await expect(
+      runStage('scan', { caseId: 'case1' }, { attempt: 3, maxAttempts: 3 }, deps),
+    ).rejects.toThrow(/No clean documents/);
+    expect(store.kase.status).toBe('on_hold');
+  });
+
   it('records a failed attempt and only puts the case on hold after the last one', async () => {
-    const { store, deps, log } = setup();
+    const { store, deps, log } = setup({ status: 'processing' });
     store.docs[1]!.s3Key = 'k/missing';
     await expect(
       runStage('extract', { caseId: 'case1' }, { attempt: 1, maxAttempts: 3 }, deps),

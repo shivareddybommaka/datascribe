@@ -8,6 +8,11 @@
   attempt; encrypted `DocumentPage` / `ClinicalEvent` / `Deliverable` writes; last failed attempt puts
   the case `on_hold`; re-runs replace rather than duplicate. The worker reads documents from S3
   (`@aws-sdk/client-s3`, same settings as the API).
+- **Stage 1 scan in the worker** (D-081): scanner + `verifyDocument` moved to `packages/scan`; the
+  worker scans uploads as they complete and, at submit, scans anything left and claims the case
+  `submitted → processing`. A DB-to-queue dispatcher replaces the API's background scan and its
+  startup resume. E2E now starts the worker. New env: `QUEUE_PREFIX`, `DISPATCH_INTERVAL_MS`,
+  `PIPELINE_START_CASES`; the worker honours the DB index in `REDIS_URL`.
 
 ## M10 part 1 — Open security findings (2026-10-24, branch `sentinel/m10`)
 

@@ -2,10 +2,32 @@
 import type { DeliverableType, PrismaClient, ProcessingStage } from '@datascribe/db';
 import type { PipelineQueue } from '../queues';
 import type { EventCode } from './code-events';
+import type { DispatchSource } from './dispatch';
 import type { CaseState, PipelineStore } from './runner';
 
 const toStage = (q: PipelineQueue) => q.replace(/-/g, '_') as ProcessingStage;
 const isoDate = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
+
+export function prismaDispatchSource(prisma: PrismaClient): DispatchSource {
+  return {
+    pendingUploads(limit) {
+      return prisma.document.findMany({
+        where: { uploadedAt: { not: null }, scanStatus: 'pending' },
+        orderBy: { uploadedAt: 'asc' },
+        take: limit,
+        select: { id: true },
+      });
+    },
+    submittedCases(limit) {
+      return prisma.case.findMany({
+        where: { status: 'submitted' },
+        orderBy: { updatedAt: 'asc' },
+        take: limit,
+        select: { id: true, updatedAt: true },
+      });
+    },
+  };
+}
 
 export function prismaPipelineStore(prisma: PrismaClient): PipelineStore {
   return {
@@ -31,6 +53,15 @@ export function prismaPipelineStore(prisma: PrismaClient): PipelineStore {
         orderBy: [{ uploadedAt: 'asc' }, { id: 'asc' }],
         select: { id: true, fileName: true, mimeType: true, s3Key: true, pageCount: true },
       });
+    },
+
+    async listUnscanned(caseId) {
+      const rows = await prisma.document.findMany({
+        where: { caseId, uploadedAt: { not: null }, scanStatus: 'pending' },
+        orderBy: [{ uploadedAt: 'asc' }, { id: 'asc' }],
+        select: { id: true },
+      });
+      return rows.map((r) => r.id);
     },
 
     async startJob(caseId, stage, attempt) {

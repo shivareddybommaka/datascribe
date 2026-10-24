@@ -1,10 +1,9 @@
 import { createHash } from 'node:crypto';
 import { Readable } from 'node:stream';
+import { EICAR, quarantineKey, type VirusScanner } from '@datascribe/scan';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hashPassword } from '../src/lib/password';
-import { EICAR, type VirusScanner } from '../src/lib/scanner';
-import { quarantineKey } from '../src/services/documents';
 import { TEST_PASSWORD } from './constants';
 import { SEED, bearer, buildApp, login, orgId, prisma, uniqueEmail } from './helpers';
 import { syntheticRecordPdf } from './synthetic-pdf';

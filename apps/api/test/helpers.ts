@@ -10,7 +10,7 @@ import { loadEnv } from '../src/config/env';
 import type { Deps, RateLimits } from '../src/context';
 import { createLogger } from '../src/lib/logger';
 import { MemoryMailer } from '../src/lib/mailer';
-import { MockVirusScanner, type VirusScanner } from '../src/lib/scanner';
+import { MockVirusScanner, type VirusScanner } from '@datascribe/scan';
 import { S3DocumentStorage } from '../src/lib/storage';
 import {
   TEST_DATABASE_URL,
@@ -81,8 +81,7 @@ export function buildApp(
     store,
     medical: opts.medical,
     storage,
-    scanner: opts.scanner ?? new MockVirusScanner(),
-    verifyUploads: 'inline',
+    inlineScan: opts.scanner ?? new MockVirusScanner(),
   });
   return { app, mailer, gateway, store, storage, storageReady: ready };
 }
