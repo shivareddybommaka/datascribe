@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   TEMPLATE, not installed (docs/STAGING.md "Run at login"). Runs Datascribe's own staging tunnel
-  for account nova, separate from StaySpot's: its own token, its own config file (never
-  ~/.cloudflared). The token is read from the login Keychain (service datascribe-staging-tunnel),
-  never stored in this file or the repo. Replace __REPO__ with the checkout path before copying it
-  to ~/Library/LaunchAgents.
+  for account nova, separate from StaySpot's, with exactly the command `pnpm staging:tunnel` uses:
+  its own config file (always passed, so cloudflared never reads ~/.cloudflared) and the token
+  from the git-ignored .env.tunnel-token that Shiva writes. Replace __REPO__ with the checkout
+  path before copying it to ~/Library/LaunchAgents.
 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -13,10 +13,16 @@
   <string>app.datascribe.staging-tunnel</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/bin/zsh</string>
-    <string>-c</string>
-    <string>export TUNNEL_TOKEN="$(/usr/bin/security find-generic-password -a nova -s datascribe-staging-tunnel -w)" &amp;&amp; exec /opt/homebrew/bin/cloudflared --config __REPO__/infra/staging/cloudflared.yml tunnel run</string>
+    <string>/opt/homebrew/bin/cloudflared</string>
+    <string>tunnel</string>
+    <string>--config</string>
+    <string>infra/staging/cloudflared.yml</string>
+    <string>run</string>
+    <string>--token-file</string>
+    <string>.env.tunnel-token</string>
   </array>
+  <key>WorkingDirectory</key>
+  <string>__REPO__</string>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>

@@ -330,6 +330,76 @@ export async function startStack(env, { distDir, name = 'staging' }) {
   return { stop, finished };
 }
 
+/**
+ * Datascribe's own staging tunnel (D-126), exactly:
+ *   /opt/homebrew/bin/cloudflared tunnel --config infra/staging/cloudflared.yml run --token-file .env.tunnel-token
+ * from the repo root. --config always: without it cloudflared reads ~/.cloudflared/config.yml
+ * (StaySpot's tunnel). The token file is git-ignored and written by Shiva; this code never reads
+ * or prints it, only checks that it exists, is non-empty and ignored by git.
+ */
+export const CLOUDFLARED = '/opt/homebrew/bin/cloudflared';
+export const TUNNEL_CONFIG = 'infra/staging/cloudflared.yml';
+export const TUNNEL_TOKEN_FILE = '.env.tunnel-token';
+export const TUNNEL_ARGS = [
+  'tunnel',
+  '--config',
+  TUNNEL_CONFIG,
+  'run',
+  '--token-file',
+  TUNNEL_TOKEN_FILE,
+];
+
+/** cloudflared's env: the shell basics only. A TUNNEL_TOKEN / TUNNEL_* variable would override
+ * --token-file or the config, so none is passed on. */
+export function tunnelEnv(source = process.env) {
+  const env = {};
+  for (const key of ['PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TMPDIR', 'LANG', 'TZ']) {
+    if (source[key]) env[key] = source[key];
+  }
+  return env;
+}
+
+export function tunnelProblems(root = ROOT) {
+  const problems = [];
+  if (!fs.existsSync(CLOUDFLARED)) problems.push(`${CLOUDFLARED} not found`);
+  if (!fs.existsSync(path.join(root, TUNNEL_CONFIG))) problems.push(`${TUNNEL_CONFIG} missing`);
+  const token = path.join(root, TUNNEL_TOKEN_FILE);
+  if (!fs.existsSync(token) || fs.statSync(token).size === 0) {
+    problems.push(`${TUNNEL_TOKEN_FILE}: missing or empty (Shiva writes the tunnel token there)`);
+  } else {
+    const ignored = spawnSync('git', ['check-ignore', '-q', TUNNEL_TOKEN_FILE], { cwd: root });
+    if (ignored.status !== 0) problems.push(`${TUNNEL_TOKEN_FILE}: must be git-ignored`);
+  }
+  return problems;
+}
+
+/** Run the tunnel in the foreground until stopped. Resolves with cloudflared's exit code. */
+export async function runTunnel({ webPort = STAGING_WEB_PORT } = {}) {
+  const problems = tunnelProblems();
+  if (problems.length) throw new Error(`Tunnel not started:\n  ${problems.join('\n  ')}`);
+  const mode = fs.statSync(path.join(ROOT, TUNNEL_TOKEN_FILE)).mode & 0o077;
+  if (mode) {
+    process.stderr.write(`[tunnel] ${TUNNEL_TOKEN_FILE} is readable by others: chmod 600 it\n`);
+  }
+  if (await portFree(webPort)) {
+    process.stderr.write(
+      `[tunnel] nothing on :${webPort} yet; start staging (pnpm staging:start)\n`,
+    );
+  }
+  const child = spawn(CLOUDFLARED, TUNNEL_ARGS, {
+    cwd: ROOT,
+    env: tunnelEnv(),
+    stdio: ['ignore', 'inherit', 'inherit'],
+  });
+  writePid('tunnel');
+  const stop = () => child.kill('SIGTERM');
+  process.on('SIGINT', stop);
+  process.on('SIGTERM', stop);
+  const code = await new Promise((resolve) => child.once('exit', (c) => resolve(c ?? 0)));
+  clearPid('tunnel');
+  return code;
+}
+
 const pidFile = (name) => path.join(ROOT, '.data/staging', `${name}.pid`);
 
 export function writePid(name) {

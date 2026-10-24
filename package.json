@@ -23,6 +23,7 @@
     "staging:db:migrate": "node scripts/staging.mjs db:migrate",
     "staging:build": "node scripts/staging.mjs build",
     "staging:start": "node scripts/staging.mjs start",
+    "staging:tunnel": "node scripts/staging.mjs tunnel",
     "staging:stop": "node scripts/staging.mjs stop",
     "staging:smoke": "node scripts/staging-smoke.mjs",
     "infra:up": "docker-compose up -d --wait",

@@ -27,6 +27,9 @@ build | start | stop | smoke`, `docs/STAGING.md` (DB, tunnel and Access setup, r
 - **Open internet, no Access gate** (D-125): staging closes firm sign-up unless
   `STAGING_ALLOW_SIGNUP=true`, requires ClamAV unless `STAGING_ALLOW_MOCK_SCAN=true`, refuses a seed
   password under 20 characters or equal to dev's, and refuses auth limits looser than production's.
+- **Tunnel** (D-126): optional `pnpm staging:tunnel` runs `cloudflared tunnel --config
+infra/staging/cloudflared.yml run --token-file .env.tunnel-token` (token file git-ignored, never
+  read or logged, no `TUNNEL_*` env passed on); `staging:stop` stops it too.
 
 ## M9 part 1 — Notifications (2026-10-24, branch `herald/m9`)
 

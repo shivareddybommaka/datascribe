@@ -162,7 +162,8 @@ Press Ctrl-C in the terminal running `staging:start`, or from another terminal:
 /Users/nova/.local/bin/pnpm staging:stop
 ```
 
-Stop the tunnel with Ctrl-C in its terminal (section 6). With the tunnel down the site shows a
+`staging:stop` also stops a running `staging:tunnel` (section 6); Ctrl-C in its terminal works
+too. With the tunnel down the site shows a
 Cloudflare error page. To take it off the internet for good, delete the public hostname or the
 tunnel in the dashboard.
 
@@ -187,45 +188,47 @@ the open internet and relies on the staging guard rails above. To add a gate lat
 1. Zero Trust → Networks → Tunnels → **Create a tunnel** → **Cloudflared** → name
    `datascribe-staging` → Save.
 2. On the "Install and run a connector" page, **copy the token only**: it's the long string after
-   `--token` in the shown command. **Don't run the shown `cloudflared service install …`
+   `--token` in the shown command. Write it to `.env.tunnel-token` (section 6). **Don't run the shown `cloudflared service install …`
    command**: it installs a system service and could replace the service StaySpot's tunnel uses.
    Don't paste the token into chat, email or the repo.
 3. Next → **Public hostname**: subdomain `datascribe`, domain `stayspot.app`, path empty, service
    type **HTTP**, URL `localhost:3020`. Save the tunnel.
 4. Leave StaySpot's tunnel and its `crm.stayspot.app` hostname as they are.
 
-## 6. Run the tunnel (account nova)
+## 6. Run the tunnel (optional, separate step, account nova)
 
-The token stays in an environment variable for this terminal only. It's never written to a file in
-the repo, and `~/.cloudflared` isn't used: `--config` points at `infra/staging/cloudflared.yml`,
-which holds no secrets.
+The tunnel is a separate step from `staging:start`: without it staging stays local. Its token
+lives in **`.env.tunnel-token`** at the repo root. That file is git-ignored, Shiva writes it
+himself, and no script reads or prints it. `--config infra/staging/cloudflared.yml` is always
+passed: without it, cloudflared would read StaySpot's `~/.cloudflared/config.yml`.
 
-Read the token without echoing it or saving it in shell history (paste it and press Enter):
-
-```
-read -rs "DATASCRIBE_TUNNEL_TOKEN?Datascribe staging tunnel token: "
-```
+Write the token file once. `pbpaste` writes the copied token straight from the clipboard, so it
+never shows on screen or lands in shell history. Then make the file readable by nova only:
 
 ```
-export DATASCRIBE_TUNNEL_TOKEN
-```
-
-Start the tunnel in the foreground (Ctrl-C stops it), with staging already started (section 3):
-
-```
-cloudflared --config infra/staging/cloudflared.yml tunnel run --token "$DATASCRIBE_TUNNEL_TOKEN"
-```
-
-The `--token` argument is visible to other processes on the Mac (`ps`). To avoid that, cloudflared
-also reads the token from the `TUNNEL_TOKEN` variable:
-
-```
-export TUNNEL_TOKEN="$DATASCRIBE_TUNNEL_TOKEN"
+pbpaste > .env.tunnel-token
 ```
 
 ```
-cloudflared --config infra/staging/cloudflared.yml tunnel run
+chmod 600 .env.tunnel-token
 ```
+
+Start the tunnel in the foreground, with staging already started (section 3). Ctrl-C stops it:
+
+```
+/Users/nova/.local/bin/pnpm staging:tunnel
+```
+
+That runs exactly this command from the repo root (it can also be run directly):
+
+```
+/opt/homebrew/bin/cloudflared tunnel --config infra/staging/cloudflared.yml run --token-file .env.tunnel-token
+```
+
+`staging:tunnel` checks that the token file exists, isn't empty and is git-ignored, and warns if
+it's readable by other accounts. It doesn't pass any `TUNNEL_*` variable from the shell to
+cloudflared, because those would override the token file. `pnpm staging:stop` stops the tunnel
+and the stack.
 
 Then open https://datascribe.stayspot.app. You should see the site with the red staging banner
 (and a Cloudflare Access sign-in first, if you added one).
@@ -233,16 +236,9 @@ Then open https://datascribe.stayspot.app. You should see the site with the red 
 ## 7. Optional: run at login (launchd templates, not installed)
 
 `infra/staging/` has two **templates**: `app.datascribe.staging.plist` (the stack) and
-`app.datascribe.staging-tunnel.plist` (the tunnel, token from the login Keychain). Nothing installs
-them. If Shiva wants staging to survive reboots:
-
-Store the token in the login Keychain (it prompts for it, so it stays out of shell history):
-
-```
-security add-generic-password -a nova -s datascribe-staging-tunnel -w
-```
-
-Copy both templates to `~/Library/LaunchAgents`. Replace `__REPO__` with the checkout path and
+`app.datascribe.staging-tunnel.plist`. The tunnel template runs the same command as
+`staging:tunnel`, with the token in `.env.tunnel-token`. Nothing installs them; the default run
+mode is on demand. If Shiva later wants staging to survive reboots, copy both templates to `~/Library/LaunchAgents`. Replace `__REPO__` with the checkout path and
 `__NODE__` with the output of `which node`. Then load them:
 
 ```

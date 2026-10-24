@@ -1250,3 +1250,19 @@ queues.ts`) keeps them; the API and the usage tracker already pass the URL to io
   `STAGING_ALLOW_SIGNUP`, `STAGING_ALLOW_MOCK_SCAN`) when set to true / 1.
 - Run mode stays on demand (`staging:start` / `staging:stop`, tunnel in a terminal); the launchd
   files remain templates.
+
+## D-126 — How the staging tunnel runs (launchpad, 2026-10-24)
+
+- Replaces the tunnel bullet of D-124 (token in an env var / Keychain). The master's command is the
+  only one used, in `pnpm staging:tunnel`, the launchd template and `docs/STAGING.md`:
+  `/opt/homebrew/bin/cloudflared tunnel --config infra/staging/cloudflared.yml run --token-file .env.tunnel-token`
+  from the repo root. `infra/staging/cloudflared.yml` is main's version (merged in).
+- `--config` is always passed; without it cloudflared reads StaySpot's `~/.cloudflared/config.yml`.
+- `.env.tunnel-token` is git-ignored (`.env.*`) and written by Shiva. The script never reads it.
+  It only checks that the file exists, isn't empty and is git-ignored, and warns if it's readable
+  by other accounts.
+- cloudflared gets only the shell basics (PATH, HOME, ...). `TUNNEL_TOKEN` and the other `TUNNEL_*`
+  variables would override `--token-file` or the config, so they're never passed on. Its info-level
+  logs don't contain the token, and the config sets `loglevel: info`.
+- The tunnel is an optional, separate step from `staging:start`; `staging:stop` stops both (pid
+  files under `.data/staging/`).

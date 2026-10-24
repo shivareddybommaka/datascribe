@@ -8,9 +8,12 @@
  *   node scripts/staging.mjs db:seed     seed again (idempotent upserts)
  *   node scripts/staging.mjs build       production build of the web app for staging
  *   node scripts/staging.mjs start       run api + worker + web on 127.0.0.1 (web :3020) until stopped
- *   node scripts/staging.mjs stop        stop a running `start`
+ *   node scripts/staging.mjs tunnel      optional, separate: Datascribe's own Cloudflare tunnel (D-126)
+ *   node scripts/staging.mjs stop        stop a running `start` and `tunnel`
  *
- * `--env-file <path>` picks another env file (default .env.staging). Never touches the tunnel.
+ * `--env-file <path>` picks another env file (default .env.staging). The tunnel runs exactly
+ *   /opt/homebrew/bin/cloudflared tunnel --config infra/staging/cloudflared.yml run --token-file .env.tunnel-token
+ * and the token is never read or printed here.
  */
 import path from 'node:path';
 import {
@@ -22,6 +25,7 @@ import {
   migrateDatabase,
   readEnvFile,
   resetDatabase,
+  runTunnel,
   seedDatabase,
   seedPasswordProblem,
   stagingEnv,
@@ -37,8 +41,13 @@ const DIST_DIR = '.next-staging';
 
 async function main() {
   if (command === 'stop') {
-    console.log(stopRunning() ? 'Stopping staging…' : 'Staging is not running.');
+    console.log(stopRunning('tunnel') ? 'Stopping the tunnel…' : 'The tunnel is not running.');
+    console.log(stopRunning('staging') ? 'Stopping staging…' : 'Staging is not running.');
     return;
+  }
+  if (command === 'tunnel') {
+    // no .env.staging needed: the tunnel only forwards to 127.0.0.1:3020
+    process.exit(await runTunnel());
   }
   const env = stagingEnv(readEnvFile(envFile), { ENV_FILE: path.resolve(ROOT, envFile) });
   assertStaging(env);
@@ -79,7 +88,7 @@ async function main() {
     }
     default:
       console.error(
-        'Usage: node scripts/staging.mjs <check|db:reset|db:migrate|db:seed|build|start|stop> [--env-file .env.staging]',
+        'Usage: node scripts/staging.mjs <check|db:reset|db:migrate|db:seed|build|start|tunnel|stop> [--env-file .env.staging]',
       );
       process.exit(2);
   }

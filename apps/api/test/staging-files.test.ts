@@ -2,6 +2,7 @@
  * Local staging files (D-124): the example env, the runner's own refusals and the launchd /
  * cloudflared templates. Read as text or imported; nothing is started.
  */
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseEnv } from 'node:util';
@@ -147,9 +148,45 @@ describe('launchd and cloudflared templates (D-124)', () => {
     }
   });
 
-  it('the tunnel job reads its token from the Keychain and uses its own config', () => {
+  it('the tunnel job runs the same command as staging:tunnel (D-126)', () => {
     const tunnel = read('infra/staging/app.datascribe.staging-tunnel.plist');
-    expect(tunnel).toContain('security find-generic-password -a nova -s datascribe-staging-tunnel');
-    expect(tunnel).toContain('--config __REPO__/infra/staging/cloudflared.yml tunnel run');
+    const args = [...tunnel.matchAll(/<string>([^<]*)<\/string>/g)].map((m) => m[1]);
+    const cmd = [stagingLib.CLOUDFLARED, ...stagingLib.TUNNEL_ARGS];
+    expect(args.join(' ')).toContain(cmd.join(' '));
+  });
+});
+
+describe('staging tunnel (D-126)', () => {
+  it('always passes --config and reads the token from the git-ignored file', () => {
+    expect([stagingLib.CLOUDFLARED, ...stagingLib.TUNNEL_ARGS].join(' ')).toBe(
+      '/opt/homebrew/bin/cloudflared tunnel --config infra/staging/cloudflared.yml run --token-file .env.tunnel-token',
+    );
+    expect(read('infra/staging/cloudflared.yml')).not.toMatch(/^\s*(tunnel|credentials-file):/m);
+  });
+
+  it('never hands cloudflared a TUNNEL_* variable that would override the token file', () => {
+    const env = stagingLib.tunnelEnv({
+      PATH: '/bin',
+      HOME: '/Users/nova',
+      TUNNEL_TOKEN: 'x',
+      TUNNEL_CRED_CONTENTS: 'y',
+    }) as Record<string, string>;
+    expect(env).toEqual({ PATH: '/bin', HOME: '/Users/nova' });
+  });
+
+  it('the token file is git-ignored and the config file is not', () => {
+    const ignored = (f: string) =>
+      spawnSync('git', ['check-ignore', '-q', f], { cwd: root }).status === 0;
+    expect(ignored('.env.tunnel-token')).toBe(true);
+    expect(ignored('.env.staging')).toBe(true);
+    expect(ignored('.env.staging.example')).toBe(false);
+    expect(ignored('infra/staging/cloudflared.yml')).toBe(false);
+  });
+
+  it('refuses to start without the token file, naming it only', () => {
+    const problems = (stagingLib.tunnelProblems as (r: string) => string[])(
+      path.join(root, 'infra'),
+    );
+    expect(problems.some((p) => p.startsWith('.env.tunnel-token:'))).toBe(true);
   });
 });
