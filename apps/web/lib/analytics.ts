@@ -2,6 +2,7 @@
  * GA4 / GTM rules (§2, §5.1): marketing routes only, never /console or /portal (or any other app
  * route), and only after the visitor accepts analytics cookies. No choice yet = declined.
  */
+import { resolveDeployEnv } from '@datascribe/shared/deploy';
 
 export const CONSENT_COOKIE = 'ds_consent';
 export type Consent = 'granted' | 'denied';
@@ -17,8 +18,12 @@ export interface AnalyticsIds {
   gtmId?: string;
 }
 
-/** Only well-formed IDs are used, so an env value can never inject script text. */
+/**
+ * Only well-formed IDs are used, so an env value can never inject script text. Staging never
+ * loads GA4/GTM, whatever is configured (D-123).
+ */
 export function analyticsIds(env: Record<string, string | undefined> = process.env): AnalyticsIds {
+  if (resolveDeployEnv(env) === 'staging') return {};
   const ga4 = env.GA4_MEASUREMENT_ID?.trim();
   const gtm = env.GTM_ID?.trim();
   return {

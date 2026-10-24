@@ -19,6 +19,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { Env } from '../config/env';
+import { RELAY_PATH, sealRelayToken, type RelayToken } from './relay-token';
 
 export interface UploadedPart {
   partNumber: number;
@@ -41,6 +42,14 @@ export interface DocumentStorage {
     uploadId: string,
     partNumber: number,
     expiresIn: number,
+  ): Promise<string>;
+  /** Stream one part to S3 (staging's relay, D-122); returns its ETag. */
+  uploadPart(
+    key: string,
+    uploadId: string,
+    partNumber: number,
+    body: Readable,
+    length: number,
   ): Promise<string>;
   /** Parts S3 has received so far (resumable uploads), in part order. */
   listParts(key: string, uploadId: string): Promise<UploadedPart[]>;
@@ -89,6 +98,8 @@ export class S3DocumentStorage implements DocumentStorage {
       | 'S3_SSE_KMS_KEY_ID'
     >,
     private readonly corsOrigins: string[],
+    /** staging's relay (D-122): hand out same-origin relay URLs sealed with this key */
+    private readonly relay?: { key: Buffer },
   ) {
     this.s3 = new S3Client({
       region: env.S3_REGION,
@@ -190,7 +201,15 @@ export class S3DocumentStorage implements DocumentStorage {
     return res.UploadId;
   }
 
-  presignPart(key: string, uploadId: string, partNumber: number, expiresIn: number) {
+  private relayUrl(token: RelayToken) {
+    return `${RELAY_PATH}/${sealRelayToken(token, this.relay!.key)}`;
+  }
+
+  async presignPart(key: string, uploadId: string, partNumber: number, expiresIn: number) {
+    if (this.relay) {
+      const e = Date.now() + expiresIn * 1000;
+      return this.relayUrl({ op: 'put', k: key, u: uploadId, p: partNumber, e });
+    }
     return getSignedUrl(
       this.s3,
       new UploadPartCommand({
@@ -201,6 +220,27 @@ export class S3DocumentStorage implements DocumentStorage {
       }),
       { expiresIn },
     );
+  }
+
+  async uploadPart(
+    key: string,
+    uploadId: string,
+    partNumber: number,
+    body: Readable,
+    length: number,
+  ) {
+    const res = await this.s3.send(
+      new UploadPartCommand({
+        Bucket: this.bucket,
+        Key: key,
+        UploadId: uploadId,
+        PartNumber: partNumber,
+        Body: body,
+        ContentLength: length,
+      }),
+    );
+    if (!res.ETag) throw new Error('S3 returned no ETag');
+    return res.ETag;
   }
 
   async listParts(key: string, uploadId: string) {
@@ -286,7 +326,14 @@ export class S3DocumentStorage implements DocumentStorage {
     await this.s3.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
   }
 
-  presignDownload(key: string, opts: { fileName: string; contentType: string; expiresIn: number }) {
+  async presignDownload(
+    key: string,
+    opts: { fileName: string; contentType: string; expiresIn: number },
+  ) {
+    if (this.relay) {
+      const e = Date.now() + opts.expiresIn * 1000;
+      return this.relayUrl({ op: 'get', k: key, n: opts.fileName, t: opts.contentType, e });
+    }
     return getSignedUrl(
       this.s3,
       new GetObjectCommand({

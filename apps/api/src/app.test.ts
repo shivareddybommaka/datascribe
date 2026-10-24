@@ -107,6 +107,134 @@ describe('env validation', () => {
     ).toEqual(['a.example', 'b.example']);
   });
 
+  describe('deploy profile (D-120)', () => {
+    const prod = {
+      ...baseEnv,
+      NODE_ENV: 'production',
+      STRIPE_SECRET_KEY: 'sk_test_abc',
+      CLAMAV_HOST: 'clamav',
+    };
+    const staging = {
+      ...baseEnv,
+      NODE_ENV: 'production',
+      DEPLOY_ENV: 'staging',
+      APP_URL: 'https://datascribe.stayspot.app',
+      DATABASE_URL: 'postgresql://u:p@localhost:5433/datascribe_staging',
+      S3_ENDPOINT: 'http://localhost:9000',
+      S3_SSE: 'none',
+      PAYMENT_GATEWAY: 'fake',
+      CLAMAV_HOST: 'localhost',
+    };
+
+    it('resolves the profile from NODE_ENV unless set', () => {
+      expect(loadEnv(baseEnv).DEPLOY_ENV).toBe('local');
+      expect(loadEnv(prod).DEPLOY_ENV).toBe('production');
+      expect(loadEnv(staging).DEPLOY_ENV).toBe('staging');
+      expect(() => loadEnv({ ...prod, DEPLOY_ENV: 'local' })).toThrow(/DEPLOY_ENV/);
+      expect(() => loadEnv({ ...baseEnv, DEPLOY_ENV: 'staging' })).toThrow(/DEPLOY_ENV/);
+    });
+
+    it('keeps every production refusal, with or without DEPLOY_ENV=production', () => {
+      for (const p of [prod, { ...prod, DEPLOY_ENV: 'production' }]) {
+        expect(() => loadEnv(p)).not.toThrow();
+        expect(() => loadEnv({ ...p, S3_SSE: 'none' })).toThrow(/S3_SSE/);
+        expect(() => loadEnv({ ...p, CLAMAV_HOST: '' })).toThrow(/CLAMAV_HOST/);
+        expect(() => loadEnv({ ...p, PAYMENT_GATEWAY: 'fake' })).toThrow(/PAYMENT_GATEWAY/);
+        expect(() => loadEnv({ ...p, STRIPE_SECRET_KEY: '' })).toThrow(/PAYMENT_GATEWAY/);
+        expect(() => loadEnv({ ...p, STRIPE_SECRET_KEY: 'sk_live_x' })).toThrow(
+          /STRIPE_SECRET_KEY/,
+        );
+        expect(() => loadEnv({ ...p, EXTRA_TRUSTED_ORIGINS: 'http://localhost:9' })).toThrow(
+          /EXTRA_TRUSTED_ORIGINS/,
+        );
+        expect(() => loadEnv({ ...p, SUMMARY_PROVIDER: 'anthropic' })).toThrow(
+          /PHI_LLM_BAA_CONFIRMED/,
+        );
+        expect(() =>
+          loadEnv({ ...p, SUMMARY_PROVIDER: 'anthropic', PHI_LLM_BAA_CONFIRMED: 'true' }),
+        ).not.toThrow();
+        expect(() => loadEnv({ ...p, STAGING_ALLOW_HTTP_FOR_SMOKE: '1' })).toThrow(
+          /STAGING_ALLOW_HTTP_FOR_SMOKE/,
+        );
+        expect(() => loadEnv({ ...p, STAGING_ALLOW_SIGNUP: 'true' })).toThrow(
+          /STAGING_ALLOW_SIGNUP/,
+        );
+        expect(() => loadEnv({ ...p, STAGING_ALLOW_MOCK_SCAN: 'true' })).toThrow(
+          /STAGING_ALLOW_MOCK_SCAN/,
+        );
+        // production may still tune its limits; only staging is pinned to the defaults
+        expect(() => loadEnv({ ...p, RATE_LIMIT_AUTH: '100' })).not.toThrow();
+        // the staging-only rules don't apply to production
+        expect(() => loadEnv({ ...p, SMTP_HOST: 'email-smtp.example.com' })).not.toThrow();
+      }
+    });
+
+    it('lets staging use local SeaweedFS without SSE and the fake gateway', () => {
+      const env = loadEnv(staging);
+      expect(env.S3_SSE).toBe('none');
+      expect(env.PAYMENT_GATEWAY).toBe('fake');
+      expect(loadEnv({ ...staging, PAYMENT_GATEWAY: 'stripe' }).STRIPE_SECRET_KEY).toBeUndefined();
+    });
+
+    it('needs ClamAV in staging unless STAGING_ALLOW_MOCK_SCAN=true (D-125)', () => {
+      expect(() => loadEnv({ ...staging, CLAMAV_HOST: '' })).toThrow(/CLAMAV_HOST/);
+      const mock = loadEnv({ ...staging, CLAMAV_HOST: '', STAGING_ALLOW_MOCK_SCAN: 'true' });
+      expect(mock.CLAMAV_HOST).toBeUndefined();
+      expect(mock.STAGING_ALLOW_MOCK_SCAN).toBe(true);
+    });
+
+    it('keeps production auth limits in staging (D-125)', () => {
+      const s = loadEnv(staging);
+      const p = loadEnv(prod);
+      for (const key of [
+        'RATE_LIMIT_AUTH',
+        'RATE_LIMIT_PUBLIC',
+        'RATE_LIMIT_ACCOUNT',
+        'AUTH_RESPONSE_FLOOR_MS',
+        'TRUST_PROXY',
+      ] as const) {
+        expect(s[key], key).toBe(p[key]);
+      }
+      expect(() => loadEnv({ ...staging, RATE_LIMIT_AUTH: '100' })).toThrow(/RATE_LIMIT_AUTH/);
+      expect(() => loadEnv({ ...staging, AUTH_RESPONSE_FLOOR_MS: '0' })).toThrow(
+        /AUTH_RESPONSE_FLOOR_MS/,
+      );
+      expect(loadEnv({ ...staging, RATE_LIMIT_AUTH: '10' }).RATE_LIMIT_AUTH).toBe(10);
+    });
+
+    it('refuses real third parties and real databases in staging', () => {
+      const refuses = (over: Record<string, string>, path: RegExp) =>
+        expect(() => loadEnv({ ...staging, ...over })).toThrow(path);
+      refuses({ SUMMARY_PROVIDER: 'anthropic', PHI_LLM_BAA_CONFIRMED: 'true' }, /SUMMARY_PROVIDER/);
+      refuses({ SUMMARY_PROVIDER: 'openai' }, /SUMMARY_PROVIDER/);
+      refuses({ STRIPE_SECRET_KEY: 'sk_live_x' }, /STRIPE_SECRET_KEY/);
+      refuses({ SMTP_HOST: 'smtp.gmail.com' }, /SMTP_HOST/);
+      refuses(
+        { DATABASE_URL: 'postgresql://u:p@localhost:5432/datascribe_staging' },
+        /DATABASE_URL/,
+      );
+      refuses({ DATABASE_URL: 'postgresql://u:p@localhost:5433/datascribe' }, /DATABASE_URL/);
+      refuses({ APP_URL: 'http://datascribe.stayspot.app' }, /APP_URL/);
+      refuses({ S3_ENDPOINT: '' }, /S3_SSE/);
+      refuses({ EXTRA_TRUSTED_ORIGINS: 'http://localhost:3010' }, /EXTRA_TRUSTED_ORIGINS/);
+    });
+
+    it('allows http only for the smoke test on localhost', () => {
+      const smoke = { ...staging, APP_URL: 'http://localhost:3901' };
+      expect(() => loadEnv(smoke)).toThrow(/APP_URL/);
+      expect(loadEnv({ ...smoke, STAGING_ALLOW_HTTP_FOR_SMOKE: '1' }).APP_URL).toBe(
+        'http://localhost:3901',
+      );
+      expect(() =>
+        loadEnv({
+          ...staging,
+          APP_URL: 'http://datascribe.stayspot.app',
+          STAGING_ALLOW_HTTP_FOR_SMOKE: '1',
+        }),
+      ).toThrow(/APP_URL/);
+    });
+  });
+
   it('requires strong JWT secrets and names the variable, never the value', () => {
     expect(() => loadEnv({ ...baseEnv, JWT_ACCESS_SECRET: 'short-secret' })).toThrow(
       /JWT_ACCESS_SECRET/,

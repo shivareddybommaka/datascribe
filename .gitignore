@@ -3,6 +3,7 @@ dist/
 .next/
 .next-dev/
 .next-e2e-*/
+.next-staging*/
 .turbo/
 coverage/
 *.log
@@ -10,6 +11,7 @@ coverage/
 .env
 .env.*
 !.env.example
+!.env.staging.example
 playwright-report/
 test-results/
 packages/db/generated/

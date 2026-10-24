@@ -1,5 +1,36 @@
 # Changelog
 
+## Local staging behind a Cloudflare tunnel (2026-10-24, branch `launchpad/staging`)
+
+Staging copy on the Mac Studio at `https://datascribe.stayspot.app` (Shiva's own tunnel to
+`http://localhost:3020`), synthetic data only. Design notes: D-120 and up.
+
+- **Deploy profile** `DEPLOY_ENV = local | staging | production` (D-120): production refusals
+  unchanged; staging (a `NODE_ENV=production` build) may use local SeaweedFS without SSE, the fake
+  gateway and the mock scanner, and refuses a real LLM, Textract, live Stripe keys, non-Mailpit SMTP,
+  Postgres 5432, databases not named `staging` and an http `APP_URL`. The worker checks the same.
+  `API_HOST` lets staging bind the API to 127.0.0.1.
+- **Behind the tunnel** (D-121): tests for Secure cookies, the https CSRF origin, CORS, security
+  headers and per-IP limits keyed on the last `X-Forwarded-For` entry; optional
+  `TRUST_CF_CONNECTING_IP` (only from a hop `TRUST_PROXY` trusts; refused in production).
+- **Storage relay** (D-122): `S3_BROWSER_ACCESS=relay` makes upload-part and download URLs
+  same-origin (`/api/v1/storage-relay/<sealed token>`), so uploads work through the tunnel while S3
+  stays on localhost. Refused in production.
+- **Web guard rails** (D-123): fixed staging banner on every page, `X-Robots-Tag: noindex`,
+  noindex metadata and a disallow-all `robots.txt`, no GA/GTM in staging; `ENV_FILE` for
+  `next.config.ts`.
+- **Runner, runbook, smoke** (D-124): `.env.staging.example` (web 3020 / API 4020,
+  `datascribe_staging` + `_cms`, Redis /5, Mailpit), `pnpm staging:check | db:reset | db:migrate |
+build | start | stop | smoke`, `docs/STAGING.md` (DB, tunnel and Access setup, running
+  cloudflared with a token from an env var, stopping), launchd and cloudflared templates in
+  `infra/staging/` (not installed). The smoke test passes against the production-built stack.
+- **Open internet, no Access gate** (D-125): staging closes firm sign-up unless
+  `STAGING_ALLOW_SIGNUP=true`, requires ClamAV unless `STAGING_ALLOW_MOCK_SCAN=true`, refuses a seed
+  password under 20 characters or equal to dev's, and refuses auth limits looser than production's.
+- **Tunnel** (D-126): optional `pnpm staging:tunnel` runs `cloudflared tunnel --config
+infra/staging/cloudflared.yml run --token-file .env.tunnel-token` (token file git-ignored, never
+  read or logged, no `TUNNEL_*` env passed on); `staging:stop` stops it too.
+
 ## M9 part 1 — Notifications (2026-10-24, branch `herald/m9`)
 
 §5.8 notifications. Design notes: D-090. Migration `20261024160000_m9_notifications`

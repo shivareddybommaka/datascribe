@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  TEMPLATE, not installed (docs/STAGING.md "Run at login"). Starts the staging stack
+  (api + worker + web on 127.0.0.1, web :3020) for account nova. Replace __NODE__ with the
+  output of `which node` and __REPO__ with the checkout path (e.g. /Users/nova/projects/datascribe)
+  before copying it to ~/Library/LaunchAgents. Build first: pnpm staging:build.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>app.datascribe.staging</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__NODE__</string>
+    <string>scripts/staging.mjs</string>
+    <string>start</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>__REPO__</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>StandardOutPath</key>
+  <string>/Users/nova/Library/Logs/datascribe-staging.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/nova/Library/Logs/datascribe-staging.log</string>
+</dict>
+</plist>

@@ -9,7 +9,8 @@
     ".": "./src/index.ts",
     "./permissions": "./src/permissions.ts",
     "./constants": "./src/constants.ts",
-    "./notifications": "./src/notifications.ts"
+    "./notifications": "./src/notifications.ts",
+    "./deploy": "./src/deploy.ts"
   },
   "scripts": {
     "lint": "eslint src",
