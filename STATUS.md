@@ -20,9 +20,9 @@ existing CRM, never touch), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025). CMS 
 | M9 Notifications + dashboards | done except 4 events blocked on M6 | 7/11 §5.8 events + 4 dashboards; part 3 merged (editable notification emails, demo, D-096/D-097); assigned / QA / approved / delivered need M6 to call the ready helpers |
 | M10 Hardening                 | in progress (`sentinel/m10`)       | parts 1–4b merged (D-100..D-119: Dockerfiles, KMS-only prod, axe WCAG, Sentry with PHI scrubbing, off without a DSN)                                                     |
 
-Tests on `main` (2026-10-24 21:00, after merging M9 client dashboard + M10 parts 3b/4a): format,
-lint, typecheck, unit/API tests and build green, 36/36 turbo tasks (API 372, worker 61, shared 109,
-web 64); Playwright e2e 29/29 (new: client dashboard, 5 axe WCAG checks). Staging (still running
+Tests on `main` (2026-10-24 23:10, after merging M9 part 3 + M10 part 4b): format, lint, typecheck,
+unit/API tests and build green, 36/36 turbo tasks (API 377, worker 64, shared 154, web 66); Playwright
+e2e 31/31 (new: notification template editor, client-user Reports). Staging (still running
 `155a8e5` code) not restarted: Shiva was testing sign-in; restart with `pnpm staging:stop` /
 `staging:build` / `staging:start` when convenient.
 
@@ -67,12 +67,13 @@ ledger D-040+, pipeline D-050+, herald D-090+, sentinel D-100+.
 2. Add `@axe-core/playwright` (dev) and a WCAG check in the e2e suite (sentinel). ✅ merged (D-118):
    no violations found on the checked pages.
 3. Add the Sentry SDKs (API, worker, web): off unless `SENTRY_DSN` is set; scrub PHI fields, request
-   bodies, cookies and auth headers in `beforeSend` (sentinel). ✅ part 4b on `sentinel/m10`
+   bodies, cookies and auth headers in `beforeSend` (sentinel). ✅ merged
    (D-119): scrubber in `@datascribe/shared/sentry`, unit-tested with synthetic PHI.
 4. Retention / hard-delete job per §4.4, audited, synthetic data only locally (master, after M6
    basics, or sentinel).
 5. QA reviewers may use the medical lookups (D-056): grant the lookup permission to `qa_reviewer`.
 6. Add Lighthouse (dev) and measure the M3 pages (target ≥ 90 performance + SEO); fix if below.
+   Sentinel part 5 (spawned 2026-10-24 23:15).
 
 Terraform 1.17.0 (`/opt/homebrew/bin/terraform`, works as nova) installed by Shiva: run
 `terraform init -backend=false` + `terraform validate` on `infra/terraform`; never plan against AWS,
