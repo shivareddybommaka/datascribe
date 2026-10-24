@@ -17,7 +17,7 @@ import {
   TEMPLATE_KEYS,
   isTemplateKey,
   loadTemplateOverrides,
-  renderTemplate,
+  previewTemplate,
   saveTemplateOverrides,
   templateProblems,
   type TemplateKey,
@@ -224,6 +224,7 @@ export function settingsRouter(deps: Deps): Router {
       key,
       label: def.label,
       description: def.description,
+      group: def.group,
       variables: def.variables,
       required: def.required,
       subject: override?.subject ?? def.subject,
@@ -280,14 +281,7 @@ export function settingsRouter(deps: Deps): Router {
   r.post('/admin/email-templates/:key/preview', canView, async (req, res) => {
     const key = keyParam(req.params.key);
     const tpl = validTemplate(key, parse(TemplateBody, req.body));
-    const sample: Record<string, string> = {
-      inviterName: 'Alex Example',
-      organizationName: 'Acme Injury Law (synthetic)',
-      acceptUrl: `${deps.env.APP_URL}/invite/accept?token=example`,
-      name: 'Sam Synthetic',
-      resetUrl: `${deps.env.APP_URL}/reset-password?token=example`,
-    };
-    res.json(renderTemplate(tpl, sample));
+    res.json(previewTemplate(key, tpl, deps.env.APP_URL));
   });
 
   return r;

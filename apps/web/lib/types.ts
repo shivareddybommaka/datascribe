@@ -184,6 +184,7 @@ export interface EmailTemplate {
   key: string;
   label: string;
   description: string;
+  group: 'account' | 'notification';
   variables: string[];
   required: string[];
   subject: string;

@@ -7,6 +7,7 @@ const OPS = 'ops.manager@datascribe.example';
 const SUMMARIZER = 'summarizer@datascribe.example';
 const FINANCE = 'finance@datascribe.example';
 const CLIENT_ADMIN = 'client.admin@acme.example';
+const CLIENT_USER = 'client.user@acme.example';
 
 async function signIn(page: Page, email: string) {
   await page.goto('/console/dashboards');
@@ -100,4 +101,26 @@ test('M9: a client admin sees their firm report: cases by status, pages, spend',
   const year = page.waitForResponse((r) => r.url().includes('/dashboards/client?days=365'));
   await page.getByLabel('Window').selectOption('365');
   expect((await year).status()).toBe(200);
+});
+
+test('M9: a client user sees Reports for their own cases, without the firm spend (D-096)', async ({
+  page,
+}) => {
+  await page.goto('/portal');
+  await expect(page).toHaveURL(/\/portal\/login/);
+  await page.getByLabel('Email').fill(CLIENT_USER);
+  await page.getByLabel('Password').fill(TEST_PASSWORD);
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+
+  const nav = page.getByRole('navigation', { name: 'Portal' });
+  await expect(nav.getByRole('link', { name: 'Billing' })).toHaveCount(0);
+  await nav.getByRole('link', { name: 'Reports' }).click();
+  await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible();
+  await expect(
+    page.getByText('Counts cover the cases you created or that are shared with you.'),
+  ).toBeVisible();
+  await expect(page.getByTestId('kpi-cases')).toHaveText(/^\d+$/);
+  await expect(page.getByTestId('kpi-pages')).toHaveText(/^[\d,]+$/);
+  await expect(page.getByTestId('kpi-spend')).toHaveCount(0);
 });

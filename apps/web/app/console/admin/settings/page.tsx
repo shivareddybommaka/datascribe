@@ -319,6 +319,11 @@ function NotificationsCard({
   );
 }
 
+const TEMPLATE_GROUPS = [
+  ['account', 'Account emails'],
+  ['notification', 'Notification emails'],
+] as const;
+
 function TemplatesCard() {
   const templates = useQuery({
     queryKey: ['email-templates'],
@@ -333,11 +338,17 @@ function TemplatesCard() {
         <div className="space-y-4">
           <Field label="Template" htmlFor="tpl-key">
             <Select id="tpl-key" value={current.key} onChange={(e) => setKey(e.target.value)}>
-              {templates.data!.items.map((t) => (
-                <option key={t.key} value={t.key}>
-                  {t.label}
-                  {t.customized ? ' (edited)' : ''}
-                </option>
+              {TEMPLATE_GROUPS.map(([group, label]) => (
+                <optgroup key={group} label={label}>
+                  {templates
+                    .data!.items.filter((t) => t.group === group)
+                    .map((t) => (
+                      <option key={t.key} value={t.key}>
+                        {t.label}
+                        {t.customized ? ' (edited)' : ''}
+                      </option>
+                    ))}
+                </optgroup>
               ))}
             </Select>
           </Field>

@@ -1,7 +1,9 @@
 import {
   deliverPendingEmails,
   notify,
+  notifyAssigned,
   notifyCaseSubmitted,
+  notifyDelivered,
   notifyInvoicesIssued,
   notifyQaDecision,
   notifyTasksDue,
@@ -102,17 +104,6 @@ describe('dispatch', () => {
     ).toBe(1);
   });
 
-  it('the M6 QA helper notifies the summarizer and case manager', async () => {
-    const c = await acmeCase();
-    const summarizer = await userId(internalSeedEmail('summarizer'));
-    await prisma.case.update({ where: { id: c.id }, data: { summarizerId: summarizer } });
-    await notifyQaDecision(prisma, c.id, false);
-    const rows = await prisma.notification.findMany({
-      where: { type: 'qa_changes_requested', payload: { path: ['caseId'], equals: c.id } },
-    });
-    expect(rows.map((r) => r.userId)).toContain(summarizer);
-  });
-
   it('task due fires once per task and due date', async () => {
     const sales = await userId(internalSeedEmail('sales'));
     const task = await prisma.activity.create({
@@ -134,6 +125,98 @@ describe('dispatch', () => {
         },
       }),
     ).toBe(1);
+  });
+});
+
+/**
+ * Helpers M6 will call (assignment, QA decision, delivery). Each test sets the case's assignees and
+ * puts them back, so other test files see the seeded case unchanged.
+ */
+describe('M6 emit helpers', () => {
+  const rowsFor = async (type: string, caseId: string) =>
+    prisma.notification.findMany({
+      where: { type, payload: { path: ['caseId'], equals: caseId } },
+    });
+
+  async function withAssignees(
+    data: { summarizerId?: string | null; caseManagerId?: string | null },
+    fn: (c: Awaited<ReturnType<typeof acmeCase>>) => Promise<void>,
+  ) {
+    const c = await acmeCase();
+    await prisma.case.update({ where: { id: c.id }, data });
+    try {
+      await fn(c);
+    } finally {
+      await prisma.case.update({
+        where: { id: c.id },
+        data: { summarizerId: c.summarizerId, caseManagerId: c.caseManagerId },
+      });
+    }
+  }
+
+  it('notifyAssigned tells the new assignee, with the role; never yourself or a client', async () => {
+    const c = await acmeCase();
+    const cm = await userId(internalSeedEmail('case_manager'));
+    const summarizer = await userId(internalSeedEmail('summarizer'));
+    expect(await notifyAssigned(prisma, c.id, summarizer, 'summarizer', cm)).toBe(1);
+    const rows = await rowsFor('assigned_to_you', c.id);
+    expect(rows.map((r) => r.userId)).toEqual([summarizer]);
+    expect(rows[0]).toMatchObject({
+      payload: { caseId: c.id, caseNumber: c.number, role: 'summarizer' },
+      emailStatus: 'pending',
+      organizationId: await orgId('internal'),
+    });
+
+    // self-assignment and a client user (staff-only type) are silent; unknown case too
+    expect(await notifyAssigned(prisma, c.id, cm, 'case_manager', cm)).toBe(0);
+    const client = await freshClientUser('acme');
+    expect(await notifyAssigned(prisma, c.id, client.id, 'qa_reviewer', cm)).toBe(0);
+    expect(await notifyAssigned(prisma, 'no-such-case', summarizer, 'summarizer', cm)).toBe(0);
+    expect((await rowsFor('assigned_to_you', c.id)).length).toBe(1);
+  });
+
+  it('notifyQaDecision tells the summarizer and case manager: approved or changes requested', async () => {
+    const summarizer = await userId(internalSeedEmail('summarizer'));
+    const cm = await userId(internalSeedEmail('case_manager'));
+    await withAssignees({ summarizerId: summarizer, caseManagerId: cm }, async (c) => {
+      expect(await notifyQaDecision(prisma, c.id, false)).toBe(2);
+      expect((await rowsFor('qa_changes_requested', c.id)).map((r) => r.userId).sort()).toEqual(
+        [summarizer, cm].sort(),
+      );
+      expect(await notifyQaDecision(prisma, c.id, true)).toBe(2);
+      const approved = await rowsFor('approved', c.id);
+      expect(approved.map((r) => r.userId).sort()).toEqual([summarizer, cm].sort());
+      expect(JSON.stringify(approved[0]!.payload)).not.toContain(c.matterName);
+    });
+    // nobody assigned: nobody to tell
+    await withAssignees({ summarizerId: null, caseManagerId: null }, async (c) => {
+      expect(await notifyQaDecision(prisma, c.id, true)).toBe(0);
+    });
+  });
+
+  it('notifyDelivered tells the creator, shared users and firm admins, once per case', async () => {
+    const c = await acmeCase();
+    const shared = await freshClientUser('acme');
+    const otherFirm = await freshClientUser('harbor', 'client_admin');
+    await prisma.caseShare.create({ data: { caseId: c.id, userId: shared.id } });
+    try {
+      const n = await notifyDelivered(prisma, c.id);
+      expect(n).toBeGreaterThanOrEqual(2);
+      const to = (await rowsFor('delivered', c.id)).map((r) => r.userId);
+      expect(to).toContain(c.createdById);
+      expect(to).toContain(shared.id);
+      expect(to).toContain(await userId(SEED.acmeAdmin));
+      expect(to).not.toContain(otherFirm.id);
+      expect(to).not.toContain(await userId(internalSeedEmail('case_manager')));
+      // a retried delivery adds nothing (dedupe key delivered:<caseId>)
+      expect(await notifyDelivered(prisma, c.id)).toBe(0);
+      expect((await rowsFor('delivered', c.id)).length).toBe(to.length);
+      expect(await notifyDelivered(prisma, 'no-such-case')).toBe(0);
+    } finally {
+      await prisma.caseShare.delete({
+        where: { caseId_userId: { caseId: c.id, userId: shared.id } },
+      });
+    }
   });
 });
 
@@ -414,6 +497,62 @@ describe('email outbox', () => {
     expect(again.sent).toBe(0);
     const row = await prisma.notification.findFirstOrThrow({ where: { userId: u.id } });
     expect(row).toMatchObject({ emailStatus: 'sent', emailAttempts: 1 });
+  });
+
+  it("uses the admin's edited notification email, keeping the preferences link", async () => {
+    const { token } = await login(app, internalSeedEmail('super_admin'));
+    const key = 'notification_upload_scanned';
+    const list = await request(app).get('/api/v1/admin/email-templates').set(bearer(token));
+    expect(list.body.items.find((t: { key: string }) => t.key === key)).toMatchObject({
+      group: 'notification',
+      required: ['link'],
+      variables: ['caseNumber', 'link'],
+      customized: false,
+    });
+    const bad = await request(app)
+      .put(`/api/v1/admin/email-templates/${key}`)
+      .set(bearer(token))
+      .send({ subject: 'Checked {{patientName}}', body: 'no link' });
+    expect(bad.status).toBe(400);
+    const preview = await request(app)
+      .post(`/api/v1/admin/email-templates/${key}/preview`)
+      .set(bearer(token))
+      .send({ subject: 'Checked: {{caseNumber}}', body: 'See {{link}}' });
+    expect(preview.body.subject).toBe('Checked: DS-2026-0001');
+    expect(preview.body.text).toContain('Choose which emails you get');
+    await request(app)
+      .put(`/api/v1/admin/email-templates/${key}`)
+      .set(bearer(token))
+      .send({ subject: 'Checked: {{caseNumber}}', body: 'Your record is clean. {{link}}' })
+      .expect(200);
+
+    try {
+      const c = await acmeCase();
+      const u = await freshClientUser('acme');
+      await prisma.notificationPreference.create({
+        data: { userId: u.id, type: 'upload_scanned', email: true, inApp: true },
+      });
+      await notify(
+        prisma,
+        {
+          type: 'upload_scanned',
+          payload: { caseId: c.id, caseNumber: c.number, documentId: 'v' },
+        },
+        [u.id],
+      );
+      const out = new MemoryMailer();
+      await deliverPendingEmails(prisma, out, { appUrl: 'http://app.test' });
+      const mail = out.lastTo(u.email)!;
+      expect(mail.subject).toBe(`Checked: ${c.number}`);
+      expect(mail.text).toBe(
+        `Your record is clean. http://app.test/portal/cases/${c.id}\n\nChoose which emails you get: http://app.test/portal/notifications`,
+      );
+    } finally {
+      await request(app)
+        .delete(`/api/v1/admin/email-templates/${key}`)
+        .set(bearer(token))
+        .expect(200);
+    }
   });
 
   it('retries a failing send with backoff, then gives up', async () => {

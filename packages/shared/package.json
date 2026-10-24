@@ -10,6 +10,7 @@
     "./permissions": "./src/permissions.ts",
     "./constants": "./src/constants.ts",
     "./notifications": "./src/notifications.ts",
+    "./email-templates": "./src/email-templates.ts",
     "./deploy": "./src/deploy.ts"
   },
   "scripts": {

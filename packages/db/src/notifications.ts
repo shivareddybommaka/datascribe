@@ -9,9 +9,13 @@
  * Payloads hold ids and non-PHI labels only (see @datascribe/shared/notifications).
  */
 import {
+  TEMPLATES_SETTING,
+  parseTemplateOverrides,
+  renderNotificationEmail,
+} from '@datascribe/shared/email-templates';
+import {
   NOTIFICATION_CATALOG,
   SETTINGS_EVENTS,
-  renderNotification,
   type NotificationEvent,
   type NotificationPayloads,
   type SettingsEvent,
@@ -345,8 +349,14 @@ export async function notifyProcessingFailed(db: Db, caseId: string) {
 }
 
 /**
- * Someone was made case manager / summarizer / QA reviewer of a case. Self-assignment is silent.
- * TODO(M6): call from the case assignment route.
+ * §5.8 "assigned to you": someone was made case manager / summarizer / QA reviewer of a case.
+ * Self-assignment is silent; only staff receive it (catalog audience).
+ *
+ * M6 call site: `POST /cases/:id/assign` in `apps/api/src/routes/cases.ts`, after the case update
+ * commits, once per role whose user changed (not when the same user is re-saved):
+ *   `await safeNotify(deps.logger, 'assigned_to_you', () =>
+ *      notifyAssigned(prisma, c.id, newUserId, 'summarizer', auth.user.id));`
+ * Not deduplicated: re-assigning the same person later is a new notice.
  */
 export async function notifyAssigned(
   db: Db,
@@ -366,8 +376,14 @@ export async function notifyAssigned(
 }
 
 /**
- * QA decision: approved or changes requested → the summarizer and the case manager.
- * TODO(M6): call from the QA review route.
+ * §5.8 QA decision: `approved` or `qa_changes_requested` → the case's summarizer and case manager
+ * (whoever is set; staff only). Read the assignees after the decision is saved.
+ *
+ * M6 call site: `POST /deliverables/:id/qa` (§9), after the decision and the case status change
+ * (`approved` / `changes_requested`) commit:
+ *   `await safeNotify(deps.logger, approved ? 'approved' : 'qa_changes_requested', () =>
+ *      notifyQaDecision(prisma, caseId, approved));`
+ * Call it once per decision, not per deliverable, if one decision covers several deliverables.
  */
 export async function notifyQaDecision(db: Db, caseId: string, approved: boolean) {
   const c = await caseRef(db, caseId);
@@ -380,8 +396,15 @@ export async function notifyQaDecision(db: Db, caseId: string, approved: boolean
 }
 
 /**
- * Final report delivered: the case's creator, users it is shared with and the firm admins.
- * TODO(M6): call when the case is set to `delivered`.
+ * §5.8 delivered: the final report is ready → the case's creator, the users it is shared with and
+ * the firm's client admins (staff assignees are not told). Deduplicated per case
+ * (`delivered:<caseId>`), so a retried delivery job never mails twice.
+ *
+ * M6 call site: wherever the case is set to `delivered` (§5.4: after the final PDF + DOCX are
+ * stored and usage is recorded; the delivery job in the worker or `POST /cases/:id/status`),
+ * after that transaction commits — never inside it, so a rolled-back delivery sends nothing:
+ *   `await safeNotify(deps.logger, 'delivered', () => notifyDelivered(prisma, caseId));`
+ * In the worker, wrap it the same way (log the event and error name only).
  */
 export async function notifyDelivered(db: Db, caseId: string) {
   const c = await caseRef(db, caseId);
@@ -446,6 +469,9 @@ export async function deliverPendingEmails(
       user: { select: { email: true, status: true, organization: { select: { type: true } } } },
     },
   });
+  // the admin's edited notification emails (Settings → Email templates, D-097), once per batch
+  const templates = await db.setting.findUnique({ where: { key: TEMPLATES_SETTING } });
+  const overrides = parseTemplateOverrides(templates?.value);
   for (const n of rows) {
     if (n.user.status !== 'active') {
       await db.notification.update({ where: { id: n.id }, data: { emailStatus: 'skipped' } });
@@ -453,21 +479,13 @@ export async function deliverPendingEmails(
       continue;
     }
     const area = n.user.organization.type === 'client' ? 'portal' : 'console';
-    const r = renderNotification(n.type, n.payload, area);
-    const entry = NOTIFICATION_CATALOG[n.type as keyof typeof NOTIFICATION_CATALOG];
-    const lines = [
-      r.body,
-      r.link ? `\nOpen in Datascribe: ${opts.appUrl}${r.link}` : null,
-      entry && !entry.critical
-        ? `\nChoose which emails you get: ${opts.appUrl}/${area}/notifications`
-        : null,
-    ];
+    const mail = renderNotificationEmail(n.type, n.payload, {
+      area,
+      appUrl: opts.appUrl,
+      overrides,
+    });
     try {
-      await mailer.send({
-        to: n.user.email,
-        subject: r.title,
-        text: lines.filter(Boolean).join('\n'),
-      });
+      await mailer.send({ to: n.user.email, ...mail });
       await db.notification.update({
         where: { id: n.id },
         data: { emailStatus: 'sent', emailSentAt: new Date() },

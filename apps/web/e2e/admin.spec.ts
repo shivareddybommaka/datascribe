@@ -161,3 +161,26 @@ test('§4.4: super admin views as a client admin read-only, with a banner, and s
     admin.getByRole('row').filter({ hasText: 'admin.impersonation.stopped' }).first(),
   ).toContainText(`via ${SUPER}`);
 });
+
+test('M9: super admin edits a notification email, previews it, and restores the default', async () => {
+  await admin.goto('/console/admin/settings');
+  await admin
+    .getByLabel('Template', { exact: true })
+    .selectOption({ label: 'Notification: Upload checked' });
+  const subject = admin.getByLabel('Subject', { exact: true });
+  await expect(subject).toHaveValue('Record checked on case {{caseNumber}}');
+
+  await subject.fill('Checked: {{caseNumber}}');
+  await admin.getByLabel('Body (plain text)').fill('Your record is clean. {{link}}');
+  await admin.getByRole('button', { name: 'Preview' }).click();
+  await expect(admin.getByText('Checked: DS-2026-0001')).toBeVisible();
+  // the preferences link is always added below non-critical notification emails
+  await expect(admin.getByText(/Choose which emails you get/)).toBeVisible();
+
+  await admin.getByRole('button', { name: 'Save template' }).click();
+  await expect(
+    admin.getByRole('option', { name: 'Notification: Upload checked (edited)' }),
+  ).toBeAttached();
+  await admin.getByRole('button', { name: 'Restore default' }).click();
+  await expect(subject).toHaveValue('Record checked on case {{caseNumber}}');
+});
