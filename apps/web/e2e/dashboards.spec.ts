@@ -12,6 +12,8 @@ test('M9: sales sees the sales dashboard and can change its window', async ({ pa
   await page.getByRole('button', { name: 'Continue' }).click();
   await page.getByLabel('Authentication code').fill(authenticator.generate(TEST_TOTP_SECRET));
   await page.getByRole('button', { name: 'Verify' }).click();
+  // wait for the sign-in to finish before navigating, or the goto can beat the session
+  await expect(page).not.toHaveURL(/\/console\/login/);
 
   await page.goto('/console/dashboards');
   await expect(page).toHaveURL(/\/console\/dashboards\/sales$/);
