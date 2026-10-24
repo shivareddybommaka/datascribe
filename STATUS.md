@@ -13,16 +13,16 @@ existing CRM, never touch), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025). CMS 
 | M2 Admin console              | done (merged from `admin/m2`)      | custom role takes effect without restart; audit M2 + M4 fixed; D-060..D-064                     |
 | M3 Website + CMS              | done (merged from `storefront/m3`) | Lighthouse ≥ 90 not measured yet (needs Lighthouse install)                                     |
 | M4 Portal cases + uploads     | done (merged from `portal/m4`)     | DoD test green (300-page PDF, interrupted + resumed); D-070..D-077                              |
-| M5 Pipeline                   | **M5b in progress (master)**       | DoD e2e green (upload → 7 stages → in_review, all cited); notify done. Left: OCR (step 7)       |
-| M6 Workspace + QA + delivery  | not started                        |                                                                                                 |
+| M5 Pipeline                   | done (master)                      | DoD e2e green (upload → 7 stages → in_review, all cited); notify; Tesseract OCR (D-082)         |
+| M6 Workspace + QA + delivery  | **next (master)**                  |                                                                                                 |
 | M7 CRM                        | done                               |                                                                                                 |
 | M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen built in M4; Stripe test key needed for the manual test-card demo     |
 | M9 Notifications + dashboards | in progress (`herald/m9`)          | part 1 + sales, ops, finance dashboards merged (`f72c63a`, D-090..D-094); client dashboard next |
 | M10 Hardening                 | in progress (`sentinel/m10`)       | parts 1, 2a, 2b, 3a merged (D-100..D-115; Terraform files in `infra/terraform`, not applied)    |
 
-Tests on `main` (2026-10-24 17:20, after the M9 ops/finance + M10 part 3a merges): format, lint,
-typecheck, unit/API tests and build green (API 322, worker 55, web 57, scan 6); Playwright e2e 23/23
-(new: ops + finance dashboards).
+Tests on `main` (2026-10-24 17:10, after the M9 ops/finance + M10 part 3a merges and M5b step 7):
+format, lint, typecheck, unit/API tests and build green (API 322, worker 57, web 57, scan 6);
+Playwright e2e 23/23 (new: ops + finance dashboards; real-Tesseract OCR unit test).
 
 M4 merge notes: main's `.env` needs `S3_SSE=none` (local SeaweedFS has no SSE, D-070) or the API's
 uploads fail; the API creates the buckets at startup and encrypts legacy case notes / messages
@@ -35,7 +35,7 @@ case `on_hold` ✅ (D-080) · 4 scan stage in the worker (`packages/scan`), DB-t
 completed uploads and submitted cases ✅ (D-081) · 5 stage 7 `in_review` ✅ + notify summarizer /
 case manager on hold ✅ · 6 M5 DoD e2e (synthetic
 six-record PDF → deliverables, every chronology entry cited, status timeline) ✅ · 7 tesseract OCR
-provider + page renderer (or Waiting on Shiva if it needs a system install).
+provider + page renderer ✅ (D-082: tesseract.js WASM, no system install; `OCR_PROVIDER=tesseract`).
 
 Running the app locally now needs the worker too (`pnpm --filter @datascribe/worker dev`): without
 it uploads stay "Scanning" and submitted cases aren't processed. SeaweedFS volume limit raised to

@@ -12,3 +12,4 @@ export * from './providers/medlineplus';
 export * from './providers/mock';
 export * from './providers/nlm';
 export * from './providers/openfda';
+export * from './providers/tesseract';

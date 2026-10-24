@@ -36,7 +36,7 @@
   365-day window with the top ten clients per currency (D-094). Finance and ops managers. The client
   dashboard is next.
 
-## M5b — Processing pipeline (in progress, `main`)
+## M5b — Processing pipeline (2026-10-24, `main`) → M5 done
 
 - Stages 3–6 as pure modules (D-078) and stage 2 text extraction with pdf.js (D-079).
 - **Stage runner** (D-080): BullMQ processors for extract → classify → extract-events → code →
@@ -57,6 +57,10 @@
   managers) when it moves the case to `in_review`; a stage's last failed attempt that puts the case
   `on_hold` notifies the case manager and ops managers. Only the run that changes the status sends,
   and a failed notification is logged (ids and error name only) without failing the stage.
+- **OCR** (step 7, D-082): `OCR_PROVIDER=tesseract` uses tesseract.js (WASM, English model bundled
+  via `@tesseract.js-data/eng`, nothing downloaded at runtime); scanned PDF pages are rendered at
+  200 dpi with pdf.js on `@napi-rs/canvas`. `OCR_PROVIDER=mock` (the default) keeps low-text pages
+  counted in `needsOcr`. A test OCRs a synthetic scanned PDF page and an image upload for real.
 
 ## M10 part 3a — Infrastructure as code (2026-10-24, branch `sentinel/m10`)
 

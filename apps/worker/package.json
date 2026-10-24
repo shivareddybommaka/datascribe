@@ -17,6 +17,7 @@
     "@datascribe/medical-data": "workspace:*",
     "@datascribe/scan": "workspace:*",
     "@datascribe/shared": "workspace:*",
+    "@napi-rs/canvas": "0.1.100",
     "bullmq": "^5.52.0",
     "nodemailer": "^10.2.1",
     "pdfjs-dist": "^5.7.284",

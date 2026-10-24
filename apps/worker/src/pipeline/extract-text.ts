@@ -3,12 +3,12 @@
  * pdf.js; a page with fewer than 20 characters goes to the OcrProvider. Images (PNG/JPEG/TIFF) are
  * one OCR'd page. Never logs text.
  *
- * OCR needs the page as an image. Rendering is injected (`renderPage`) so the worker can add a
- * renderer with the real OCR provider (D-079); without one a low-text page keeps its text layer and
- * is reported in `needsOcr`.
+ * OCR needs the page as an image. Rendering is injected (`renderPage`, the worker passes
+ * `renderPdfPage` with a real OCR provider, D-082); without one a low-text page keeps its text
+ * layer and is reported in `needsOcr`.
  */
 import type { OcrProvider } from '@datascribe/medical-data';
-import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { getDocument, type PDFPageProxy } from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 export const MIN_TEXT_CHARS = 20;
 
@@ -22,7 +22,7 @@ export interface ExtractedPage {
 export interface ExtractOptions {
   ocr: OcrProvider;
   /** renders a 1-based PDF page to an image for OCR; null = can't render */
-  renderPage?: (pageNumber: number) => Promise<Buffer | null>;
+  renderPage?: (pageNumber: number, page: PDFPageProxy) => Promise<Buffer | null>;
 }
 
 export interface ExtractResult {
@@ -55,13 +55,18 @@ export async function extractPdfPages(
         text += item.str + (item.hasEOL ? '\n' : ' ');
       }
       text = text.replace(/[ \t]+\n/g, '\n').trim();
-      page.cleanup();
 
       if (visibleChars(text) >= MIN_TEXT_CHARS) {
+        page.cleanup();
         result.pages.push({ pageNumber: n, text, ocrConfidence: 1 });
         continue;
       }
-      const image = opts.renderPage ? await opts.renderPage(n) : null;
+      let image: Buffer | null;
+      try {
+        image = opts.renderPage ? await opts.renderPage(n, page) : null;
+      } finally {
+        page.cleanup();
+      }
       if (!image) {
         result.needsOcr++;
         result.pages.push({ pageNumber: n, text, ocrConfidence: null });

@@ -729,6 +729,27 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
 - Pipeline status changes write `case.status` system audit rows (`{ from, to, by: 'pipeline' }`) in
   the same transaction as the compare-and-set, so the portal timeline shows Processing / In review.
 
+## D-082 — Tesseract OCR and the PDF page renderer (M5b step 7, 2026-10-24)
+
+- **tesseract.js 7** (named in §2) rather than `node-tesseract-ocr`: it runs the engine as WASM in
+  a worker thread, so no Homebrew/apt install on dev machines, CI or the Fargate image. The English
+  model comes from **`@tesseract.js-data/eng`** (not named in §2; it is tesseract.js's own data
+  package, ~14 MB): by default tesseract.js downloads traineddata from a CDN at first use, which we
+  don't want in a PHI worker or an offline container. `cacheMethod: 'none'` writes no cache files.
+- One Tesseract worker per process, started on the first scanned page, closed on shutdown; a failed
+  start is retried on the next page. Confidence is Tesseract's 0–100 mean scaled to 0..1, matching
+  the text-layer pages' 1.
+- **Rendering**: pdf.js draws the page onto **`@napi-rs/canvas`** (already in the lockfile as
+  pdfjs-dist's optional canvas; prebuilt binaries, no system libraries) at 200 dpi, white
+  background, capped at 25 Mpx so an oversized page can't exhaust memory. The renderer gets the
+  pdf.js page the extractor already opened, so a scanned 300-page PDF is parsed once.
+- `OCR_PROVIDER` (env, default `mock`) selects the provider; with `mock` the worker passes no
+  renderer, so scanned pages stay counted in `needsOcr` as before (D-079) and the e2e suite stays
+  fast and deterministic. `textract` remains the optional second implementation (not built).
+- Test `ocr-real.test.ts` draws synthetic text, embeds it as an image-only PDF page, and checks real
+  OCR finds the words (and for an image upload). It needs a sans-serif system font for the canvas
+  (macOS, ubuntu-latest have one).
+
 ## D-090 — Notifications: catalog, in-app rows and an email outbox (M9, 2026-10-24)
 
 - One typed catalog in `packages/shared` (browser-safe, so the bell renders the same labels): each

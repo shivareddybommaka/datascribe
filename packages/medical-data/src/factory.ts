@@ -17,6 +17,7 @@ import {
 } from './providers/mock';
 import { NlmHcpcsCoder, NlmIcd10Coder, RxNormNormalizer } from './providers/nlm';
 import { OpenFdaDrugInfo } from './providers/openfda';
+import { TesseractOcrProvider } from './providers/tesseract';
 import type {
   ConsumerHealthInfo,
   DiagnosisCoder,
@@ -136,10 +137,22 @@ export function medicalDataConfigFromEnv(
 export const OCR_PROVIDERS = ['tesseract', 'textract', 'mock'] as const;
 export const SUMMARY_PROVIDERS = ['mock', 'anthropic', 'openai'] as const;
 
-/** Only `mock` exists so far; tesseract/textract arrive with the pipeline (M5b). */
+/** `mock` and `tesseract` (D-082); textract is the optional second implementation, not built yet. */
 export function createOcrProvider(kind: (typeof OCR_PROVIDERS)[number] = 'mock'): OcrProvider {
   if (kind === 'mock') return new MockOcrProvider();
-  throw new Error(`OCR_PROVIDER=${kind} is not implemented yet; use mock`);
+  if (kind === 'tesseract') return new TesseractOcrProvider();
+  throw new Error(`OCR_PROVIDER=${kind} is not implemented yet; use tesseract or mock`);
+}
+
+/** Read OCR_PROVIDER (default mock). Unknown values are an error. */
+export function ocrProviderFromEnv(
+  env: Record<string, string | undefined>,
+): (typeof OCR_PROVIDERS)[number] {
+  const kind = (env.OCR_PROVIDER || 'mock') as (typeof OCR_PROVIDERS)[number];
+  if (!OCR_PROVIDERS.includes(kind)) {
+    throw new Error(`OCR_PROVIDER must be one of ${OCR_PROVIDERS.join(', ')}`);
+  }
+  return kind;
 }
 
 /** Only `mock` exists so far; LLM providers need a BAA before production use (§8.3). */
