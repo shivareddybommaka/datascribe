@@ -928,3 +928,18 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
   can't trigger or read Actions.
 - The portal spec simulated a dropped upload by matching S3 port 9000; it now takes the port from
   `S3_ENDPOINT`, so the suite also runs against an S3 on another port.
+
+## D-114 — Load test with autocannon (M10 part 2b, 2026-10-24)
+
+- §12 M10 asks for a load test. `autocannon` 8 is a devDependency of `apps/api` only, approved
+  under AUTOPILOT's "a package the spec directly needs" by the master. k6 was ruled out (system
+  install). autocannon is pure Node, runs from the lockfile like everything else, and its
+  per-response event gives exact p50/p95/p99 (its own summary has p97.5, not p95).
+- `pnpm load` (`apps/api/load/run.ts`) starts nothing: it hits an API already running locally,
+  refuses non-local hosts and port 3000, signs in once as a seeded synthetic user and prints
+  timings and status counts, never bodies. Not in `turbo test` or CI
+  (`test/load-stats.test.ts` checks). The package ships no types; `load/autocannon.d.ts` declares
+  the few used, instead of adding `@types/autocannon`.
+- The auth routes are probed one request at a time until they answer 429, not loaded: refresh
+  tokens rotate (concurrent reuse is treated as theft, audit M1) and the limits are the design.
+  Results and how to run it: `docs/LOAD-TEST.md`.
