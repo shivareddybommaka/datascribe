@@ -54,4 +54,6 @@ export interface Deps {
    * client polls the document.
    */
   inlineScan?: VirusScanner;
+  /** Unhandled (500) errors go here too: Sentry when SENTRY_DSN is set (D-119), else unset. */
+  reportError?: (err: unknown) => void;
 }

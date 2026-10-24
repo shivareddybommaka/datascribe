@@ -7,7 +7,7 @@
     "dev": "NEXT_DIST_DIR=.next-dev next dev --port 3010 --hostname 127.0.0.1",
     "build": "next build",
     "start": "next start --port 3010",
-    "lint": "eslint app components lib e2e smoke test",
+    "lint": "eslint app components lib e2e smoke test instrumentation.ts instrumentation-client.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "e2e": "playwright test"
@@ -17,6 +17,7 @@
     "@datascribe/site-content": "workspace:*",
     "@datascribe/ui": "workspace:*",
     "@hookform/resolvers": "^5.0.1",
+    "@sentry/nextjs": "^10.76.2",
     "@tanstack/react-query": "^5.74.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

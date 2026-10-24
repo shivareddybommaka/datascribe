@@ -154,6 +154,8 @@ export function createApp(deps: Deps): Express {
     }
     // never the request body, stack or a Prisma message (it quotes query values, audit L7)
     req.log.error({ err: errorInfo(err) }, 'unhandled error');
+    // scrubbed before it leaves the process (D-119); 4xx and handled errors above are not reported
+    deps.reportError?.(err);
     res.status(500).json({ error: { code: 'internal', message: 'Internal server error' } });
   };
   app.use(errorHandler);

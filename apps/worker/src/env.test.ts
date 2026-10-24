@@ -35,6 +35,15 @@ describe('worker start-up checks', () => {
     expect(() => assertWorkerEnv(staging)).not.toThrow();
   });
 
+  it('Sentry is optional; a bad DSN or sample rate stops start-up (D-119)', () => {
+    expect(paths({ NODE_ENV: 'test', SENTRY_DSN: '' })).toEqual([]);
+    expect(paths({ NODE_ENV: 'test', SENTRY_DSN: 'https://k@o1.ingest.example/1' })).toEqual([]);
+    expect(paths({ NODE_ENV: 'test', SENTRY_DSN: 'not a dsn' })).toEqual(['SENTRY_DSN']);
+    expect(paths({ NODE_ENV: 'test', SENTRY_TRACES_SAMPLE_RATE: 'all' })).toEqual([
+      'SENTRY_TRACES_SAMPLE_RATE',
+    ]);
+  });
+
   it('names variables, never values', () => {
     expect(() =>
       assertWorkerEnv({ ...prod, S3_SSE: 'AES256', DATABASE_URL: 'postgresql://secret@x/db' }),
