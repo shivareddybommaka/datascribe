@@ -1,5 +1,5 @@
-import type { Prisma } from '@datascribe/db';
-import { UPSTREAMS } from '@datascribe/medical-data';
+import { errorInfo, type Prisma } from '@datascribe/db';
+import { UPSTREAMS, type ProviderUsage } from '@datascribe/medical-data';
 import { PRIORITIES } from '@datascribe/shared';
 import { Router } from 'express';
 import { z } from 'zod';
@@ -159,11 +159,18 @@ export function settingsRouter(deps: Deps): Router {
   async function medicalStatus() {
     const row = await prisma.setting.findUnique({ where: { key: MEDICAL_SETTING } });
     const enabled: MedicalToggles = row ? togglesFrom(row.value) : { ...ALL_ENABLED };
+    // counters live in Redis (D-112); if it is down the page still loads, without usage
+    let usage24h: ProviderUsage[] = [];
+    try {
+      usage24h = (await deps.medical?.usageStats(24 * 60 * 60 * 1000)) ?? [];
+    } catch (err) {
+      deps.logger.warn({ err: errorInfo(err) }, 'medical usage stats unavailable');
+    }
     return {
       provider: deps.medical?.provider ?? 'mock',
       openFdaApiKeyConfigured: Boolean(deps.env.OPENFDA_API_KEY),
       enabled,
-      usage24h: deps.medical?.usageStats(24 * 60 * 60 * 1000) ?? [],
+      usage24h,
     };
   }
 

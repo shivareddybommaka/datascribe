@@ -853,3 +853,25 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
   `rate-limit-redis.test.ts` runs two apps against one Redis (`TEST_REDIS_URL`, default DB 15,
   random key prefix per run) and checks the fail-closed path. Without Redis it skips with a warning
   locally and fails in CI (`CI` set).
+
+## D-112 — Medical-data usage stats in Redis (M10 part 2a, 2026-10-24)
+
+- The §8.4 "last 24 h calls / error rate per upstream" counters lived in each process, so the
+  admin settings page showed only the API's own calls, never the worker's (where the coding stage
+  makes most of them), and a restart zeroed them.
+- `RedisUsageTracker` (`packages/medical-data/src/resilience/usage.ts`) keeps one hash per
+  upstream per minute (`<REDIS_KEY_PREFIX>usage:<upstream>:<minute>`: outcome counts, latency sum
+  and count) that expires 2 minutes after the 24 h window, plus a set of upstreams seen. Still no
+  search terms, only upstream, outcome and latency. Reads cover 24 × 60 buckets per upstream in
+  one pipeline (about 5,800 `HGETALL`s for four upstreams, a few ms on the admin page only).
+  Resolution is one minute: the oldest minute counts whole.
+- The API passes its Redis client; the worker uses `RedisUsageTracker.connect(REDIS_URL)`, which
+  honours the URL's DB number and password. Both use `REDIS_KEY_PREFIX` (default `ds:`) so they
+  meet on the same keys.
+- Counting never blocks or fails a lookup: writes are fire-and-forget, and failures are reported
+  at most once a minute (error name only). If Redis is down, the settings page still loads,
+  with an empty usage table and a warning in the log. `usageStats()` is now async.
+- The in-memory `UsageTracker` stays for tests and for callers that pass no store.
+- Not moved: the per-upstream token buckets and circuit breakers stay per process (the defaults
+  sit far enough under each provider's limit for a few processes, see factory.ts). Sharing them is
+  only worth doing if the worker count grows; noted for part 3.

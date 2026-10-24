@@ -216,7 +216,7 @@ describe('usage stats across upstreams', () => {
     await md.diagnosis.search('lumbar radiculopathy', 5);
     await md.diagnosis.search('lumbar radiculopathy', 5);
     await md.medication.normalize('gabapentin');
-    const stats = Object.fromEntries(md.usageStats().map((s) => [s.provider, s]));
+    const stats = Object.fromEntries((await md.usageStats()).map((s) => [s.provider, s]));
     expect(Object.keys(stats).sort()).toEqual(['medlineplus', 'nlm-ctss', 'nlm-rxnav', 'openfda']);
     expect(stats['nlm-ctss']).toMatchObject({ calls: 1, cacheHits: 1, errors: 0 });
     expect(stats['nlm-rxnav']).toMatchObject({ calls: 1 });

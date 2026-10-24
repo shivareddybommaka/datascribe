@@ -1,6 +1,6 @@
 import { LocalObjectStore, createGateway, repoPath } from '@datascribe/billing';
 import { errorInfo, prisma } from '@datascribe/db';
-import { PrismaCacheStore, createMedicalData } from '@datascribe/medical-data';
+import { PrismaCacheStore, RedisUsageTracker, createMedicalData } from '@datascribe/medical-data';
 import { loadKey } from '@datascribe/shared';
 import { createApp } from './app';
 import { loadEnv } from './config/env';
@@ -30,8 +30,8 @@ const medicalSwitches = new MedicalSwitches(prisma);
 medicalSwitches.load().catch((err: Error) => {
   logger.warn({ err: { name: err.name } }, 'medical switches not loaded yet');
 });
-// Rate-limit counters shared by every API process (D-111). While Redis is down the limited
-// routes answer 500 rather than skipping the limit.
+// Rate-limit counters shared by every API process (D-111) and medical usage stats (D-112).
+// While Redis is down the limited routes answer 500 rather than skipping the limit.
 const redis = createRedis(env.REDIS_URL);
 let redisDown = false;
 redis.on('error', (err: Error) => {
@@ -107,6 +107,14 @@ const app = createApp({
     cache: new PrismaCacheStore(prisma.medicalApiCache),
     logger,
     isEnabled: medicalSwitches.isEnabled,
+    // shared with the worker, so the admin page counts every process's calls (D-112)
+    usage: new RedisUsageTracker(redis, {
+      prefix: env.REDIS_KEY_PREFIX,
+      onError: (name) => {
+        // an outage is already logged once by the client's error handler
+        if (!redisDown) logger.warn({ err: { name } }, 'medical usage counter not written');
+      },
+    }),
   }),
   medicalSwitches,
   gateway,

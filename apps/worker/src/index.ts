@@ -5,6 +5,7 @@ import {
   createOcrProvider,
   createSummaryProvider,
   medicalDataConfigFromEnv,
+  RedisUsageTracker,
 } from '@datascribe/medical-data';
 import { loadKey } from '@datascribe/shared';
 import { Queue, Worker } from 'bullmq';
@@ -26,7 +27,12 @@ const redisUrl = new URL(process.env.REDIS_URL ?? 'redis://localhost:6379');
 const connection = { host: redisUrl.hostname, port: Number(redisUrl.port || 6379) };
 
 // ── M5 pipeline: one queue per stage, each finished stage enqueues the next ──
-const medical = createMedicalData(medicalDataConfigFromEnv(process.env));
+// usage counters shared with the API's admin page (D-112)
+const usage = RedisUsageTracker.connect(process.env.REDIS_URL ?? 'redis://localhost:6379', {
+  prefix: process.env.REDIS_KEY_PREFIX ?? 'ds:',
+  onError: (name) => logger.warn({ err: { name } }, 'medical usage counter not written'),
+});
+const medical = createMedicalData({ ...medicalDataConfigFromEnv(process.env), usage });
 const pipelineDeps: PipelineDeps = {
   store: prismaPipelineStore(prisma),
   phiKey: loadKey(process.env.PHI_ENCRYPTION_KEY),
@@ -113,6 +119,7 @@ async function shutdown() {
   await Promise.all(workers.map((w) => w.close()));
   await billingQueue.close();
   await Promise.all([...pipelineQueues.values()].map((q) => q.close()));
+  await usage.close();
   await prisma.$disconnect();
   process.exit(0);
 }

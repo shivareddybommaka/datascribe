@@ -4,7 +4,7 @@ import type { BreakerConfig } from './resilience/breaker';
 import { ProviderClient, type FetchLike, type MedicalLogger } from './resilience/provider-client';
 import type { RateLimitConfig } from './resilience/rate-limit';
 import type { RetryOptions } from './resilience/retry';
-import { UsageTracker, type ProviderUsage } from './resilience/usage';
+import { UsageTracker, type ProviderUsage, type UsageStore } from './resilience/usage';
 import { MedlinePlusConnect } from './providers/medlineplus';
 import {
   MockConsumerHealthInfo,
@@ -58,7 +58,8 @@ export interface MedicalDataConfig {
   breaker?: BreakerConfig;
   fetch?: FetchLike;
   logger?: MedicalLogger;
-  usage?: UsageTracker;
+  /** call counters; pass a RedisUsageTracker so API and worker counts add up (D-112) */
+  usage?: UsageStore;
   /** Admin toggle (§8.4). Read on every call, so a settings change applies without restart. */
   isEnabled?: (upstream: Upstream) => boolean;
   now?: () => number;
@@ -73,7 +74,7 @@ export interface MedicalData {
   drugInfo: DrugInfoProvider & { attribution: Attribution };
   consumerHealth: ConsumerHealthInfo & { attribution: Attribution };
   /** Last-24h call counts and error rates per upstream, for the admin settings page (M2). */
-  usageStats(windowMs?: number): ProviderUsage[];
+  usageStats(windowMs?: number): Promise<ProviderUsage[]>;
 }
 
 export function createMedicalData(config: MedicalDataConfig = {}): MedicalData {

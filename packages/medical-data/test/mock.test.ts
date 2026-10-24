@@ -82,7 +82,7 @@ describe('mock providers are deterministic and offline', () => {
     expect(
       await md.consumerHealth.define({ system: 'ICD10CM', code: 'Z99.9', display: '', source: '' }),
     ).toBeNull();
-    expect(md.usageStats()).toEqual([]);
+    expect(await md.usageStats()).toEqual([]);
   });
 
   it('OcrProvider returns text buffers as text and a stable placeholder for images', async () => {

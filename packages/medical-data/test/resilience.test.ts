@@ -205,7 +205,7 @@ describe('cache stores', () => {
 });
 
 describe('UsageTracker', () => {
-  it('reports last-24h calls, errors, error rate, cache hits and skips per provider', () => {
+  it('reports last-24h calls, errors, error rate, cache hits and skips per provider', async () => {
     const c = fakeClock();
     const u = new UsageTracker(c.now);
     u.record('openfda', 'ok', 100);
@@ -215,7 +215,7 @@ describe('UsageTracker', () => {
     u.record('openfda', 'cache_hit');
     u.record('openfda', 'breaker_open');
     u.record('nlm-ctss', 'disabled');
-    const stats = u.stats(undefined, ['medlineplus']);
+    const stats = await u.stats(undefined, ['medlineplus']);
     expect(stats).toEqual([
       {
         provider: 'medlineplus',
@@ -247,14 +247,14 @@ describe('UsageTracker', () => {
     ]);
   });
 
-  it('prunes old events so memory stays bounded', () => {
+  it('prunes old events so memory stays bounded', async () => {
     const c = fakeClock();
     const u = new UsageTracker(c.now, 1000);
     for (let i = 0; i < 1000; i++) {
       u.record('p', 'ok', 1);
       c.advance(10);
     }
-    expect(u.stats(1000)[0]!.calls).toBeLessThanOrEqual(101);
+    expect((await u.stats(1000))[0]!.calls).toBeLessThanOrEqual(101);
   });
 });
 
@@ -295,7 +295,7 @@ describe('ProviderClient', () => {
     expect(await get('Neck Pain')).toEqual({ ok: 1 });
     expect(await get('neck  pain')).toEqual({ ok: 1 });
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect(usage.stats()[0]).toMatchObject({ calls: 1, cacheHits: 1 });
+    expect((await usage.stats())[0]).toMatchObject({ calls: 1, cacheHits: 1 });
   });
 
   it('retries 3 times, then falls back to "uncoded" instead of throwing', async () => {
@@ -344,7 +344,7 @@ describe('ProviderClient', () => {
     const { get, usage } = setup(fetch, { isEnabled: () => false });
     expect(await get()).toBe('UNCODED');
     expect(fetch).not.toHaveBeenCalled();
-    expect(usage.stats()[0]).toMatchObject({ skipped: 1, calls: 0 });
+    expect((await usage.stats())[0]).toMatchObject({ skipped: 1, calls: 0 });
   });
 
   it('falls back when the rate limit wait is too long, without retrying', async () => {
