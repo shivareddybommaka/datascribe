@@ -33,8 +33,11 @@
   summarizers and QA reviewers their own (D-093).
 - **Finance dashboard** (`GET /dashboards/finance`, `/console/dashboards/finance`): MRR and
   subscriptions by status, invoices outstanding and overdue, revenue net of refunds for a 30 / 90 /
-  365-day window with the top ten clients per currency (D-094). Finance and ops managers. The client
-  dashboard is next.
+  365-day window with the top ten clients per currency (D-094). Finance and ops managers.
+- **Client dashboard** (`GET /dashboards/client`, portal `/portal/reports`): cases by status, pages
+  processed and spend per currency (paid invoices net of refunds) for a 30 / 90 / 365-day window,
+  always for the caller's own firm. Client admins see the whole firm and its spend; client users
+  only their own and shared cases, no spend (D-095). API tests include cross-firm isolation.
 
 ## M5b — Processing pipeline (in progress, `main`)
 

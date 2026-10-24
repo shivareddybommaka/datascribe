@@ -6,6 +6,7 @@ const SALES = 'sales@datascribe.example';
 const OPS = 'ops.manager@datascribe.example';
 const SUMMARIZER = 'summarizer@datascribe.example';
 const FINANCE = 'finance@datascribe.example';
+const CLIENT_ADMIN = 'client.admin@acme.example';
 
 async function signIn(page: Page, email: string) {
   await page.goto('/console/dashboards');
@@ -71,6 +72,32 @@ test('M9: finance sees MRR, outstanding invoices and revenue by client', async (
   await expect(page.getByRole('list', { name: 'Subscriptions by status' })).toContainText('Active');
 
   const year = page.waitForResponse((r) => r.url().includes('/dashboards/finance?days=365'));
+  await page.getByLabel('Window').selectOption('365');
+  expect((await year).status()).toBe(200);
+});
+
+test('M9: a client admin sees their firm report: cases by status, pages, spend', async ({
+  page,
+}) => {
+  await page.goto('/portal');
+  await expect(page).toHaveURL(/\/portal\/login/);
+  await page.getByLabel('Email').fill(CLIENT_ADMIN);
+  await page.getByLabel('Password').fill(TEST_PASSWORD);
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+
+  await page
+    .getByRole('navigation', { name: 'Portal' })
+    .getByRole('link', { name: 'Reports' })
+    .click();
+  await expect(page).toHaveURL(/\/portal\/reports$/);
+  await expect(page.getByRole('heading', { name: 'Reports' })).toBeVisible();
+  await expect(page.getByTestId('kpi-cases')).toHaveText(/^\d+$/);
+  await expect(page.getByTestId('kpi-pages')).toHaveText(/^[\d,]+$/);
+  await expect(page.getByTestId('kpi-spend')).toHaveText(/\d|—/);
+  await expect(page.getByRole('heading', { name: 'Cases by status' })).toBeVisible();
+
+  const year = page.waitForResponse((r) => r.url().includes('/dashboards/client?days=365'));
   await page.getByLabel('Window').selectOption('365');
   expect((await year).status()).toBe(200);
 });

@@ -1,10 +1,17 @@
-import { SCALE, formatUnits, multiply, toUnits } from '@datascribe/billing';
+import { PAGES_METRIC, SCALE, formatUnits, multiply, toUnits } from '@datascribe/billing';
 import type { Prisma } from '@datascribe/db';
-import { CASE_STATUSES, LEAD_STAGES, type CaseStatus } from '@datascribe/shared';
+import {
+  CASE_STATUSES,
+  LEAD_STAGES,
+  type Action,
+  type CaseStatus,
+  type Module,
+} from '@datascribe/shared';
 import { Router } from 'express';
 import { z } from 'zod';
 import type { AuthContext } from '../auth/context';
 import { authenticate, requireAuth, requirePermission } from '../auth/middleware';
+import { caseScopeWhere } from '../auth/scoping';
 import type { Deps } from '../context';
 import { forbidden } from '../lib/errors';
 import { parse } from '../lib/validate';
@@ -82,15 +89,103 @@ const avgHours = (spans: number[]) =>
     ? Math.round((spans.reduce((a, b) => a + b, 0) / spans.length / HOUR) * 10) / 10
     : null;
 
+const ClientRange = z.object({
+  /** pages processed and payments on invoices paid in the last N days (default 30) */
+  days: z.coerce.number().int().min(1).max(730).default(30),
+});
+
+/** Does the caller hold module:action, optionally only at one of `scopes`? */
+const holds = (auth: AuthContext, module: Module, action: Action, scopes?: string[]) =>
+  auth.permissions.some(
+    (p) => p.module === module && p.action === action && (!scopes || scopes.includes(p.scope)),
+  );
+const FIRM = ['firm', 'all'];
+
 /**
  * §5.9 dashboards (M9 part 2, D-092). Aggregates only: counts and sums, never lead rows, so a
- * dashboard grant shows no contact or case details. Sales (D-092), ops (D-093) and finance
- * (D-094); client follows.
+ * dashboard grant shows no contact or case details. Sales (D-092), ops (D-093), finance (D-094)
+ * and client (D-095).
  */
 export function dashboardsRouter(deps: Deps): Router {
   const { prisma } = deps;
   const r = Router();
-  r.use('/dashboards', authenticate(deps), requireInternal);
+  r.use('/dashboards', authenticate(deps));
+
+  /**
+   * Client portal dashboard (D-095): client-org users only, always pinned to their own firm.
+   * Cases and pages follow the caller's `cases:view` scope (firm for client admins, own + shared
+   * for client users); spend needs `invoices:view` and is null without it.
+   */
+  r.get('/dashboards/client', async (req, res) => {
+    const auth = requireAuth(req);
+    if (auth.user.orgType !== 'client') throw forbidden();
+    const canCases = holds(auth, 'cases', 'view');
+    // invoices are firm records: only a firm-wide grant shows spend (billingOrgWhere)
+    const canSpend = holds(auth, 'invoices', 'view', FIRM);
+    if (!canCases && !holds(auth, 'dashboard_client', 'view')) throw forbidden();
+    const { days } = parse(ClientRange, req.query);
+    const since = new Date(Date.now() - days * 86_400_000);
+    const organizationId = auth.user.organizationId;
+    const cases = canCases ? caseScopeWhere(auth, 'cases', 'view') : null;
+    // firm-wide viewers also count usage not tied to a case; others only their cases' pages
+    const firmWide = holds(auth, 'cases', 'view', FIRM);
+
+    const [byStatus, pages, payments] = await Promise.all([
+      cases ? prisma.case.groupBy({ by: ['status'], where: cases, _count: { _all: true } }) : null,
+      cases
+        ? prisma.usageRecord.aggregate({
+            where: {
+              organizationId,
+              metric: PAGES_METRIC,
+              createdAt: { gte: since },
+              ...(firmWide ? {} : { case: cases }),
+            },
+            _sum: { quantity: true },
+            _count: { _all: true },
+          })
+        : null,
+      canSpend
+        ? prisma.payment.findMany({
+            where: {
+              status: { in: ['succeeded', 'refunded'] },
+              invoice: { ...billingOrgWhere(auth, 'invoices', 'view'), paidAt: { gte: since } },
+            },
+            select: { amount: true, refundedAmount: true, currency: true },
+          })
+        : null,
+    ]);
+
+    let spend: { currency: string; amount: string; payments: number }[] | null = null;
+    if (payments) {
+      const net = new Map<string, bigint>();
+      const count = new Map<string, number>();
+      for (const p of payments) {
+        add(net, p.currency, toUnits(p.amount) - toUnits(p.refundedAmount));
+        count.set(p.currency, (count.get(p.currency) ?? 0) + 1);
+      }
+      spend = byCurrency(net).map((m) => ({ ...m, payments: count.get(m.currency) ?? 0 }));
+    }
+
+    res.json({
+      days,
+      /** `firm` = every case of the firm, `own` = cases the caller created or that are shared */
+      scope: cases ? (firmWide ? 'firm' : 'own') : null,
+      cases: byStatus
+        ? {
+            total: byStatus.reduce((n, s) => n + s._count._all, 0),
+            byStatus: CASE_STATUSES.map((status) => ({
+              status,
+              count: byStatus.find((s) => s.status === status)?._count._all ?? 0,
+            })),
+          }
+        : null,
+      /** pages are counted once per case, on first delivery (D-040) */
+      pages: pages ? { processed: pages._sum.quantity ?? 0, cases: pages._count._all } : null,
+      spend,
+    });
+  });
+
+  r.use('/dashboards', requireInternal);
 
   r.get('/dashboards/sales', requirePermission('dashboard_sales', 'view'), async (req, res) => {
     const { days } = parse(Range, req.query);
