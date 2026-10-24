@@ -20,6 +20,22 @@ export const DEFAULT_JOB_OPTIONS = {
   removeOnFail: 5_000,
 };
 
+/**
+ * BullMQ connection options from REDIS_URL. The path selects the database (redis://host:6379/2) so
+ * checkouts can keep apart; `rediss:` turns on TLS (ElastiCache in-transit encryption, D-115).
+ */
+export function redisConnection(url: string) {
+  const u = new URL(url);
+  return {
+    host: u.hostname,
+    port: Number(u.port || 6379),
+    db: Number(u.pathname.slice(1) || 0),
+    ...(u.username ? { username: decodeURIComponent(u.username) } : {}),
+    ...(u.password ? { password: decodeURIComponent(u.password) } : {}),
+    ...(u.protocol === 'rediss:' ? { tls: { servername: u.hostname } } : {}),
+  };
+}
+
 export function nextStage(stage: PipelineQueue): PipelineQueue | null {
   const i = PIPELINE_QUEUES.indexOf(stage);
   return PIPELINE_QUEUES[i + 1] ?? null;

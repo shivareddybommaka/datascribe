@@ -39,16 +39,10 @@ import {
   type ScanOutcome,
 } from './pipeline/runner';
 import { s3DocumentObjects } from './pipeline/s3';
-import { DEFAULT_JOB_OPTIONS, PIPELINE_QUEUES } from './queues';
+import { DEFAULT_JOB_OPTIONS, PIPELINE_QUEUES, redisConnection } from './queues';
 
 const logger = pino({ base: { service: 'worker' }, level: process.env.LOG_LEVEL ?? 'info' });
-const redisUrl = new URL(process.env.REDIS_URL ?? 'redis://localhost:6379');
-// the URL's path selects the Redis database (redis://host:6379/2), so checkouts can keep apart
-const connection = {
-  host: redisUrl.hostname,
-  port: Number(redisUrl.port || 6379),
-  db: Number(redisUrl.pathname.slice(1) || 0),
-};
+const connection = redisConnection(process.env.REDIS_URL ?? 'redis://localhost:6379');
 // Own key space per checkout / e2e run when several share one Redis (D-081).
 const prefix = process.env.QUEUE_PREFIX || 'bull';
 const queueOpts = { connection, prefix };
