@@ -770,6 +770,41 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
   managers see it) rather than replacing it.
 - Ops, finance and client dashboards follow with their own scopes (ops: `assigned` / `own`).
 
+## D-093 — Ops dashboard: scopes, turnaround and workload (M9 part 2, 2026-10-24)
+
+- `GET /dashboards/ops` (`dashboard_ops:view`). The widest grant wins: `all` (ops_manager) counts
+  every case; `assigned` (case_manager's "team", D-005) counts cases where the user is case manager,
+  summarizer or QA reviewer; `own` (summarizer, qa_reviewer) counts cases they summarize or review.
+  `own` is defined here rather than through `caseScopeWhere`, whose `own` means "created or shared"
+  (client users) and would give staff an empty dashboard. A `firm` grant alone is a 403.
+- Counts only: cases by status (every status, zeros included), open and overdue counts, turnaround,
+  workload. No case numbers, matter or patient names. Workload rows carry the summarizer's user id and
+  name (staff, not PHI); under `own` only the caller's row is returned, not colleagues' counts.
+- Open = submitted, processing, in_review, qa, changes_requested, approved, on_hold. Overdue = open
+  with `dueAt` in the past (a delivered case past its due date is not overdue).
+- Turnaround over a `days` window (default 30, max 730): submitted → delivered from
+  `submittedAt` / `deliveredAt` for cases delivered in the window; submitted → in_review from the
+  first `case.status` audit row with `to: in_review` (D-073, there is no `inReviewAt` column) for cases
+  reaching review in the window. Averages in hours, one decimal; null when nothing qualifies.
+- Turnaround reads timestamps per case, not a SQL average, so the scope stays a Prisma `where`. Fine
+  at current volumes; if it gets slow, add an `inReviewAt` column and move both averages to SQL.
+- `/console/dashboards` opens ops when the user holds it, otherwise sales.
+
+## D-094 — Finance dashboard: MRR, outstanding, revenue by client (M9 part 2, 2026-10-24)
+
+- `GET /dashboards/finance` (`dashboard_finance:view`: finance + ops_manager), org filter from
+  `billingOrgWhere` like the billing routes. Every amount is per currency, never converted (D-044),
+  summed with the billing package's exact money helpers rather than floats.
+- MRR uses the finance overview's definition (D-044) so the two never disagree: every subscription
+  that isn't canceled (trialing and past_due included) at its plan's monthly price. Subscription
+  counts per status sit next to it so trialing can be read separately.
+- Outstanding = invoices `issued` or `overdue`; overdue = `overdue`, or `issued` with `dueAt` past
+  (the dunning job may not have marked it yet). Drafts, void, paid and refunded are excluded.
+- Revenue over `days` (default 90, max 730) = succeeded or refunded payments on invoices paid in the
+  window, net of `refundedAmount`, so refunds lower it. By client: top ten per currency, the rest
+  folded into one "other clients" row (`organizationId: null`). Client firm names are shown; they are
+  business data the finance role already sees, not PHI. No invoice numbers or payment references.
+
 ## D-100 — Absolute session lifetime and MFA re-check on refresh (audit M5, M10, 2026-10-24)
 
 - Replaces D-017's "7 days sliding". A rotated session copies its family's `expiresAt`, so a sign-in
