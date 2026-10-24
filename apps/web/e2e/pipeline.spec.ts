@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { TEST_PASSWORD } from '../../api/test/constants';
+import { authenticator } from 'otplib';
+import { TEST_PASSWORD, TEST_TOTP_SECRET } from '../../api/test/constants';
 import { pipelineResult } from '../../api/test/pipeline-check';
 import { SYNTHETIC_CASE_PAGES, syntheticCasePdf } from '../../api/test/synthetic-pdf';
 import { E2E, E2E_PHI_KEY } from '../playwright.config';
@@ -9,8 +10,9 @@ const MATTER = `Jacobs v. Lakeside Transit (synthetic ${Date.now()})`;
 
 test('M5 DoD: an uploaded case runs through the pipeline to review, every chronology entry cited', async ({
   page,
+  browser,
 }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(150_000);
   await page.goto('/portal');
   await page.getByLabel('Email').fill('client.user@acme.example');
   await page.getByLabel('Password').fill(TEST_PASSWORD);
@@ -92,4 +94,32 @@ test('M5 DoD: an uploaded case runs through the pipeline to review, every chrono
     expect(e.citation.pageNumber).toBeGreaterThanOrEqual(1);
     expect(e.citation.pageNumber).toBeLessThanOrEqual(SYNTHETIC_CASE_PAGES.length);
   }
+
+  // M6 part 2 (D-084): staff open the workspace; a chronology entry jumps to its source page
+  const staff = await browser.newPage();
+  await staff.goto('/console/cases');
+  await staff.getByLabel('Email').fill('ops.manager@datascribe.example');
+  await staff.getByLabel('Password').fill(TEST_PASSWORD);
+  await staff.getByRole('button', { name: 'Continue' }).click();
+  await staff.getByLabel('Authentication code').fill(authenticator.generate(TEST_TOTP_SECRET));
+  await staff.getByRole('button', { name: 'Verify' }).click();
+  await expect(staff).not.toHaveURL(/\/console\/login/);
+  await staff.goto(`/console/cases/${caseId}`);
+  await expect(staff.getByRole('heading', { level: 1 })).toContainText(MATTER);
+  await expect(staff.getByLabel('Document')).toContainText(FILE);
+  const target = entries[entries.length - 1]!;
+  const items = staff.getByRole('tabpanel', { name: 'Chronology' }).getByRole('listitem');
+  await expect(items).toHaveCount(entries.length);
+  await items.last().getByRole('button').click();
+  await expect(
+    staff.getByRole('button', { name: `Page ${target.citation.pageNumber}`, exact: true }),
+  ).toHaveAttribute('aria-current', 'page');
+  const text = staff.getByRole('region', { name: 'Page text' });
+  await expect(text).toContainText(
+    `Page ${target.citation.pageNumber} of ${SYNTHETIC_CASE_PAGES.length}`,
+  );
+  await expect(text.locator('pre')).not.toHaveText(/Loading…|No text on this page\./);
+  await staff.getByRole('tab', { name: 'Index' }).click();
+  await expect(staff.getByRole('tabpanel', { name: 'Index' })).toContainText(FILE);
+  await staff.close();
 });

@@ -661,6 +661,83 @@ export function casesRouter(deps: Deps): Router {
     res.json({ items });
   });
 
+  // ── Staff workspace (M6 part 2, §5.4, D-084) ──────────────────────────
+  /**
+   * Everything the workspace page shows at once: the case's documents (for the viewer), the
+   * latest version of each deliverable with its decrypted content, and the clinical events with
+   * their citations. Internal staff only; drafts are never shown to clients.
+   */
+  r.get('/cases/:id/workspace', requirePermission('deliverables', 'view'), async (req, res) => {
+    const auth = requireAuth(req);
+    if (auth.user.orgType !== 'internal') throw notFound();
+    const c = await loadCase(req, 'deliverables');
+    if (!canOnCase(auth, 'view', 'documents', c)) throw notFound();
+    const [docs, deliverables, events] = await Promise.all([
+      prisma.document.findMany({
+        where: { caseId: c.id, organizationId: c.organizationId, uploadedAt: { not: null } },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          fileName: true,
+          mimeType: true,
+          pageCount: true,
+          scanStatus: true,
+          purgedAt: true,
+        },
+      }),
+      prisma.deliverable.findMany({
+        where: { caseId: c.id },
+        orderBy: [{ type: 'asc' }, { version: 'desc' }],
+      }),
+      prisma.clinicalEvent.findMany({
+        where: { caseId: c.id },
+        orderBy: [{ eventDate: 'asc' }, { documentId: 'asc' }, { pageNumber: 'asc' }],
+      }),
+    ]);
+    const latest = deliverables.filter(
+      (d, i) => deliverables.findIndex((o) => o.type === d.type) === i,
+    );
+    await req.audit({
+      action: 'case.workspace_view',
+      entity: 'Case',
+      entityId: c.id,
+      organizationId: c.organizationId,
+      metadata: { documents: docs.length, deliverables: latest.length, events: events.length },
+    });
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json({
+      case: await detail(req, c),
+      documents: docs.map((d) => ({
+        id: d.id,
+        fileName: d.fileName,
+        mimeType: d.mimeType,
+        pageCount: d.pageCount,
+        state: d.purgedAt ? 'purged' : d.scanStatus,
+      })),
+      deliverables: latest.map((d) => ({
+        id: d.id,
+        type: d.type,
+        version: d.version,
+        status: d.status,
+        lockedAt: d.lockedAt,
+        createdAt: d.createdAt,
+        content: JSON.parse(decrypt(d.content, phiKey)) as unknown,
+      })),
+      clinicalEvents: events.map((e) => ({
+        id: e.id,
+        documentId: e.documentId,
+        pageNumber: e.pageNumber,
+        eventDate: e.eventDate,
+        provider: e.provider,
+        facility: e.facility,
+        eventType: e.eventType,
+        description: decryptOptional(e.description, phiKey),
+        codes: e.codes,
+        version: e.version,
+      })),
+    });
+  });
+
   // ── Sharing (CaseShare, same firm only) ───────────────────────────────
   r.get('/cases/:id/share-candidates', requirePermission('cases', 'edit'), async (req, res) => {
     const auth = requireAuth(req);

@@ -1,5 +1,19 @@
 # Changelog
 
+## M6 part 2a — Staff workspace read side (2026-10-25, master)
+
+Design notes: D-084.
+
+- **`GET /cases/:id/workspace`**: case, documents, latest deliverables (decrypted content) and
+  clinical events with citations, in one call. Staff only, audited `case.workspace_view`.
+- **`GET /documents/:id/pages/:n`**: decrypted text, OCR confidence and record type of one page.
+  Staff only, audited `document.page_view`, 410 after retention.
+- **Console `/console/cases/[id]`**: source records (document picker, page list, page text) beside
+  Chronology / Index / Summary tabs; clicking an entry or index row jumps to its source page. Queue
+  case numbers link here. Page images come in part 2b.
+- Tests: `apps/api/test/workspace.test.ts` (6); the M5 DoD e2e now opens the workspace as ops and
+  follows a chronology citation to its page.
+
 ## M6 part 1 — Staff case queue and assignment API (2026-10-25, master)
 
 Design notes: D-083.

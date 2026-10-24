@@ -14,6 +14,7 @@ import {
   cleanFileName,
   detectFileType,
 } from '../lib/filetype';
+import { decryptOptional } from '../lib/phi';
 import { parse } from '../lib/validate';
 import { UPLOADABLE_STATUSES } from '../services/cases';
 import { documentKey, partCountFor, partSizeFor } from '../services/documents';
@@ -50,6 +51,8 @@ export function serializeDocument(d: DocRow, env: Pick<Env, 'UPLOAD_PART_SIZE_MB
     partCount: partCountFor(size, partSize),
   };
 }
+
+const PageNumber = z.coerce.number().int().min(1).max(100_000);
 
 const NewUpload = z.object({
   fileName: z.string().min(1).max(500),
@@ -324,6 +327,34 @@ export function documentsRouter(deps: Deps): Router {
     await audit(req, 'document.download', doc);
     res.setHeader('Cache-Control', 'private, no-store');
     res.json({ url, expiresAt: new Date(Date.now() + DOWNLOAD_URL_TTL_S * 1000) });
+  });
+
+  /**
+   * Extracted text of one page for the staff workspace (§5.4, D-084). Internal staff only: clients
+   * see their own files, not the pipeline's output. 404 for a page the pipeline didn't store.
+   */
+  r.get('/documents/:id/pages/:n', requirePermission('documents', 'view'), async (req, res) => {
+    const auth = requireAuth(req);
+    if (auth.user.orgType !== 'internal') throw notFound();
+    const pageNumber = parse(PageNumber, req.params.n);
+    const doc = await loadDocument(req, 'view');
+    if (doc.purgedAt) {
+      throw new HttpError(410, 'purged', 'This file was deleted by the retention policy');
+    }
+    const page = await prisma.documentPage.findUnique({
+      where: { documentId_pageNumber: { documentId: doc.id, pageNumber } },
+    });
+    if (!page) throw notFound();
+    await audit(req, 'document.page_view', doc, { pageNumber });
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json({
+      documentId: doc.id,
+      pageNumber,
+      pageCount: doc.pageCount,
+      text: decryptOptional(page.text, deps.phiKey),
+      ocrConfidence: page.ocrConfidence,
+      recordType: page.recordType,
+    });
   });
 
   return r;

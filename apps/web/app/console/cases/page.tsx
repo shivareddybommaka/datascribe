@@ -2,6 +2,7 @@
 
 import type { CaseStatus } from '@datascribe/shared/constants';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import Link from 'next/link';
 import { useState } from 'react';
 import { useCan } from '@/components/auth';
 import { AssignDialog } from '@/components/cases/assign-dialog';
@@ -170,7 +171,11 @@ export default function CaseQueuePage() {
             <tbody className="divide-y divide-line">
               {data.items.map((c) => (
                 <tr key={c.id} className="hover:bg-surface">
-                  <td className="whitespace-nowrap px-3 py-2 font-medium text-ink">{c.number}</td>
+                  <td className="whitespace-nowrap px-3 py-2 font-medium text-ink">
+                    <Link href={`/console/cases/${c.id}`} className="hover:underline">
+                      {c.number}
+                    </Link>
+                  </td>
                   <td className="px-3 py-2">{c.organization.name}</td>
                   <td className="px-3 py-2">{c.matterName}</td>
                   <td className="px-3 py-2">

@@ -368,6 +368,83 @@ export interface CaseDetail extends CaseSummary {
 
 export type ScanStatus = 'pending' | 'clean' | 'infected' | 'error';
 
+/** Source citation of a chronology entry or clinical event (§5.4). */
+export interface Citation {
+  documentId: string;
+  fileName?: string;
+  pageNumber: number;
+}
+
+export interface ChronologyEntry {
+  eventId?: string;
+  date: string | null;
+  provider: string | null;
+  facility: string | null;
+  eventType: string | null;
+  description: string;
+  codes: { system: string; code: string; display: string }[];
+  citation: Citation | null;
+}
+
+export interface IndexRow {
+  documentId: string;
+  fileName: string;
+  pageFrom: number;
+  pageTo: number;
+  recordType: string;
+  providers: string[];
+  dateFrom: string | null;
+  dateTo: string | null;
+}
+
+export type DeliverableContent =
+  | { kind: 'chronology'; entries: ChronologyEntry[] }
+  | { kind: 'index'; rows: IndexRow[]; totals: { documents: number; pages: number } }
+  | { kind: 'summary'; sections: { heading: string; paragraphs: string[] }[]; provider?: string };
+
+export interface WorkspaceDeliverable {
+  id: string;
+  type: 'index' | 'chronology' | 'summary' | 'report';
+  version: number;
+  status: 'draft' | 'in_qa' | 'changes_requested' | 'approved' | 'delivered';
+  lockedAt: string | null;
+  createdAt: string;
+  content: DeliverableContent;
+}
+
+/** GET /cases/:id/workspace (M6 part 2, D-084). Staff only. */
+export interface CaseWorkspace {
+  case: CaseDetail;
+  documents: {
+    id: string;
+    fileName: string;
+    mimeType: string;
+    pageCount: number | null;
+    state: 'purged' | ScanStatus;
+  }[];
+  deliverables: WorkspaceDeliverable[];
+  clinicalEvents: {
+    id: string;
+    documentId: string;
+    pageNumber: number;
+    eventDate: string | null;
+    provider: string | null;
+    facility: string | null;
+    eventType: string | null;
+    description: string;
+    version: number;
+  }[];
+}
+
+export interface DocumentPageText {
+  documentId: string;
+  pageNumber: number;
+  pageCount: number | null;
+  text: string | null;
+  ocrConfidence: number | null;
+  recordType: string | null;
+}
+
 export interface DocumentRow {
   id: string;
   caseId: string;

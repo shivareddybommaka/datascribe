@@ -1503,6 +1503,27 @@ queues.ts`) keeps them; the API and the usage tracker already pass the URL to io
   `case.assign` audit row per changed slot (`{role, from, to}`, user ids only) and an
   `assigned_to_you` notification to each new assignee (not to the caller), via M9's `notifyAssigned`.
 
+## D-084 — Staff workspace read side (M6 part 2a, 2026-10-25)
+
+- **`GET /cases/:id/workspace`** returns in one call what the §5.4 workspace shows: the case detail,
+  the case's finished uploads (`state` clean / infected / error / pending / purged), the **latest
+  version** of each deliverable with its decrypted content, and the clinical events (decrypted
+  description, `documentId` + `pageNumber` citation) ordered by date. Needs `deliverables:view` and
+  `documents:view` on the case (assigned summarizer / QA reviewer, case managers, ops, super admin).
+- **`GET /documents/:id/pages/:n`** (the §9 route): decrypted page text, OCR confidence and record
+  type of one stored page; 404 if the pipeline stored no such page, 410 once retention purged it.
+- Both are **internal staff only** (clients get 404): drafts and pipeline output are never shown to
+  clients; they see their own files and, after M6 delivery, the final report.
+- Both send `Cache-Control: private, no-store` and are audited (`case.workspace_view` with counts,
+  `document.page_view` with the page number); never file names or content.
+- **Console `/console/cases/[id]`**: source records on the left (document picker, page list, page
+  text with record type and OCR confidence), Chronology / Index / Summary tabs on the right; a
+  chronology entry or index row jumps to its cited page; an entry without a citation is flagged red.
+  Case numbers in the queue link to it.
+- **Page images are part 2b.** The left pane shows the extracted page text for now. The planned
+  viewer renders page images server-side with the worker's existing pdf.js + `@napi-rs/canvas`
+  renderer (D-082), no new web dependency, unless Shiva prefers `pdfjs-dist` in the browser.
+
 ## D-128 — Retention / hard-delete job (M10 part 6, 2026-10-25)
 
 - Approved by Shiva (2026-10-24, item 4). §10: "delete source documents 180 days after case closed;
