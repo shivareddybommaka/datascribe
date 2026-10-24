@@ -1,11 +1,11 @@
 import type { Prisma } from '@datascribe/db';
-import { LEAD_STAGES, type LeadStage } from '@datascribe/shared';
+import { LEAD_STAGES, broadestScope, type LeadStage } from '@datascribe/shared';
 import express, { Router, type Request } from 'express';
 import { z } from 'zod';
 import { authenticate, requireAuth, requirePermission } from '../../auth/middleware';
 import type { Deps } from '../../context';
 import { parseCsv, toCsv } from '../../lib/csv';
-import { HttpError, badRequest, conflict, notFound } from '../../lib/errors';
+import { HttpError, badRequest, conflict, forbidden, notFound } from '../../lib/errors';
 import { parse } from '../../lib/validate';
 import { Email } from '../auth';
 import { issueInvite } from '../invites';
@@ -23,6 +23,8 @@ import {
 } from './common';
 
 const MAX_IMPORT_ROWS = 5000;
+
+const domainOf = (email: string) => email.slice(email.lastIndexOf('@') + 1).toLowerCase();
 
 export const LEAD_CSV_COLUMNS = [
   'companyName',
@@ -434,6 +436,27 @@ export function leadsRouter(deps: Deps): Router {
     if (await prisma.user.findUnique({ where: { email: adminEmail } })) {
       throw conflict('user_exists', 'A user with this email already exists');
     }
+    // Audit L10: the firm's first admin should be someone at the firm. A staff-domain address
+    // would give a client account that looks like Datascribe staff; another domain than the
+    // lead's needs an admin (users:create), not only crm:edit.
+    const domain = domainOf(adminEmail);
+    const staffDomains = new Set(
+      (
+        await prisma.user.findMany({
+          where: { organization: { type: 'internal' } },
+          select: { email: true },
+        })
+      ).map((u) => domainOf(u.email)),
+    );
+    if (staffDomains.has(domain)) {
+      throw badRequest('admin_email_domain', 'The client admin cannot use a Datascribe address');
+    }
+    const offDomain = !lead.email || domainOf(lead.email) !== domain;
+    if (offDomain && !broadestScope(auth.permissions, 'users', 'create')) {
+      throw forbidden(
+        "The client admin's email must be on the lead's email domain; ask an admin to convert",
+      );
+    }
     if (
       body.planId &&
       !(await prisma.subscriptionPlan.findFirst({ where: { id: body.planId, active: true } }))
@@ -492,7 +515,7 @@ export function leadsRouter(deps: Deps): Router {
       entity: 'Lead',
       entityId: lead.id,
       organizationId: org.id,
-      metadata: { fromStage: lead.stage },
+      metadata: { fromStage: lead.stage, adminEmailOffDomain: offDomain },
     });
     let invite;
     try {

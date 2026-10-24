@@ -287,6 +287,39 @@ describe('M7 definition of done: website lead → converted client org with invi
     expect((await prisma.lead.findUniqueOrThrow({ where: { id: existing.id } })).stage).toBe('new');
   });
 
+  it("the client admin must be on the lead's domain unless an admin converts (audit L10)", async () => {
+    const lead = (
+      await as(SALES).post('/api/v1/leads', newLead({ email: 'pat@synthetic-firm.example' }))
+    ).body;
+    const convert = (who: string, adminEmail: string) =>
+      as(who).post(`/api/v1/leads/${lead.id}/convert`, { adminEmail });
+
+    const staff = await convert(OPS, `someone.${Date.now()}@datascribe.example`);
+    expect(staff.status).toBe(400);
+    expect(staff.body.error.code).toBe('admin_email_domain');
+
+    const offDomain = `owner.${Date.now()}@elsewhere.example`;
+    expect((await convert(SALES, offDomain)).status).toBe(403);
+    expect((await prisma.lead.findUniqueOrThrow({ where: { id: lead.id } })).stage).toBe('new');
+
+    // same domain is fine for sales; another domain needs users:create (ops_manager has it)
+    const other = (
+      await as(SALES).post('/api/v1/leads', newLead({ email: 'pat@synthetic-firm.example' }))
+    ).body;
+    expect(
+      (
+        await as(SALES).post(`/api/v1/leads/${other.id}/convert`, {
+          adminEmail: `admin.${Date.now()}@synthetic-firm.example`,
+        })
+      ).status,
+    ).toBe(201);
+    expect((await convert(OPS, offDomain)).status).toBe(201);
+    const audit = await prisma.auditLog.findFirstOrThrow({
+      where: { action: 'crm.lead.convert', entityId: lead.id },
+    });
+    expect(audit.metadata).toMatchObject({ adminEmailOffDomain: true });
+  });
+
   it('case_manager cannot convert', async () => {
     const lead = (await as(SALES).post('/api/v1/leads', newLead())).body;
     expect((await as(CM).post(`/api/v1/leads/${lead.id}/convert`, {})).status).toBe(403);

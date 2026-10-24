@@ -761,3 +761,16 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
   every path now. The floor is the simple fix; it costs every sign-in up to 400 ms. API tests set
   it to 0 except the test that checks it. If SMTP ever takes longer than the floor, forgot would
   leak again; moving its email to the worker queue (M9) removes that.
+
+## D-107 — Who may become a converted firm's first admin (audit L10, M10, 2026-10-24)
+
+- Converting a lead (`crm:edit`, so sales) invites a `client_admin` (D-018). Any address was
+  accepted. Now:
+  - A domain used by internal-org users (Datascribe staff) is refused (400 `admin_email_domain`).
+    Such a client account would look like staff in emails and the console.
+  - An `adminEmail` on another domain than the lead's own email (or a lead without an email) needs
+    `users:create` (ops manager, super admin). Sales gets 403 and nothing changes.
+  - The `crm.lead.convert` audit entry records `adminEmailOffDomain`.
+- Known limit: sales can still edit the lead's email first (the audit log records
+  `crm.lead.update` with `fields: ['email']`).
+  The rule stops an unnoticed one-step hand-over, not a determined insider.
