@@ -36,6 +36,16 @@ export const EnvSchema = z
     SMTP_HOST: z.string().default('localhost'),
     SMTP_PORT: z.coerce.number().int().positive().default(1025),
     MAIL_FROM: z.string().default('no-reply@datascribe.example'),
+    /** Datascribe's own email domains (comma-separated); unset = MAIL_FROM's domain (audit L10) */
+    STAFF_EMAIL_DOMAINS: z
+      .string()
+      .optional()
+      .transform((v) =>
+        (v ?? '')
+          .split(',')
+          .map((s) => s.trim().toLowerCase())
+          .filter(Boolean),
+      ),
     /** website contact / demo forms notify this inbox (§5.1) */
     SALES_INBOX: z.string().email().default('sales@datascribe.example'),
     MEDICAL_DATA_PROVIDER: z.enum(['nlm', 'mock']).default('mock'),
@@ -141,6 +151,19 @@ export const EnvSchema = z
   });
 
 export type Env = z.infer<typeof EnvSchema>;
+
+/** STAFF_EMAIL_DOMAINS, or the domain of MAIL_FROM when it is unset. */
+export function staffEmailDomains(env: Pick<Env, 'STAFF_EMAIL_DOMAINS' | 'MAIL_FROM'>): string[] {
+  if (env.STAFF_EMAIL_DOMAINS.length) return env.STAFF_EMAIL_DOMAINS;
+  const at = env.MAIL_FROM.lastIndexOf('@');
+  return at >= 0
+    ? [
+        env.MAIL_FROM.slice(at + 1)
+          .replace(/>.*$/, '')
+          .toLowerCase(),
+      ]
+    : [];
+}
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
   const parsed = EnvSchema.safeParse(source);

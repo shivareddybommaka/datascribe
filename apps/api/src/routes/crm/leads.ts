@@ -3,6 +3,7 @@ import { LEAD_STAGES, broadestScope, type LeadStage } from '@datascribe/shared';
 import express, { Router, type Request } from 'express';
 import { z } from 'zod';
 import { authenticate, requireAuth, requirePermission } from '../../auth/middleware';
+import { staffEmailDomains } from '../../config/env';
 import type { Deps } from '../../context';
 import { parseCsv, toCsv } from '../../lib/csv';
 import { HttpError, badRequest, conflict, forbidden, notFound } from '../../lib/errors';
@@ -440,15 +441,7 @@ export function leadsRouter(deps: Deps): Router {
     // would give a client account that looks like Datascribe staff; another domain than the
     // lead's needs an admin (users:create), not only crm:edit.
     const domain = domainOf(adminEmail);
-    const staffDomains = new Set(
-      (
-        await prisma.user.findMany({
-          where: { organization: { type: 'internal' } },
-          select: { email: true },
-        })
-      ).map((u) => domainOf(u.email)),
-    );
-    if (staffDomains.has(domain)) {
+    if (staffEmailDomains(deps.env).includes(domain)) {
       throw badRequest('admin_email_domain', 'The client admin cannot use a Datascribe address');
     }
     const offDomain = !lead.email || domainOf(lead.email) !== domain;

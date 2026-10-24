@@ -766,8 +766,10 @@ databases are fresh). Until then legacy plaintext is still readable (`decryptOpt
 
 - Converting a lead (`crm:edit`, so sales) invites a `client_admin` (D-018). Any address was
   accepted. Now:
-  - A domain used by internal-org users (Datascribe staff) is refused (400 `admin_email_domain`).
-    Such a client account would look like staff in emails and the console.
+  - A Datascribe domain is refused (400 `admin_email_domain`): such a client account would look
+    like staff in emails and the console. The domains are `STAFF_EMAIL_DOMAINS`, defaulting to
+    `MAIL_FROM`'s domain. They are configured rather than derived from staff accounts, because
+    one staff member on gmail.com would otherwise block every firm on gmail.com.
   - An `adminEmail` on another domain than the lead's own email (or a lead without an email) needs
     `users:create` (ops manager, super admin). Sales gets 403 and nothing changes.
   - The `crm.lead.convert` audit entry records `adminEmailOffDomain`.
