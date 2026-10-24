@@ -65,6 +65,8 @@ test('M5 DoD: an uploaded case runs through the pipeline to review, every chrono
       'ready_for_review',
     ].map((s) => [s, 'succeeded']),
   );
+  // stage 7 told the case managers (no summarizer assigned yet) that the case is ready (M9)
+  expect(result.noticeTypes).toContain('processing_complete');
   // every page stored (encrypted) and classified
   expect(result.pages).toHaveLength(SYNTHETIC_CASE_PAGES.length);
   for (const p of result.pages) expect(p.encrypted).toBe(true);

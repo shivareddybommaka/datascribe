@@ -2,7 +2,9 @@ import { LocalObjectStore, repoPath, runDunning, runMonthlyInvoicing } from '@da
 import { errorInfo, prisma } from '@datascribe/db';
 import {
   deliverPendingEmails,
+  notifyCaseReadyForReview,
   notifyInvoicesIssued,
+  notifyProcessingFailed,
   notifyTasksDue,
 } from '@datascribe/db/notifications';
 import {
@@ -88,6 +90,10 @@ const pipelineDeps: PipelineDeps = {
     (process.env.SUMMARY_PROVIDER || 'mock') as Parameters<typeof createSummaryProvider>[0],
   ),
   log: logger.child({ component: 'pipeline' }),
+  notify: {
+    readyForReview: (caseId) => notifyCaseReadyForReview(prisma, caseId),
+    processingFailed: (caseId) => notifyProcessingFailed(prisma, caseId),
+  },
 };
 const pipelineQueues = new Map(
   RUNNER_STAGES.map((stage) => [stage, new Queue<PipelineJobData>(stage, queueOpts)]),

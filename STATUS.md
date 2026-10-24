@@ -13,16 +13,16 @@ existing CRM, never touch), Redis 7, SeaweedFS S3 (:9000), Mailpit (:8025). CMS 
 | M2 Admin console              | done (merged from `admin/m2`)      | custom role takes effect without restart; audit M2 + M4 fixed; D-060..D-064                 |
 | M3 Website + CMS              | done (merged from `storefront/m3`) | Lighthouse ≥ 90 not measured yet (needs Lighthouse install)                                 |
 | M4 Portal cases + uploads     | done (merged from `portal/m4`)     | DoD test green (300-page PDF, interrupted + resumed); D-070..D-077                          |
-| M5 Pipeline                   | **M5b in progress (master)**       | DoD e2e green (upload → 7 stages → in_review, all cited). Left: notify (needs M9), OCR      |
+| M5 Pipeline                   | **M5b in progress (master)**       | DoD e2e green (upload → 7 stages → in_review, all cited); notify done. Left: OCR (step 7)  |
 | M6 Workspace + QA + delivery  | not started                        |                                                                                             |
 | M7 CRM                        | done                               |                                                                                             |
 | M8 Billing                    | done (merged from `ledger/m8`)     | portal pay-by-card screen built in M4; Stripe test key needed for the manual test-card demo |
-| M9 Notifications + dashboards | in progress (`herald/m9`)          | part 1 infra + bell UI committed (`dda7e8e`); merge of main running, then dashboards        |
-| M10 Hardening                 | in progress (`sentinel/m10`)       | parts 1 + 2a merged (D-100..D-113); part 2b (load test, §10 checklist) running              |
+| M9 Notifications + dashboards | in progress (`herald/m9`)          | part 1 + sales dashboard merged (`630c868`, D-090..D-092); ops dashboard running            |
+| M10 Hardening                 | in progress (`sentinel/m10`)       | parts 1, 2a, 2b merged (D-100..D-114, `docs/SECURITY-CHECKLIST.md`); part 3a IaC files running |
 
-Tests on `main` (2026-10-24 13:30, after M5b steps 4 + 6 and the M10 part 2a merge): lint,
-typecheck, unit/API tests and build green (36/36 turbo tasks; API 271+, worker 47, scan 6);
-Playwright e2e 19/19 (new: M5 DoD pipeline spec; the e2e now runs the worker too).
+Tests on `main` (2026-10-24 15:30, after the M9 part 1 + M10 part 2b merges and M5b step 5): lint,
+typecheck, unit/API tests and build green (API 297, worker 53, scan 6); Playwright e2e 21/21
+(new: notification bell, sales dashboard; the pipeline spec checks the review notification).
 
 M4 merge notes: main's `.env` needs `S3_SSE=none` (local SeaweedFS has no SSE, D-070) or the API's
 uploads fail; the API creates the buckets at startup and encrypts legacy case notes / messages
@@ -33,7 +33,7 @@ M5b plan (in order): 1 stages 3–6 pure modules (classify, events, coding, inde
 `ProcessingJob` rows, encrypted `DocumentPage` / `ClinicalEvent` / `Deliverable` writes, retries →
 case `on_hold` ✅ (D-080) · 4 scan stage in the worker (`packages/scan`), DB-to-queue dispatcher for
 completed uploads and submitted cases ✅ (D-081) · 5 stage 7 `in_review` ✅ + notify summarizer /
-case manager on hold (waits for the M9 merge: herald's emit helper) · 6 M5 DoD e2e (synthetic
+case manager on hold ✅ · 6 M5 DoD e2e (synthetic
 six-record PDF → deliverables, every chronology entry cited, status timeline) ✅ · 7 tesseract OCR
 provider + page renderer (or Waiting on Shiva if it needs a system install).
 
@@ -68,6 +68,11 @@ ledger D-040+, pipeline D-050+, herald D-090+, sentinel D-100+.
 - Stripe test key for the manual M8 test-card demo. CMS email adapter choice (editor password reset).
 - CI result on GitHub Actions (agent can't read Actions with the deploy key), now including the new
   e2e job.
+- M10 (sentinel): should production refuse to start unless `S3_SSE=aws:kms`? May we add
+  `@axe-core/playwright` (WCAG check) and the Sentry SDKs? Build the retention / hard-delete job next?
+- Terraform CLI (Homebrew, admin) to `terraform validate` the M10 IaC files; nothing will be applied.
+- Next's e2e run rewrites `apps/web/next-env.d.ts` / `tsconfig.json` with the port (herald): ignore
+  them or fix on main? (Agents reset them before each commit for now.)
 
 ## Security review (datascribe-auditor)
 

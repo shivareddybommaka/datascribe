@@ -14,7 +14,7 @@ export interface Citation {
 export async function pipelineResult(dbUrl: string, phiKey: Buffer, caseId: string) {
   const prisma = new PrismaClient({ datasourceUrl: dbUrl });
   try {
-    const [jobs, deliverables, pages] = await Promise.all([
+    const [jobs, deliverables, pages, notices] = await Promise.all([
       prisma.processingJob.findMany({
         where: { caseId },
         orderBy: { createdAt: 'asc' },
@@ -25,12 +25,17 @@ export async function pipelineResult(dbUrl: string, phiKey: Buffer, caseId: stri
         where: { document: { caseId } },
         select: { pageNumber: true, recordType: true, text: true },
       }),
+      prisma.notification.findMany({
+        where: { payload: { path: ['caseId'], equals: caseId } },
+        select: { type: true },
+      }),
     ]);
     const content = Object.fromEntries(
       deliverables.map((d) => [d.type, JSON.parse(decrypt(d.content, phiKey)) as unknown]),
     );
     return {
       jobs,
+      noticeTypes: notices.map((n) => n.type),
       types: deliverables.map((d) => d.type).sort(),
       chronology: content.chronology as { entries: { date: string | null; citation: Citation }[] },
       index: content.index as { rows: unknown[] },

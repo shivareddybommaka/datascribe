@@ -313,7 +313,7 @@ export async function notifyTasksDue(db: Db, now = new Date()) {
 
 /**
  * Case reached `in_review`: its summarizer, else its case manager, else all case managers.
- * TODO(M5b): call from pipeline stage 7 (`ready-for-review`) when it sets the case to in_review.
+ * Sent by pipeline stage 7 (`ready-for-review`) when it moves the case to in_review.
  */
 export async function notifyCaseReadyForReview(db: Db, caseId: string) {
   const c = await caseRef(db, caseId);
@@ -328,7 +328,7 @@ export async function notifyCaseReadyForReview(db: Db, caseId: string) {
 
 /**
  * A pipeline stage failed after its retries and the case is on hold (§7): case manager + ops.
- * TODO(M5b): call from the stage runner's final-failure handler.
+ * Sent by the pipeline stage runner after a stage's last attempt fails.
  */
 export async function notifyProcessingFailed(db: Db, caseId: string) {
   const c = await caseRef(db, caseId);

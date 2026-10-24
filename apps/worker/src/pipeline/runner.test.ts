@@ -339,6 +339,44 @@ describe('pipeline runner', () => {
     );
   });
 
+  it('notifies once when the case reaches review, and when it goes on hold', async () => {
+    const { store, deps } = setup();
+    const notify = { readyForReview: vi.fn(async () => 1), processingFailed: vi.fn(async () => 1) };
+    deps.notify = notify;
+    await runAll(deps);
+    expect(notify.readyForReview).toHaveBeenCalledExactlyOnceWith('case1');
+    // a retried stage 7 finds the case already in review: no second notice
+    expect(store.kase.status).toBe('in_review');
+    await runStage('ready-for-review', { caseId: 'case1' }, once, deps);
+    expect(notify.readyForReview).toHaveBeenCalledOnce();
+    expect(notify.processingFailed).not.toHaveBeenCalled();
+
+    store.kase.status = 'processing';
+    store.docs[1]!.s3Key = 'k/missing';
+    const last = { attempt: 3, maxAttempts: 3 };
+    await expect(runStage('extract', { caseId: 'case1' }, once, deps)).rejects.toThrow();
+    expect(notify.processingFailed).not.toHaveBeenCalled();
+    await expect(runStage('extract', { caseId: 'case1' }, last, deps)).rejects.toThrow();
+    expect(notify.processingFailed).toHaveBeenCalledExactlyOnceWith('case1');
+  });
+
+  it('a failing notification does not fail the stage', async () => {
+    const { store, deps, log } = setup({ status: 'processing' });
+    deps.notify = {
+      readyForReview: async () => {
+        throw new TypeError('db down');
+      },
+      processingFailed: async () => 0,
+    };
+    const r = await runStage('ready-for-review', { caseId: 'case1' }, once, deps);
+    expect(r.next).toBeNull();
+    expect(store.kase.status).toBe('in_review');
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'readyForReview', err: { name: 'TypeError' } }),
+      'pipeline notice not sent',
+    );
+  });
+
   it('rejects unsupported document types', async () => {
     const { store, deps } = setup();
     store.docs[1]!.mimeType = 'application/zip';

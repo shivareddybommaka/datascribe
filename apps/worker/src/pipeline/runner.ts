@@ -147,6 +147,24 @@ export interface PipelineDeps {
   coders: Coders;
   summary: SummaryProvider;
   log: PipelineLogger;
+  /** M9 notifications (`@datascribe/db/notifications`); a failed notification never fails a stage */
+  notify?: PipelineNotifier;
+}
+
+export interface PipelineNotifier {
+  /** the case reached `in_review`: its summarizer, else the case managers */
+  readyForReview(caseId: string): Promise<unknown>;
+  /** a stage failed after its retries and the case is `on_hold`: case manager + ops */
+  processingFailed(caseId: string): Promise<unknown>;
+}
+
+async function sendNotice(deps: PipelineDeps, kind: keyof PipelineNotifier, caseId: string) {
+  if (!deps.notify) return;
+  try {
+    await deps.notify[kind](caseId);
+  } catch (err) {
+    deps.log.warn({ caseId, kind, err: { name: (err as Error).name } }, 'pipeline notice not sent');
+  }
 }
 
 export interface StageContext {
@@ -325,8 +343,9 @@ const PROCESSORS: Record<RunnerStage, Processor> = {
   },
 
   async 'ready-for-review'(c, deps) {
-    // Step 5 adds the summarizer notification here.
     const moved = await deps.store.transitionCase(c.id, ['processing'], 'in_review');
+    // only the run that moved the case notifies, so a retried stage 7 doesn't notify twice
+    if (moved) await sendNotice(deps, 'readyForReview', c.id);
     return { moved: moved ? 1 : 0 };
   },
 };
@@ -363,7 +382,9 @@ export async function runStage(
     const error = jobError(err);
     await deps.store.finishJob(jobId, { ok: false, error });
     const final = ctx.attempt >= ctx.maxAttempts;
-    if (final) await deps.store.transitionCase(c.id, RUNNABLE_STATES, 'on_hold');
+    if (final && (await deps.store.transitionCase(c.id, RUNNABLE_STATES, 'on_hold'))) {
+      await sendNotice(deps, 'processingFailed', c.id);
+    }
     deps.log.warn(
       { stage, caseId: c.id, attempt: ctx.attempt, final, error: error.split(':')[0] },
       'pipeline stage failed',

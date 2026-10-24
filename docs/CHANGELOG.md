@@ -45,6 +45,10 @@
   stages → `in_review`; index, chronology and summary are stored encrypted, chronology dated and in
   order, every entry citing a page of the upload. Pipeline status changes now appear on the case
   timeline (`case.status` audit rows).
+- **Pipeline notifications** (step 5, uses M9): stage 7 notifies the summarizer (else the case
+  managers) when it moves the case to `in_review`; a stage's last failed attempt that puts the case
+  `on_hold` notifies the case manager and ops managers. Only the run that changes the status sends,
+  and a failed notification is logged (ids and error name only) without failing the stage.
 
 ## M10 part 2b — Load test and security checklist (2026-10-24, branch `sentinel/m10`)
 
