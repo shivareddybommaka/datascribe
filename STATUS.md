@@ -59,27 +59,35 @@ removed 2026-10-24. Active: **datascribe-herald** (M9, `.worktrees/herald`, port
 3800/4800, DB `datascribe_sentinel_dev`, Redis /3). DECISIONS numbering per agent: storefront D-030+,
 ledger D-040+, pipeline D-050+, herald D-090+, sentinel D-100+.
 
+## Approved by Shiva (2026-10-24, "approve all"), to build
+
+1. Production refuses to start unless `S3_SSE=aws:kms` (sentinel).
+2. Add `@axe-core/playwright` (dev) and a WCAG check in the e2e suite (sentinel).
+3. Add the Sentry SDKs (API, worker, web): off unless `SENTRY_DSN` is set; scrub PHI fields, request
+   bodies, cookies and auth headers in `beforeSend` (sentinel).
+4. Retention / hard-delete job per §4.4, audited, synthetic data only locally (master, after M6
+   basics, or sentinel).
+5. QA reviewers may use the medical lookups (D-056): grant the lookup permission to `qa_reviewer`.
+6. Add Lighthouse (dev) and measure the M3 pages (target ≥ 90 performance + SEO); fix if below.
+
+Terraform 1.17.0 (`/opt/homebrew/bin/terraform`, works as nova) installed by Shiva: run
+`terraform init -backend=false` + `terraform validate` on `infra/terraform`; never plan against AWS,
+never apply. Native `tesseract` 5.5.3 is also installed (optional; OCR uses tesseract.js, D-082).
+
 ## Waiting on Shiva
 
 - Telegram control: create a Telegram group with the bot (bot as admin or privacy off), send a
   message, send the group id (forward to @RawDataBot). Then the binding is proposed via OpenClaw.
-- Lighthouse install (M3 performance/SEO check): yes / later.
-- Free openFDA API key before production (D-052). Should QA reviewers use medical lookups (D-056)?
+- Free openFDA API key before production (D-052).
 - Stripe test key for the manual M8 test-card demo. CMS email adapter choice (editor password reset).
-- CI result on GitHub Actions (agent can't read Actions with the deploy key), now including the new
-  e2e job.
-- M10 (sentinel): should production refuse to start unless `S3_SSE=aws:kms`? May we add
-  `@axe-core/playwright` (WCAG check) and the Sentry SDKs? Build the retention / hard-delete job next?
-- ~~Terraform CLI~~ installed by Shiva 2026-10-24 (`/opt/homebrew/bin/terraform` 1.17.0, works as
-  nova): run `terraform init -backend=false` + `terraform validate` on `infra/terraform`; never apply.
-  Native `tesseract` 5.5.3 is also installed (optional; OCR uses tesseract.js, D-082).
+- CI result on GitHub Actions after the format fix (agent can't read Actions with the deploy key).
 - IaC (`infra/terraform`, `docs/INFRA.md`, D-115) is written, never applied. Going further needs AWS
   accounts (staging, production) with a BAA, a state bucket, domain + ACM certificate, SES and secret
   values; a CI staging deploy also needs Dockerfiles and a GitHub OIDC role.
 - M9 finance dashboard (D-094): should MRR count trialing / past-due subscriptions (matches the
   existing finance overview now)? OK to show client firm names in "revenue by client"?
-- Next's e2e run rewrites `apps/web/next-env.d.ts` / `tsconfig.json` with the port (herald): ignore
-  them or fix on main? (Agents reset them before each commit for now.)
+- Next's e2e run rewrites `apps/web/next-env.d.ts` / `tsconfig.json` with the port: master fixes this
+  on main (no Shiva decision needed).
 
 ## Security review (datascribe-auditor)
 
