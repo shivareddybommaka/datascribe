@@ -4,12 +4,13 @@ import { readFile } from 'node:fs/promises';
 import { TEST_PASSWORD, TEST_TOTP_SECRET } from '../../api/test/constants';
 import { pipelineResult } from '../../api/test/pipeline-check';
 import { SYNTHETIC_CASE_PAGES, syntheticCasePdf } from '../../api/test/synthetic-pdf';
+import { extractPdfPages } from '../../worker/src/pipeline/extract-text';
 import { E2E, E2E_PHI_KEY } from '../playwright.config';
 
 const FILE = 'synthetic-case-records.pdf';
 const MATTER = `Jacobs v. Lakeside Transit (synthetic ${Date.now()})`;
 
-test('M5 DoD: an uploaded case runs through the pipeline to review, every chronology entry cited', async ({
+test('M5 + M6 DoD: pipeline to review with every entry cited; summarizer edits, QA approves, client downloads', async ({
   page,
   browser,
 }) => {
@@ -162,8 +163,9 @@ test('M5 DoD: an uploaded case runs through the pipeline to review, every chrono
   await expect(first).toContainText(original);
   await expect(panel).toContainText('Version 3 · draft');
 
-  // part 4b (D-089): QA. The editor assigns the seeded QA reviewer and submits; the reviewer asks
-  // for changes, the editor resubmits, the reviewer approves and the drafts lock.
+  // part 4b (D-089): QA. The editor assigns the seeded summarizer and QA reviewer and submits; the
+  // reviewer asks for changes, the summarizer edits and resubmits, the reviewer approves and the
+  // drafts lock.
   const status = cm.getByRole('heading', { level: 1 }).locator('..');
   await expect(cm.getByRole('button', { name: 'Submit for QA' })).toBeVisible();
   await cm.getByRole('button', { name: 'Assign', exact: true }).click();
@@ -171,11 +173,15 @@ test('M5 DoD: an uploaded case runs through the pipeline to review, every chrono
   const reviewer = assign.getByLabel('QA reviewer');
   await expect(reviewer).toBeEnabled();
   await reviewer.selectOption({ label: await optionLabel(reviewer, 'Seed QA Reviewer') });
+  const summarizer = assign.getByLabel('Summarizer', { exact: true });
+  await summarizer.selectOption({
+    label: await optionLabel(summarizer, 'Seed Medical Summarizer'),
+  });
   await assign.getByRole('button', { name: 'Save' }).click();
   await expect(assign).toBeHidden();
-  await expect(cm.getByRole('region', { name: 'Assignees' })).toContainText(
-    'QA reviewer: Seed QA Reviewer',
-  );
+  const assignees = cm.getByRole('region', { name: 'Assignees' });
+  await expect(assignees).toContainText('QA reviewer: Seed QA Reviewer');
+  await expect(assignees).toContainText('Summarizer: Seed Medical Summarizer');
   await cm.getByRole('button', { name: 'Submit for QA' }).click();
   await expect(status).toContainText('Quality check');
   await expect(panel).toContainText('Version 3 · in qa');
@@ -186,7 +192,7 @@ test('M5 DoD: an uploaded case runs through the pipeline to review, every chrono
   const decision = qa.getByRole('form', { name: 'QA decision' });
   await decision.getByRole('button', { name: 'Request changes' }).click();
   await expect(decision.getByRole('alert')).toHaveText('Say what needs to change');
-  const comment = 'Entry 1: add the provider (synthetic QA note)';
+  const comment = 'Entry 1: say it was a follow-up visit (synthetic QA note)';
   await decision.getByLabel('QA comments').fill(comment);
   await decision.getByRole('button', { name: 'Request changes' }).click();
   await expect(qa.getByRole('heading', { level: 1 }).locator('..')).toContainText(
@@ -194,14 +200,23 @@ test('M5 DoD: an uploaded case runs through the pipeline to review, every chrono
   );
   await expect(decision).toHaveCount(0);
 
-  await cm.reload();
-  const qaHistory = cm.getByRole('region', { name: 'QA history' });
+  // M6 DoD: the assigned summarizer reads the QA note, edits entry 1 and resubmits
+  const sum = await staffPage(browser, 'summarizer@datascribe.example');
+  await sum.goto(`/console/cases/${caseId}`);
+  const qaHistory = sum.getByRole('region', { name: 'QA history' });
   await expect(qaHistory.getByRole('listitem')).toHaveCount(1);
   await expect(qaHistory).toContainText('Changes requested');
   await expect(qaHistory).toContainText(comment);
-  await expect(panel.getByRole('button', { name: 'Edit', exact: true })).toBeVisible();
-  await cm.getByRole('button', { name: 'Submit for QA' }).click();
-  await expect(status).toContainText('Quality check');
+  const sumPanel = sum.getByRole('tabpanel', { name: 'Chronology' });
+  await sumPanel.getByRole('button', { name: 'Edit', exact: true }).click();
+  const fixed = 'Follow-up visit after the collision, per QA (synthetic)';
+  await sumPanel.getByLabel('Entry 1 description').fill(fixed);
+  await sumPanel.getByRole('button', { name: 'Save new version' }).click();
+  await expect(sumPanel).toContainText('Version 4 · draft · edited by Seed Medical Summarizer');
+  await sum.getByRole('button', { name: 'Submit for QA' }).click();
+  const sumStatus = sum.getByRole('heading', { level: 1 }).locator('..');
+  await expect(sumStatus).toContainText('Quality check');
+  await sum.close();
 
   await qa.reload();
   await decision.getByRole('button', { name: 'Approve' }).click();
@@ -213,7 +228,7 @@ test('M5 DoD: an uploaded case runs through the pipeline to review, every chrono
   await expect(approvedHistory.getByRole('listitem')).toHaveCount(2);
   await expect(approvedHistory.getByRole('listitem').first()).toContainText('Approved');
   await expect(qa.getByRole('tabpanel', { name: 'Chronology' })).toContainText(
-    /Version 3 · (approved|delivered)/,
+    /Version 4 · (approved|delivered)/,
   );
   await qa.close();
 
@@ -240,6 +255,15 @@ test('M5 DoD: an uploaded case runs through the pipeline to review, every chrono
   expect(file.suggestedFilename()).toBe(`${number}-report.pdf`);
   const bytes = await readFile((await file.path())!);
   expect(bytes.subarray(0, 5).toString()).toBe('%PDF-');
+  // M6 DoD: the client's report carries the summarizer's QA-approved edit
+  const noOcr = { recognize: async () => ({ text: '', confidence: 0 }) };
+  const report = await extractPdfPages(new Uint8Array(bytes), { ocr: noOcr });
+  const reportText = report.pages
+    .map((p) => p.text)
+    .join(' ')
+    .replace(/\s+/g, ' ');
+  expect(reportText).toContain(fixed);
+  expect(reportText).toContain(MATTER);
 });
 
 /** The full text of the option starting with `name` (options read "Name (3 open)"). */

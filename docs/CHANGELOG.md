@@ -1,5 +1,15 @@
 # Changelog
 
+## M6 part 6 — M6 DoD e2e (PDF) (2026-10-25, master)
+
+- **e2e (`pipeline.spec.ts`, now "M5 + M6 DoD"):** the case manager assigns the seeded summarizer
+  and QA reviewer; QA requests changes; the **assigned summarizer** (not an admin) reads the QA
+  note, edits chronology entry 1 (version 4, "edited by Seed Medical Summarizer") and resubmits;
+  QA approves version 4; the worker delivers; the client downloads the report and the test reads
+  the PDF's text (worker's pdf.js extractor) to check it carries the summarizer's edit and the
+  matter name.
+- The DOCX half of the M6 DoD still waits on Shiva's OK for the `docx` package.
+
 ## M6 part 5b — Client report download (2026-10-25, master)
 
 Design notes: D-099.
