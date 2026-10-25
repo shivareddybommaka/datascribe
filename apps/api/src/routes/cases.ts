@@ -1,5 +1,9 @@
 import type { Prisma } from '@datascribe/db';
-import { notifyAssigned, notifyCaseSubmitted } from '@datascribe/db/notifications';
+import {
+  notifyAssigned,
+  notifyCaseSubmitted,
+  notifyQaDecision,
+} from '@datascribe/db/notifications';
 import {
   CASE_STATUSES,
   CASE_TYPES,
@@ -38,10 +42,13 @@ import {
   EDITABLE_CASE_STATUSES,
   EDITABLE_DELIVERABLE_STATUSES,
   EDITABLE_TYPES,
+  QaDecisionBody,
+  SUBMITTABLE_CASE_STATUSES,
   SaveDeliverableBody,
   citationProblem,
   contentCounts,
   contentSchema,
+  qaProblem,
   type EditableType,
 } from '../services/deliverables';
 import { serializeDocument } from './documents';
@@ -151,6 +158,25 @@ const canAssign = (auth: AuthContext, c: { caseManagerId: string | null; status:
   (ASSIGNABLE_STATUSES as readonly string[]).includes(c.status) &&
   (canReassignAny(auth) || c.caseManagerId === null || c.caseManagerId === auth.user.id);
 
+/** Staff who may send the case's drafts to QA: anyone who may edit them (D-088). */
+const canSubmitQa = (auth: AuthContext, c: CaseRow) =>
+  auth.user.orgType === 'internal' &&
+  canOnCase(auth, 'edit', 'deliverables', c) &&
+  (SUBMITTABLE_CASE_STATUSES as readonly string[]).includes(c.status);
+
+/**
+ * The QA decision (D-088): the case's assigned QA reviewer, or someone holding deliverables:approve
+ * on every case (super admin). Never the summarizer: four eyes, as for assignment (D-083).
+ */
+const canDecideQa = (auth: AuthContext, c: CaseRow) =>
+  auth.user.orgType === 'internal' &&
+  c.status === 'qa' &&
+  canOnCase(auth, 'approve', 'deliverables', c) &&
+  auth.permissions.some((p) => p.module === 'qa_reviews' && p.action === 'create') &&
+  (c.qaReviewerId === auth.user.id ||
+    broadestScope(auth.permissions, 'deliverables', 'approve') === 'all') &&
+  c.summarizerId !== auth.user.id;
+
 /**
  * §5.3 / §9 case routes. Every route: Zod input, permission check, org scoping (caseScopeWhere +
  * a CASL check on the loaded row; not-visible = 404), and an audit row where §4.4 asks for one.
@@ -237,6 +263,8 @@ export function casesRouter(deps: Deps): Router {
         internalMessages: auth.user.orgType === 'internal',
         assign: canAssign(auth, c),
         reassignAny: canAssign(auth, c) && canReassignAny(auth),
+        submitQa: canSubmitQa(auth, c),
+        decideQa: canDecideQa(auth, c),
       },
       ...(auth.user.orgType === 'internal'
         ? {
@@ -906,6 +934,192 @@ export function casesRouter(deps: Deps): Router {
       });
     },
   );
+
+  // ── QA (M6 part 4, §5.4, D-088) ───────────────────────────────────────
+  /** Latest version of each editable deliverable of the case (the report is built after QA). */
+  async function latestDrafts(db: Prisma.TransactionClient | typeof prisma, caseId: string) {
+    const all = await db.deliverable.findMany({
+      where: { caseId, type: { in: [...EDITABLE_TYPES] } },
+      orderBy: [{ type: 'asc' }, { version: 'desc' }],
+    });
+    return all.filter((d, i) => all.findIndex((o) => o.type === d.type) === i);
+  }
+
+  const versionsOf = (ds: { type: string; version: number }[]) =>
+    Object.fromEntries(ds.map((d) => [d.type, d.version]));
+
+  async function freshDetail(req: Request, caseId: string) {
+    const fresh = await prisma.case.findUniqueOrThrow({
+      where: { id: caseId },
+      include: caseInclude,
+    });
+    return detail(req, fresh);
+  }
+
+  /**
+   * Submit for QA: the latest version of every draft goes to `in_qa` and the case to `qa`. Needs a
+   * QA reviewer on the case and a citation on every chronology entry. While in QA nothing can be
+   * edited (the PUT above refuses `qa` cases and `in_qa` versions).
+   */
+  r.post('/cases/:id/submit-qa', requirePermission('deliverables', 'edit'), async (req, res) => {
+    const auth = requireAuth(req);
+    const c = await loadDraftCase(req, 'edit');
+    if (!canSubmitQa(auth, c)) {
+      throw conflict('case_not_in_review', `A ${c.status} case cannot be sent to QA`);
+    }
+    if (!c.qaReviewerId) throw conflict('no_qa_reviewer', 'Assign a QA reviewer first');
+    const latest = await latestDrafts(prisma, c.id);
+    if (latest.length === 0) throw conflict('no_deliverables', 'There is nothing to review yet');
+    for (const d of latest) {
+      if (d.lockedAt || !(EDITABLE_DELIVERABLE_STATUSES as readonly string[]).includes(d.status)) {
+        throw conflict('deliverable_locked', `The ${d.type} is already with QA or approved`);
+      }
+      const problem = qaProblem(d.type as EditableType, JSON.parse(decrypt(d.content, phiKey)));
+      if (problem) throw conflict('not_ready', problem);
+    }
+    await prisma.$transaction(async (tx) => {
+      const moved = await tx.case.updateMany({
+        where: { id: c.id, status: c.status },
+        data: { status: 'qa' },
+      });
+      if (moved.count !== 1) throw conflict('case_changed', 'Someone else changed this case');
+      const sent = await tx.deliverable.updateMany({
+        where: {
+          id: { in: latest.map((d) => d.id) },
+          status: { in: [...EDITABLE_DELIVERABLE_STATUSES] },
+          lockedAt: null,
+        },
+        data: { status: 'in_qa' },
+      });
+      // a version saved since we read `latest` would otherwise stay behind as an unreviewed draft
+      const newer = await tx.deliverable.count({
+        where: {
+          caseId: c.id,
+          OR: latest.map((d) => ({ type: d.type, version: { gt: d.version } })),
+        },
+      });
+      if (sent.count !== latest.length || newer > 0) {
+        throw conflict('version_conflict', 'Someone saved a newer version; reload to continue');
+      }
+    });
+    await req.audit({
+      action: 'case.status',
+      entity: 'Case',
+      entityId: c.id,
+      organizationId: c.organizationId,
+      metadata: { from: c.status, to: 'qa', by: 'submit_qa', versions: versionsOf(latest) },
+    });
+    res.json(await freshDetail(req, c.id));
+  });
+
+  /**
+   * QA decision: approve (locks the reviewed versions, case `approved`) or request changes (comments
+   * required, case `changes_requested`, the summarizer edits on top). One QaReview row per reviewed
+   * version; comments are encrypted (they may quote the records) and never audited.
+   */
+  r.post(
+    '/cases/:id/qa',
+    requirePermission('deliverables', 'approve'),
+    requirePermission('qa_reviews', 'create'),
+    async (req, res) => {
+      const auth = requireAuth(req);
+      const body = parse(QaDecisionBody, req.body);
+      const c = await loadDraftCase(req, 'approve');
+      if (c.status !== 'qa') throw conflict('not_in_qa', `A ${c.status} case is not with QA`);
+      if (!canDecideQa(auth, c)) {
+        throw forbidden(
+          c.summarizerId === auth.user.id
+            ? 'You summarized this case, so someone else must QA it'
+            : "Only the case's QA reviewer can decide",
+        );
+      }
+      const latest = await latestDrafts(prisma, c.id);
+      if (latest.length === 0 || latest.some((d) => d.status !== 'in_qa')) {
+        throw conflict('qa_changed', 'The drafts changed after they were sent to QA; reload');
+      }
+      const ownEdits = await prisma.deliverable.count({
+        where: { caseId: c.id, editedById: auth.user.id },
+      });
+      if (ownEdits > 0) {
+        throw forbidden('You edited these deliverables, so someone else must QA them');
+      }
+      const approved = body.result === 'approved';
+      if (approved) {
+        for (const d of latest) {
+          const problem = qaProblem(d.type as EditableType, JSON.parse(decrypt(d.content, phiKey)));
+          if (problem) throw conflict('not_ready', problem);
+        }
+      }
+      const to = approved ? 'approved' : 'changes_requested';
+      await prisma.$transaction(async (tx) => {
+        const moved = await tx.case.updateMany({
+          where: { id: c.id, status: 'qa' },
+          data: { status: to },
+        });
+        if (moved.count !== 1) throw conflict('case_changed', 'Someone else decided this case');
+        const done = await tx.deliverable.updateMany({
+          where: { id: { in: latest.map((d) => d.id) }, status: 'in_qa' },
+          data: { status: to, ...(approved ? { lockedAt: new Date() } : {}) },
+        });
+        if (done.count !== latest.length) {
+          throw conflict('qa_changed', 'The drafts changed after they were sent to QA; reload');
+        }
+        await tx.qaReview.createMany({
+          data: latest.map((d) => ({
+            deliverableId: d.id,
+            reviewerId: auth.user.id,
+            result: body.result,
+            comments: encryptOptional(body.comments, phiKey),
+          })),
+        });
+      });
+      await req.audit({
+        action: 'case.status',
+        entity: 'Case',
+        entityId: c.id,
+        organizationId: c.organizationId,
+        metadata: {
+          from: 'qa',
+          to,
+          by: 'qa_decision',
+          versions: versionsOf(latest),
+          comments: !!body.comments,
+        },
+      });
+      await safeNotify(deps.logger, approved ? 'approved' : 'qa_changes_requested', () =>
+        notifyQaDecision(prisma, c.id, approved),
+      );
+      res.json(await freshDetail(req, c.id));
+    },
+  );
+
+  /** QA history of the case, newest first, for the summarizer, the reviewer and managers. */
+  r.get('/cases/:id/qa-reviews', requirePermission('deliverables', 'view'), async (req, res) => {
+    const c = await loadDraftCase(req, 'view');
+    const reviews = await prisma.qaReview.findMany({
+      where: { deliverable: { caseId: c.id } },
+      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+      include: { reviewer: staffRef, deliverable: { select: { type: true, version: true } } },
+    });
+    await req.audit({
+      action: 'qa_review.list',
+      entity: 'Case',
+      entityId: c.id,
+      organizationId: c.organizationId,
+      metadata: { count: reviews.length },
+    });
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json({
+      items: reviews.map((q) => ({
+        id: q.id,
+        result: q.result,
+        comments: decryptOptional(q.comments, phiKey),
+        createdAt: q.createdAt,
+        reviewer: q.reviewer,
+        deliverable: q.deliverable,
+      })),
+    });
+  });
 
   // ── Sharing (CaseShare, same firm only) ───────────────────────────────
   r.get('/cases/:id/share-candidates', requirePermission('cases', 'edit'), async (req, res) => {

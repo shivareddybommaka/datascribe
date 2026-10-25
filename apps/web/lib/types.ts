@@ -360,6 +360,9 @@ export interface CaseDetail extends CaseSummary {
     internalMessages: boolean;
     assign?: boolean;
     reassignAny?: boolean;
+    /** M6 part 4 (D-088): send the drafts to QA / record the QA decision */
+    submitQa?: boolean;
+    decideQa?: boolean;
   };
   caseManagerId?: string | null;
   summarizerId?: string | null;

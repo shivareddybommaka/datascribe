@@ -1697,3 +1697,31 @@ inputs.apply`.
   draft on screen and offers "Discard and load the latest"; there is no merge.
 - **History**: view a version read-only in a dialog (audited by the API); Restore fetches that
   version and saves its content as a new version on top of the latest, so nothing is lost.
+
+## D-088 — Submit for QA and the QA decision (M6 part 4a, 2026-10-25)
+
+- **Case-level, not per deliverable**: §9 lists `POST /deliverables/:id/submit-qa` and
+  `/deliverables/:id/qa`, but the case status (`qa`, `changes_requested`, `approved`) is one per
+  case and the report (part 5) is built from all deliverables together, so the routes are
+  `POST /cases/:id/submit-qa` and `POST /cases/:id/qa`; each acts on the latest version of every
+  editable deliverable (index / chronology / summary). The report deliverable is not QA'd.
+- **Submit** (`deliverables:edit` on the case, internal staff): case `in_review` /
+  `changes_requested` → `qa`, latest versions `draft` / `changes_requested` → `in_qa`. Needs a QA
+  reviewer on the case (409 `no_qa_reviewer`) and every latest version must pass the strict edit
+  schema, so a chronology entry without a citation blocks it (409 `not_ready`, "N chronology
+  entries have no source citation"); that also covers what the pipeline wrote. Case and versions
+  move in one transaction with compare-and-set; a version saved concurrently → 409.
+- **Decision** (`deliverables:approve` + `qa_reviews:create`): only the case's assigned QA reviewer,
+  or a holder of `deliverables:approve:all` (super admin). Four eyes: never the summarizer, never
+  anyone who saved a version of the case's deliverables (403). Body `{ result, comments }`;
+  `changes_requested` needs comments (400). Approve re-checks the citations, sets the versions
+  `approved` + `lockedAt` and the case `approved`; changes requested sets both `changes_requested`
+  and the summarizer saves new versions on top (D-086), then resubmits.
+- **QaReview**: one row per reviewed version; `comments` is encrypted (may quote the records) and
+  never audited (the audit row only says whether there were comments). `GET /cases/:id/qa-reviews`
+  (anyone who may view the drafts, audited `qa_review.list`) shows the history with comments, so
+  the summarizer, who has no `qa_reviews` permission, can read what to fix.
+- Status changes are audited as `case.status` (`by: submit_qa` / `qa_decision`, versions per type),
+  so they show in the case timeline and the ops dashboard. `notifyQaDecision` (built by herald for M9) sends
+  `approved` / `qa_changes_requested` to the summarizer and case manager.
+- Case detail `can.submitQa` / `can.decideQa` are UI hints for the console (part 4b).

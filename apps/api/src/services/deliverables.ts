@@ -134,6 +134,47 @@ export function citationProblem(
   return null;
 }
 
+// ── QA (M6 part 4, §5.4, D-088) ────────────────────────────────────────
+
+/** Case states from which the drafts go to QA (first time, or after changes were requested). */
+export const SUBMITTABLE_CASE_STATUSES = EDITABLE_CASE_STATUSES;
+
+export const QaDecisionBody = z
+  .object({
+    result: z.enum(['approved', 'changes_requested']),
+    comments: z
+      .string()
+      .trim()
+      .max(10_000)
+      .nullish()
+      .transform((v) => v || null),
+  })
+  .strict()
+  .refine((v) => v.result === 'approved' || !!v.comments, {
+    message: 'Say what needs to change',
+    path: ['comments'],
+  });
+
+/**
+ * Why a deliverable version can't go to QA or be approved, or null. Stage 6 output and staff edits
+ * are both checked against the edit schemas, so "every chronology entry keeps a citation" (§5.4)
+ * holds for whatever the pipeline wrote too.
+ */
+export function qaProblem(type: EditableType, content: unknown): string | null {
+  const parsed = contentSchema(type).safeParse(content);
+  if (parsed.success) return null;
+  if (type === 'chronology') {
+    const entries = (content as { entries?: unknown[] } | null)?.entries;
+    const uncited = Array.isArray(entries)
+      ? entries.filter((e) => !(e as { citation?: unknown } | null)?.citation).length
+      : 0;
+    if (uncited > 0) {
+      return `${uncited} chronology ${uncited === 1 ? 'entry has' : 'entries have'} no source citation`;
+    }
+  }
+  return `The ${type} is incomplete; open it, fix it and save`;
+}
+
 /** Item counts for the audit row (never content). */
 export function contentCounts(content: DeliverableContent): Record<string, number> {
   if (content.kind === 'chronology') return { entries: content.entries.length };

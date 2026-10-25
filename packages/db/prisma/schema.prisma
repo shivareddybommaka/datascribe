@@ -607,6 +607,7 @@ model QaReview {
   deliverableId String
   reviewerId    String
   result        QaResult
+  /// ENCRYPTED (may quote the records, D-088)
   comments      String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
