@@ -51,7 +51,7 @@ import {
   qaProblem,
   type EditableType,
 } from '../services/deliverables';
-import { serializeDocument } from './documents';
+import { DOWNLOAD_URL_TTL_S, serializeDocument } from './documents';
 
 const REQUESTABLE = ['index', 'chronology', 'summary'] as const;
 
@@ -265,6 +265,7 @@ export function casesRouter(deps: Deps): Router {
         reassignAny: canAssign(auth, c) && canReassignAny(auth),
         submitQa: canSubmitQa(auth, c),
         decideQa: canDecideQa(auth, c),
+        downloadReport: c.deliveredAt !== null && canOnCase(auth, 'view', 'deliverables', c),
       },
       ...(auth.user.orgType === 'internal'
         ? {
@@ -683,9 +684,14 @@ export function casesRouter(deps: Deps): Router {
   });
 
   r.get('/cases/:id/deliverables', requirePermission('deliverables', 'view'), async (req, res) => {
+    const auth = requireAuth(req);
     const c = await loadCase(req, 'deliverables');
     const items = await prisma.deliverable.findMany({
-      where: { caseId: c.id },
+      // clients see only what was delivered; drafts and QA versions are staff-only (D-099)
+      where: {
+        caseId: c.id,
+        ...(auth.user.orgType === 'internal' ? {} : { status: 'delivered' as const }),
+      },
       orderBy: [{ type: 'asc' }, { version: 'desc' }],
       select: { id: true, type: true, version: true, status: true, createdAt: true },
     });
@@ -698,6 +704,39 @@ export function casesRouter(deps: Deps): Router {
     });
     res.json({ items });
   });
+
+  /**
+   * The delivered report (M6 part 5b, §5.4, D-099): a 5-minute signed URL to the latest report PDF
+   * the worker stored (D-098). Anyone who may view the case's deliverables: the client's users the
+   * case is visible to, and staff. Audited like a document download.
+   */
+  r.get(
+    '/cases/:id/report/download-url',
+    requirePermission('deliverables', 'view'),
+    async (req, res) => {
+      const c = await loadCase(req, 'deliverables');
+      const d = await prisma.deliverable.findFirst({
+        where: { caseId: c.id, status: 'delivered', pdfS3Key: { not: null } },
+        orderBy: [{ updatedAt: 'desc' }, { type: 'asc' }],
+        select: { id: true, pdfS3Key: true },
+      });
+      if (!d?.pdfS3Key) throw notFound('This case has no delivered report yet');
+      const url = await deps.storage.presignDownload(d.pdfS3Key, {
+        fileName: `${c.number}-report.pdf`,
+        contentType: 'application/pdf',
+        expiresIn: DOWNLOAD_URL_TTL_S,
+      });
+      await req.audit({
+        action: 'report.download',
+        entity: 'Case',
+        entityId: c.id,
+        organizationId: c.organizationId,
+        metadata: { deliverableId: d.id },
+      });
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.json({ url, expiresAt: new Date(Date.now() + DOWNLOAD_URL_TTL_S * 1000) });
+    },
+  );
 
   // ── Staff workspace (M6 part 2, §5.4, D-084) ──────────────────────────
   /**

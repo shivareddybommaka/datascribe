@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useCallback, useState } from 'react';
+import { ReportDownload } from '@/components/cases/report-download';
 import { CaseForm, type CaseInput } from '@/components/portal/case-form';
 import {
   CASE_STATUS_LABEL,
@@ -118,7 +119,7 @@ export default function CaseDetailPage() {
       </div>
 
       <Documents caseDetail={c} />
-      <Deliverables caseId={c.id} />
+      <Deliverables caseId={c.id} canDownload={!!c.can.downloadReport} />
       {c.can.share && <Sharing caseDetail={c} />}
       <Messages caseId={c.id} />
 
@@ -292,19 +293,26 @@ function Documents({ caseDetail: c }: { caseDetail: CaseDetail }) {
   );
 }
 
-function Deliverables({ caseId }: { caseId: string }) {
+function Deliverables({ caseId, canDownload }: { caseId: string; canDownload: boolean }) {
   const list = useQuery({
     queryKey: ['case', caseId, 'deliverables'],
     queryFn: () => api<{ items: DeliverableRow[] }>(`/cases/${caseId}/deliverables`),
   });
   return (
     <Card>
-      <h2 className="text-base font-semibold text-ink">Deliverables</h2>
+      <div className="flex flex-wrap items-start gap-3">
+        <h2 className="text-base font-semibold text-ink">Deliverables</h2>
+        {canDownload && (
+          <div className="ml-auto">
+            <ReportDownload caseId={caseId} />
+          </div>
+        )}
+      </div>
       <ErrorText error={list.error} />
       {list.data?.items.length === 0 && (
         <Empty>Datascribe&apos;s index, chronology and summary appear here when delivered.</Empty>
       )}
-      <ul className="mt-2 divide-y divide-line text-sm">
+      <ul className="mt-2 divide-y divide-line text-sm" aria-label="Deliverables">
         {list.data?.items.map((d) => (
           <li key={d.id} className="flex gap-3 py-2">
             <span className="font-medium text-ink">

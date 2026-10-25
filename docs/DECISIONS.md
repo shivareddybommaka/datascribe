@@ -1770,4 +1770,18 @@ inputs.apply`.
   `notifyDelivered` (deduplicated per case). Usage comes before the status change so a crash in
   between is repaired by the retry; a notification failure doesn't undo the delivery.
 - **Not yet:** DOCX (waits on Shiva's OK for the `docx` package), client download API + portal
-  button and hiding drafts from client users (part 5b).
+  button and hiding drafts from client users (part 5b, D-099).
+
+## D-099 — Report download and client-visible deliverables (M6 part 5b, 2026-10-25)
+
+- **`GET /cases/:id/report/download-url`**: `deliverables:view` on the case (same scoping as every
+  case route; not visible = 404). Takes the most recently updated `delivered` deliverable that has
+  a `pdfS3Key` (all delivered rows of one delivery share the key, D-098), returns a 5-minute signed
+  URL (§2, as for documents) with the download name `<caseNumber>-report.pdf`, `no-store`, and
+  writes a `report.download` audit row (metadata: deliverable id only). 404 before delivery.
+- **Who:** the client's users who can see the case (creator, shares, client admin) and staff. The
+  case detail's `can.downloadReport` (= `deliveredAt` set) shows the button in the portal's
+  Deliverables card and in the staff workspace's QA card (`ReportDownload` component).
+- **Drafts are staff-only:** `GET /cases/:id/deliverables` now returns only `delivered` rows to
+  non-internal users; drafts, QA and approved versions never reach the portal. Internal users
+  still get every version.

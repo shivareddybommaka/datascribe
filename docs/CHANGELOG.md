@@ -1,5 +1,18 @@
 # Changelog
 
+## M6 part 5b — Client report download (2026-10-25, master)
+
+Design notes: D-099.
+
+- **`GET /cases/:id/report/download-url`**: 5-minute signed URL to the delivered report PDF
+  (`<caseNumber>-report.pdf`), audited as `report.download`; clients who can see the case and staff.
+- **Portal:** a **Download report** button in the case's Deliverables card once the case is
+  delivered; the staff workspace shows the same button.
+- **Drafts hidden from clients:** the deliverables list returns only delivered versions to client
+  users.
+- Tests: API +5 (`report-download.test.ts`); e2e: the pipeline test checks the client sees no
+  drafts in review, then downloads the delivered report (a real PDF).
+
 ## M6 part 5a — Final report PDF and delivery (2026-10-25, master)
 
 Design notes: D-098.

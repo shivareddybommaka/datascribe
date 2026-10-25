@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { AssignDialog } from '@/components/cases/assign-dialog';
+import { ReportDownload } from '@/components/cases/report-download';
 import { Badge, Button, Card, Empty, ErrorText, Field, Textarea } from '@/components/ui';
 import { api } from '@/lib/api';
 import { dateTime } from '@/lib/format';
@@ -113,6 +114,8 @@ export function QaPanel({ c }: { c: CaseDetail }) {
           onClose={() => setAssigning(false)}
         />
       )}
+
+      {c.can.downloadReport && <ReportDownload caseId={c.id} />}
 
       {c.can.submitQa && (
         <div className="flex flex-wrap items-center gap-3">

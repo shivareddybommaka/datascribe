@@ -1,5 +1,6 @@
 import { expect, test, type Browser, type Locator, type Page } from '@playwright/test';
 import { authenticator } from 'otplib';
+import { readFile } from 'node:fs/promises';
 import { TEST_PASSWORD, TEST_TOTP_SECRET } from '../../api/test/constants';
 import { pipelineResult } from '../../api/test/pipeline-check';
 import { SYNTHETIC_CASE_PAGES, syntheticCasePdf } from '../../api/test/synthetic-pdf';
@@ -53,6 +54,9 @@ test('M5 DoD: an uploaded case runs through the pipeline to review, every chrono
   const timeline = page.getByRole('list', { name: 'Status timeline' });
   await expect(timeline).toContainText('Processing');
   await expect(timeline).toContainText('In review');
+  // the drafts are staff-only (D-099)
+  await expect(page.getByText('appear here when delivered')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Download report' })).toHaveCount(0);
 
   const result = await pipelineResult(E2E.dbUrl, E2E_PHI_KEY, caseId);
   // one succeeded job per §7 stage
@@ -220,7 +224,22 @@ test('M5 DoD: an uploaded case runs through the pipeline to review, every chrono
   }).toPass({ timeout: 45_000 });
   await expect(panel.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0);
   await expect(cm.getByRole('button', { name: 'Submit for QA' })).toHaveCount(0);
+  await expect(cm.getByRole('button', { name: 'Download report' })).toBeVisible();
   await cm.close();
+
+  // part 5b (D-099): the client sees the delivered versions and downloads the report
+  await page.reload();
+  await expect(heading).toContainText('Delivered');
+  const delivered = page.getByRole('list', { name: 'Deliverables' }).getByRole('listitem');
+  await expect(delivered).toHaveCount(3);
+  for (const li of await delivered.all()) await expect(li).toContainText('delivered');
+  const number = (await page.getByText(/^DS-/).first().textContent())!.split(' ')[0]!;
+  const download = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download report' }).click();
+  const file = await download;
+  expect(file.suggestedFilename()).toBe(`${number}-report.pdf`);
+  const bytes = await readFile((await file.path())!);
+  expect(bytes.subarray(0, 5).toString()).toBe('%PDF-');
 });
 
 /** The full text of the option starting with `name` (options read "Name (3 open)"). */

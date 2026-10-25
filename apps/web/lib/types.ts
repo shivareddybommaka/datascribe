@@ -363,6 +363,8 @@ export interface CaseDetail extends CaseSummary {
     /** M6 part 4 (D-088): send the drafts to QA / record the QA decision */
     submitQa?: boolean;
     decideQa?: boolean;
+    /** the case was delivered and its report PDF can be downloaded (D-099) */
+    downloadReport?: boolean;
   };
   caseManagerId?: string | null;
   summarizerId?: string | null;
