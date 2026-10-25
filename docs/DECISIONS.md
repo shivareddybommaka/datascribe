@@ -1744,3 +1744,30 @@ inputs.apply`.
   refused), the editor sees the comment in the history and resubmits, the reviewer approves (case
   "Approved", v3 `approved`, no Edit / Submit). portal.spec's dashboard check now also accepts
   "On hold": it had been passing on pipeline.spec's case sitting in review.
+
+## D-098 — Final report PDF and delivery in the worker (M6 part 5a, 2026-10-25)
+
+- **Who delivers:** the worker, not the API. The QA approval only writes rows (case `approved`,
+  versions locked); the dispatcher (D-081) also polls `approved` cases and queues a `delivery` job
+  with id `deliver-<caseId>-<updatedAt>`, so Redis being down at approval loses nothing and a case
+  is never queued twice. Gated by `PIPELINE_START_CASES` like case processing.
+- **One combined report per case** (`apps/worker/src/report/report-pdf.ts`, existing `pdf-lib`, now
+  a worker runtime dependency): cover page (firm, case number, matter, reference, patient, incident
+  date, case type, approval date, contents with versions), then summary, chronology and index in
+  the order the client requested, each from a new page. Chronology table: date, provider /
+  facility, event + codes, source "file, p. N"; table headers repeat on every page and rows never
+  split. Footer "Confidential - case - page x of y". Standard fonts, so characters outside
+  WinAnsi become "?" (same as invoices). Creation date = approval time, so the same input renders
+  the same bytes.
+- **Storage:** documents bucket with its SSE (KMS in production, D-117), key
+  `reports/<orgId>/<caseId>/<caseNumber>-<type initial + version…>.pdf` (e.g. `-s2c3i1.pdf`); a
+  retry overwrites the same object, a later re-delivery with new versions gets a new key. Every
+  delivered deliverable row gets that key in `pdfS3Key` (one file covers all three). Retention
+  (D-128) only purges uploaded documents, not reports.
+- **Order of steps:** render → put S3 → `recordUsage` (pages of the case's clean documents,
+  idempotent per case, D-040) → one transaction: case `approved → delivered` + `deliveredAt`,
+  deliverables `delivered`, status timeline audit row (`by: 'delivery'`, no actor) →
+  `notifyDelivered` (deduplicated per case). Usage comes before the status change so a crash in
+  between is repaired by the retry; a notification failure doesn't undo the delivery.
+- **Not yet:** DOCX (waits on Shiva's OK for the `docx` package), client download API + portal
+  button and hiding drafts from client users (part 5b).

@@ -22,12 +22,12 @@
     "@sentry/node": "^10.76.2",
     "bullmq": "^5.52.0",
     "nodemailer": "^10.2.1",
+    "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.7.284",
     "pino": "^9.6.0"
   },
   "devDependencies": {
     "@types/nodemailer": "^6.4.17",
-    "pdf-lib": "^1.17.1",
     "tsup": "^8.4.0",
     "tsx": "^4.19.4"
   }

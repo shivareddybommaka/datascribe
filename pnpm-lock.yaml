@@ -295,6 +295,9 @@ importers:
       nodemailer:
         specifier: ^10.2.1
         version: 10.2.1
+      pdf-lib:
+        specifier: ^1.17.1
+        version: 1.17.1
       pdfjs-dist:
         specifier: ^5.7.284
         version: 5.7.284
@@ -305,9 +308,6 @@ importers:
       '@types/nodemailer':
         specifier: ^6.4.17
         version: 6.4.24
-      pdf-lib:
-        specifier: ^1.17.1
-        version: 1.17.1
       tsup:
         specifier: ^8.4.0
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.31)(tsx@4.23.15)(typescript@5.9.3)

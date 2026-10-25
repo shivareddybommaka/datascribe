@@ -16,11 +16,14 @@ export interface DispatchSource {
   pendingUploads(limit: number): Promise<{ id: string }[]>;
   /** submitted cases that stage 1 has not claimed yet, oldest first */
   submittedCases(limit: number): Promise<{ id: string; updatedAt: Date }[]>;
+  /** QA-approved cases waiting for their final report (D-098), oldest first */
+  approvedCases(limit: number): Promise<{ id: string; updatedAt: Date }[]>;
 }
 
 export interface DispatchTarget {
   scanUpload(documentId: string, jobId: string): Promise<void>;
   startCase(caseId: string, jobId: string): Promise<void>;
+  deliverCase(caseId: string, jobId: string): Promise<void>;
 }
 
 /** Queued, active and recently finished jobs keep their id, so re-adding one is a no-op. */
@@ -31,6 +34,9 @@ export const uploadScanJobId = (documentId: string) => `upload-${documentId}`;
  */
 export const caseJobId = (caseId: string, updatedAt: Date) =>
   `case-${caseId}-${updatedAt.getTime()}`;
+/** Same rule for delivery: one job per approval. */
+export const deliveryJobId = (caseId: string, updatedAt: Date) =>
+  `deliver-${caseId}-${updatedAt.getTime()}`;
 
 export interface DispatchOptions {
   /** start the pipeline for submitted cases (`PIPELINE_START_CASES=false`: scan uploads only) */
@@ -42,11 +48,13 @@ export async function dispatchOnce(
   source: DispatchSource,
   target: DispatchTarget,
   opts: DispatchOptions,
-): Promise<{ uploads: number; cases: number }> {
+): Promise<{ uploads: number; cases: number; deliveries: number }> {
   const batch = opts.batch ?? 100;
   const uploads = await source.pendingUploads(batch);
   for (const d of uploads) await target.scanUpload(d.id, uploadScanJobId(d.id));
   const cases = opts.startCases ? await source.submittedCases(batch) : [];
   for (const c of cases) await target.startCase(c.id, caseJobId(c.id, c.updatedAt));
-  return { uploads: uploads.length, cases: cases.length };
+  const approved = opts.startCases ? await source.approvedCases(batch) : [];
+  for (const c of approved) await target.deliverCase(c.id, deliveryJobId(c.id, c.updatedAt));
+  return { uploads: uploads.length, cases: cases.length, deliveries: approved.length };
 }

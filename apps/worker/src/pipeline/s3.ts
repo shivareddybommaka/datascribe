@@ -25,6 +25,8 @@ export interface DocumentObjects extends ScanStorage {
   read(key: string): Promise<Uint8Array>;
   /** stores a JPEG with the bucket's encryption */
   putJpeg(key: string, body: Buffer): Promise<void>;
+  /** final reports (D-098), with the bucket's encryption */
+  putPdf(key: string, body: Uint8Array): Promise<void>;
   /**
    * Retention (D-128): delete the object and its page images (D-085), or abort an unfinished
    * upload. Missing keys are fine.
@@ -76,6 +78,17 @@ export function s3DocumentObjects(env: Record<string, string | undefined>): Docu
           Key: key,
           Body: body,
           ContentType: 'image/jpeg',
+          ...sse,
+        }),
+      );
+    },
+    async putPdf(key, body) {
+      await s3.send(
+        new PutObjectCommand({
+          Bucket: bucket,
+          Key: key,
+          Body: body,
+          ContentType: 'application/pdf',
           ...sse,
         }),
       );

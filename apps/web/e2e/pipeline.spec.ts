@@ -201,17 +201,23 @@ test('M5 DoD: an uploaded case runs through the pipeline to review, every chrono
 
   await qa.reload();
   await decision.getByRole('button', { name: 'Approve' }).click();
-  await expect(qa.getByRole('heading', { level: 1 }).locator('..')).toContainText('Approved');
+  // the worker delivers an approved case within seconds (D-098), so either state may show
+  await expect(qa.getByRole('heading', { level: 1 }).locator('..')).toContainText(
+    /Approved|Delivered/,
+  );
   const approvedHistory = qa.getByRole('region', { name: 'QA history' });
   await expect(approvedHistory.getByRole('listitem')).toHaveCount(2);
   await expect(approvedHistory.getByRole('listitem').first()).toContainText('Approved');
   await expect(qa.getByRole('tabpanel', { name: 'Chronology' })).toContainText(
-    'Version 3 · approved',
+    /Version 3 · (approved|delivered)/,
   );
   await qa.close();
 
-  await cm.reload();
-  await expect(status).toContainText('Approved');
+  // M6 part 5: the final report is rendered and the case delivered
+  await expect(async () => {
+    await cm.reload();
+    await expect(status).toContainText('Delivered', { timeout: 2_000 });
+  }).toPass({ timeout: 45_000 });
   await expect(panel.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0);
   await expect(cm.getByRole('button', { name: 'Submit for QA' })).toHaveCount(0);
   await cm.close();

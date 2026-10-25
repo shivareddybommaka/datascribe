@@ -1,8 +1,15 @@
-import { LocalObjectStore, repoPath, runDunning, runMonthlyInvoicing } from '@datascribe/billing';
+import {
+  LocalObjectStore,
+  getBillingSettings,
+  repoPath,
+  runDunning,
+  runMonthlyInvoicing,
+} from '@datascribe/billing';
 import { errorInfo, prisma } from '@datascribe/db';
 import {
   deliverPendingEmails,
   notifyCaseReadyForReview,
+  notifyDelivered,
   notifyInvoicesIssued,
   notifyProcessingFailed,
   notifyTasksDue,
@@ -45,6 +52,8 @@ import {
   type ScanOutcome,
 } from './pipeline/runner';
 import { renderPagePreview, renderPdfPage } from './pipeline/render-page';
+import { DELIVERY_QUEUE, deliverCase, type DeliveryJobData } from './report/deliver';
+import { prismaDeliveryStore } from './report/prisma-store';
 import {
   RETENTION_QUEUE,
   RETENTION_SCHEDULES,
@@ -151,7 +160,31 @@ workers.push(
   ),
 );
 
-// The API only writes rows; this hands completed uploads and submitted cases to the queues.
+// ── M6 delivery: final report for QA-approved cases (D-098) ──
+const deliveryLog = logger.child({ queue: DELIVERY_QUEUE });
+const deliveryDeps = {
+  store: prismaDeliveryStore(prisma),
+  phiKey: pipelineDeps.phiKey,
+  companyName: async () => (await getBillingSettings(prisma)).company.name,
+  putReport: objects.putPdf,
+  notifyDelivered: (caseId: string) => notifyDelivered(prisma, caseId),
+  log: deliveryLog,
+};
+const deliveryQueue = new Queue<DeliveryJobData>(DELIVERY_QUEUE, queueOpts);
+workers.push(
+  new Worker<DeliveryJobData>(
+    DELIVERY_QUEUE,
+    async (job) => {
+      const result = await deliverCase(job.data.caseId, deliveryDeps);
+      if (!result.delivered)
+        deliveryLog.info({ caseId: job.data.caseId, ...result }, 'not delivered');
+      return result;
+    },
+    { ...queueOpts, concurrency: 1 },
+  ),
+);
+
+// The API only writes rows; this hands completed uploads, submitted and approved cases to the queues.
 const dispatchSource = prismaDispatchSource(prisma);
 const dispatchTarget: DispatchTarget = {
   async scanUpload(documentId, jobId) {
@@ -162,6 +195,9 @@ const dispatchTarget: DispatchTarget = {
       .get(FIRST_RUNNER_STAGE)!
       .add(FIRST_RUNNER_STAGE, { caseId }, { ...DEFAULT_JOB_OPTIONS, jobId });
   },
+  async deliverCase(caseId, jobId) {
+    await deliveryQueue.add(DELIVERY_QUEUE, { caseId }, { ...DEFAULT_JOB_OPTIONS, jobId });
+  },
 };
 const startCases = process.env.PIPELINE_START_CASES !== 'false';
 let dispatching = false;
@@ -171,7 +207,7 @@ const dispatchTimer = setInterval(
     dispatching = true;
     dispatchOnce(dispatchSource, dispatchTarget, { startCases })
       .then((n) => {
-        if (n.uploads + n.cases > 0) logger.debug(n, 'dispatched');
+        if (n.uploads + n.cases + n.deliveries > 0) logger.debug(n, 'dispatched');
       })
       .catch((err: unknown) => logger.warn({ err: errorInfo(err) }, 'dispatch failed'))
       .finally(() => {
@@ -297,6 +333,7 @@ async function shutdown() {
   await notificationsQueue.close();
   await retentionQueue.close();
   await uploadScanQueue.close();
+  await deliveryQueue.close();
   await Promise.all([...pipelineQueues.values()].map((q) => q.close()));
   await usage.close();
   if (ocr instanceof TesseractOcrProvider) await ocr.close();

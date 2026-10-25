@@ -26,6 +26,14 @@ export function prismaDispatchSource(prisma: PrismaClient): DispatchSource {
         select: { id: true, updatedAt: true },
       });
     },
+    approvedCases(limit) {
+      return prisma.case.findMany({
+        where: { status: 'approved' },
+        orderBy: { updatedAt: 'asc' },
+        take: limit,
+        select: { id: true, updatedAt: true },
+      });
+    },
   };
 }
 

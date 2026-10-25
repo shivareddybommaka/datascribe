@@ -1,5 +1,18 @@
 # Changelog
 
+## M6 part 5a — Final report PDF and delivery (2026-10-25, master)
+
+Design notes: D-098.
+
+- **Worker `delivery` queue:** the dispatcher picks up QA-approved cases; the job renders the final
+  report PDF (cover + summary, chronology with source citations, index, in the requested order)
+  from the locked versions, stores it in the documents bucket (`reports/…`), records the case's
+  pages as usage, sets the case and its deliverables to `delivered` (status timeline row) and sends
+  the `delivered` notification. Every step is safe to retry.
+- `pdf-lib` moved from the worker's dev to runtime dependencies (no new package).
+- Tests: report PDF +5, delivery +5, dispatcher updated; e2e: the M5/M6 pipeline test now waits
+  for the approved case to reach **Delivered**.
+
 ## M6 part 3b — Deliverable editor in the staff workspace (2026-10-25, master)
 
 Design notes: D-087.
