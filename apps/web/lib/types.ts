@@ -367,6 +367,22 @@ export interface CaseDetail extends CaseSummary {
   caseManagerId?: string | null;
   summarizerId?: string | null;
   qaReviewerId?: string | null;
+  /** Staff only. */
+  assignees?: {
+    caseManager: { id: string; name: string } | null;
+    summarizer: { id: string; name: string } | null;
+    qaReviewer: { id: string; name: string } | null;
+  };
+}
+
+/** GET /cases/:id/qa-reviews (D-088): one row per reviewed deliverable version, newest first. */
+export interface QaReviewItem {
+  id: string;
+  result: 'approved' | 'changes_requested';
+  comments: string | null;
+  createdAt: string;
+  reviewer: { id: string; name: string };
+  deliverable: { type: string; version: number };
 }
 
 export type ScanStatus = 'pending' | 'clean' | 'infected' | 'error';

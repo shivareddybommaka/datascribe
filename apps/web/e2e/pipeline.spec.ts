@@ -1,4 +1,4 @@
-import { expect, test, type Browser, type Page } from '@playwright/test';
+import { expect, test, type Browser, type Locator, type Page } from '@playwright/test';
 import { authenticator } from 'otplib';
 import { TEST_PASSWORD, TEST_TOTP_SECRET } from '../../api/test/constants';
 import { pipelineResult } from '../../api/test/pipeline-check';
@@ -12,7 +12,7 @@ test('M5 DoD: an uploaded case runs through the pipeline to review, every chrono
   page,
   browser,
 }) => {
-  test.setTimeout(150_000);
+  test.setTimeout(210_000);
   await page.goto('/portal');
   await page.getByLabel('Email').fill('client.user@acme.example');
   await page.getByLabel('Password').fill(TEST_PASSWORD);
@@ -157,8 +157,73 @@ test('M5 DoD: an uploaded case runs through the pipeline to review, every chrono
   await expect(history.getByRole('listitem')).toHaveCount(3);
   await expect(first).toContainText(original);
   await expect(panel).toContainText('Version 3 · draft');
+
+  // part 4b (D-089): QA. The editor assigns the seeded QA reviewer and submits; the reviewer asks
+  // for changes, the editor resubmits, the reviewer approves and the drafts lock.
+  const status = cm.getByRole('heading', { level: 1 }).locator('..');
+  await expect(cm.getByRole('button', { name: 'Submit for QA' })).toBeVisible();
+  await cm.getByRole('button', { name: 'Assign', exact: true }).click();
+  const assign = cm.getByRole('dialog', { name: /^Assign / });
+  const reviewer = assign.getByLabel('QA reviewer');
+  await expect(reviewer).toBeEnabled();
+  await reviewer.selectOption({ label: await optionLabel(reviewer, 'Seed QA Reviewer') });
+  await assign.getByRole('button', { name: 'Save' }).click();
+  await expect(assign).toBeHidden();
+  await expect(cm.getByRole('region', { name: 'Assignees' })).toContainText(
+    'QA reviewer: Seed QA Reviewer',
+  );
+  await cm.getByRole('button', { name: 'Submit for QA' }).click();
+  await expect(status).toContainText('Quality check');
+  await expect(panel).toContainText('Version 3 · in qa');
+  await expect(panel.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0);
+
+  const qa = await staffPage(browser, 'qa.reviewer@datascribe.example');
+  await qa.goto(`/console/cases/${caseId}`);
+  const decision = qa.getByRole('form', { name: 'QA decision' });
+  await decision.getByRole('button', { name: 'Request changes' }).click();
+  await expect(decision.getByRole('alert')).toHaveText('Say what needs to change');
+  const comment = 'Entry 1: add the provider (synthetic QA note)';
+  await decision.getByLabel('QA comments').fill(comment);
+  await decision.getByRole('button', { name: 'Request changes' }).click();
+  await expect(qa.getByRole('heading', { level: 1 }).locator('..')).toContainText(
+    'Changes requested',
+  );
+  await expect(decision).toHaveCount(0);
+
+  await cm.reload();
+  const qaHistory = cm.getByRole('region', { name: 'QA history' });
+  await expect(qaHistory.getByRole('listitem')).toHaveCount(1);
+  await expect(qaHistory).toContainText('Changes requested');
+  await expect(qaHistory).toContainText(comment);
+  await expect(panel.getByRole('button', { name: 'Edit', exact: true })).toBeVisible();
+  await cm.getByRole('button', { name: 'Submit for QA' }).click();
+  await expect(status).toContainText('Quality check');
+
+  await qa.reload();
+  await decision.getByRole('button', { name: 'Approve' }).click();
+  await expect(qa.getByRole('heading', { level: 1 }).locator('..')).toContainText('Approved');
+  const approvedHistory = qa.getByRole('region', { name: 'QA history' });
+  await expect(approvedHistory.getByRole('listitem')).toHaveCount(2);
+  await expect(approvedHistory.getByRole('listitem').first()).toContainText('Approved');
+  await expect(qa.getByRole('tabpanel', { name: 'Chronology' })).toContainText(
+    'Version 3 · approved',
+  );
+  await qa.close();
+
+  await cm.reload();
+  await expect(status).toContainText('Approved');
+  await expect(panel.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0);
+  await expect(cm.getByRole('button', { name: 'Submit for QA' })).toHaveCount(0);
   await cm.close();
 });
+
+/** The full text of the option starting with `name` (options read "Name (3 open)"). */
+async function optionLabel(select: Locator, name: string): Promise<string> {
+  const labels = await select.locator('option').allTextContents();
+  const label = labels.find((l) => l.startsWith(name));
+  expect(label, `option ${name}`).toBeTruthy();
+  return label!;
+}
 
 async function staffPage(browser: Browser, email: string): Promise<Page> {
   const p = await browser.newPage();

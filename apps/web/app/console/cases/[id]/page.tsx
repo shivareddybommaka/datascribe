@@ -10,6 +10,7 @@ import {
   VersionHistory,
   isEditable,
 } from '@/components/cases/deliverable-editor';
+import { QaPanel } from '@/components/cases/qa-panel';
 import { CaseStatusBadge } from '@/components/portal/labels';
 import { Badge, Button, Card, Empty, ErrorText, Select, cn } from '@/components/ui';
 import { api } from '@/lib/api';
@@ -39,7 +40,8 @@ interface PageRef {
  * §5.4 staff workspace (M6 part 2, D-084): source documents on the left, extracted data and the
  * draft deliverables on the right; a chronology entry or index row jumps to its source page.
  * Pages show as images with thumbnails (part 2b, D-085), or as extracted text. Drafts are edited
- * inline as new versions, with history and restore (part 3b, D-087).
+ * inline as new versions, with history and restore (part 3b, D-087); assignees, Submit for QA, the
+ * QA decision and QA history sit above (part 4b, D-089).
  */
 export default function CaseWorkspacePage() {
   const { id } = useParams<{ id: string }>();
@@ -76,6 +78,8 @@ export default function CaseWorkspacePage() {
               {data.case.organization.name} · Patient {data.case.patientName}
             </span>
           </header>
+
+          <QaPanel c={data.case} />
 
           <div className="grid gap-5 lg:grid-cols-2">
             <DocumentViewer documents={data.documents} current={current} onPick={setPicked} />

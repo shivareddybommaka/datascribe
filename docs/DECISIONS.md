@@ -1725,3 +1725,22 @@ inputs.apply`.
   so they show in the case timeline and the ops dashboard. `notifyQaDecision` (built by herald for M9) sends
   `approved` / `qa_changes_requested` to the summarizer and case manager.
 - Case detail `can.submitQa` / `can.decideQa` are UI hints for the console (part 4b).
+
+## D-089 — QA in the staff workspace (M6 part 4b, 2026-10-25)
+
+- A QA card at the top of `/console/cases/[id]` (`components/cases/qa-panel.tsx`): the three
+  assignees with an **Assign** button (the queue's `AssignDialog`, reused; it now also refreshes the
+  workspace), **Submit for QA** when `can.submitQa`, and a **QA decision** form (comments,
+  Approve / Request changes) when `can.decideQa`. Request changes without comments is stopped in
+  the browser too ("Say what needs to change"); the API still returns 400.
+- **QA history** from `GET /cases/:id/qa-reviews`: the API stores one row per reviewed version, so
+  the console folds neighbouring rows with the same reviewer, result, comments and moment (< 5 s,
+  one per deliverable type) into one decision listing the versions it covered.
+- No API change. Known gap: `can.decideQa` doesn't look at who saved versions, so a super admin who
+  edited the drafts still sees the decision form and gets the API's 403 ("You edited these
+  deliverables…") if they use it. Fixing the hint needs a query in the case detail; left for later.
+- e2e (pipeline.spec, after the part 3b edit): assign the seeded QA reviewer from the workspace,
+  submit (case "Quality check", v3 `in qa`, no Edit), the reviewer requests changes (empty comments
+  refused), the editor sees the comment in the history and resubmits, the reviewer approves (case
+  "Approved", v3 `approved`, no Edit / Submit). portal.spec's dashboard check now also accepts
+  "On hold": it had been passing on pipeline.spec's case sitting in review.

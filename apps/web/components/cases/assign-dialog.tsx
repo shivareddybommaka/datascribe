@@ -21,7 +21,13 @@ const ROLES: {
  * Assign the case manager, summarizer and QA reviewer (§5.4, D-083). Without cases:manage the
  * case-manager picker only offers "me" or nobody; the API enforces the same rules.
  */
-export function AssignDialog({ row, onClose }: { row: StaffCaseRow; onClose: () => void }) {
+export function AssignDialog({
+  row,
+  onClose,
+}: {
+  row: Pick<StaffCaseRow, 'id' | 'number' | 'caseManager' | 'summarizer' | 'qaReviewer'>;
+  onClose: () => void;
+}) {
   const me = useMe();
   const qc = useQueryClient();
   const reassignAny = me.permissions.includes('cases:manage:all');
@@ -52,7 +58,10 @@ export function AssignDialog({ row, onClose }: { row: StaffCaseRow; onClose: () 
       return api(`/cases/${row.id}/assign`, { method: 'POST', body });
     },
     onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ['case-queue'] });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['case-queue'] }),
+        qc.invalidateQueries({ queryKey: ['case-workspace', row.id] }),
+      ]);
       onClose();
     },
   });

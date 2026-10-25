@@ -11,8 +11,12 @@ const CLIENT_USER = 'client.user@acme.example';
 const CLIENT_ADMIN = 'client.admin@acme.example';
 const MATTER = `Jacobs v. Riverside Logistics (synthetic ${Date.now()})`;
 const FILE = 'synthetic-records-300p.pdf';
-/** a submitted case, wherever the pipeline has got to by then */
-const PAST_SUBMIT = /Submitted|Processing|In review/;
+/**
+ * a submitted case, wherever the pipeline has got to by then (On hold when a stage gives up). The
+ * dashboard check used to pass on pipeline.spec's case sitting in review; that one now goes on to
+ * Approved (M6 part 4b).
+ */
+const PAST_SUBMIT = /Submitted|Processing|In review|On hold/;
 
 // Signed in once per account (the per-IP auth rate limit is shared with the other specs).
 test.describe.configure({ mode: 'serial' });
